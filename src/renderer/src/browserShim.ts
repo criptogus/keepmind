@@ -14,9 +14,12 @@ const demoConfig = {
   ],
   agents: [
     { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'You are the user\'s second brain.', builtin: true },
-    { id: 'warren', name: 'Warren Buffett', emoji: '🎩', persona: 'Fale como Warren Buffett: direto, valor, longo prazo.', builtin: true },
-    { id: 'bill', name: 'Bill Gates', emoji: '🖥️', persona: 'Fale como Bill Gates: tecnologia, dados, otimismo.', builtin: true },
+    { id: 'warren', name: 'Warren Buffett', emoji: '🎩', persona: 'Speak like Warren Buffett: direct, value, long-term.', builtin: true },
+    { id: 'bill', name: 'Bill Gates', emoji: '🖥️', persona: 'Speak like Bill Gates: technology, data, optimism.', builtin: true },
     { id: 'elon', name: 'Elon Musk', emoji: '🚀', persona: 'Speak like Elon Musk: first principles, ambition.', builtin: true }
+  ],
+  automations: [
+    { id: 'auto_demo1', name: 'Morning briefing', instruction: 'every day at 8am summarize yesterday\'s activity', kind: 'summary', schedule: 'daily', time: '08:00', enabled: true, createdAt: '2026-11-01T00:00:00Z', lastRunAt: '2026-11-05T08:00:00Z' }
   ]
 }
 
@@ -105,14 +108,32 @@ const demo = {
     return () => { deltaCb = null }
   },
   brainInsights: async () => ['💡 Demo insight'],
-  brainDailySummary: async () => 'Resumo demo',
+  brainDailySummary: async () => 'Demo summary',
   brainListInsights: async () => [
     { date: '2026-11-05', content: '# Insights — 2026-11-05\n\n- 📌 You mentioned "focus" 3x this week — consider protecting deep-work blocks\n- ⚠️ No messages answered in 2 days\n- 🎯 Review your circles of competence' }
   ],
   brainListSummaries: async () => [
-    { date: '2026-11-04', content: '# Daily summary — 2026-11-04\n\n- Dia focado em produto; 2 decisões importantes\n- Sugestão: bloco de escrita amanhã' }
+    { date: '2026-11-04', content: '# Daily summary — 2026-11-04\n\n- Product-focused day; 2 important decisions made\n- Warren suggested reviewing time allocation\n- Tomorrow: writing block suggested by the brain' }
   ],
   brainListMemory: async () => demoMemory,
+  brainSleep: async () => ({ report: '(demo sleep report)', consolidated: 0 }),
+  brainListSleep: async () => [
+    { date: '2026-11-05', content: '# Sleep cycle — 2026-11-05\n\n### 1. Working\n- Deep work blocks on product\n\n### 2. Can improve\n- More delegation\n\n### 3. Not working → fix\n- Unanswered messages pile up\n\n### 4. Stop\n- Checking phone during focus blocks\n\n### 5. Start\n- Weekly review ritual\n\n### Tonight\'s commitments\n- Block 2h tomorrow morning' }
+  ],
+  brainMemoryTiers: async () => ({ shortTerm: 3, mediumTerm: 1, longTerm: 8, sleepCycles: 2 }),
+
+  syncStatus: async () => ({ connected: true, pending: 0, lastPull: '2026-11-05T12:00:00Z', lastPush: '2026-11-05T12:00:01Z', syncing: false }),
+  syncNow: async () => ({ connected: true, pending: 0, lastPull: '2026-11-05T12:00:00Z', lastPush: '2026-11-05T12:00:01Z', syncing: false }),
+
+  automationList: async () => demoConfig.automations,
+  automationParse: async (text: string) => ({
+    kind: 'brain', schedule: 'daily', time: '08:00',
+    label: 'every day at 08:00 (demo)', name: text.slice(0, 40)
+  }),
+  automationCreate: async (input: any) => ({ id: 'auto_new', ...input, enabled: true, createdAt: new Date().toISOString() }),
+  automationUpdate: async (id: string, patch: any) => ({ ...demoConfig.automations[0], ...patch }),
+  automationRemove: async () => true,
+  automationRunNow: async () => true,
 
   openExternal: noopVoid
 }

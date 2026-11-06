@@ -40,10 +40,25 @@ const api = {
   whatsappQr: () => ipcRenderer.invoke('mcp:whatsappQr'),
   mcpLogs: () => ipcRenderer.invoke('mcp:logs'),
 
+  // sync
+  syncStatus: () => ipcRenderer.invoke('sync:status'),
+  syncNow: () => ipcRenderer.invoke('sync:now'),
+
+  // automations
+  automationList: () => ipcRenderer.invoke('automation:list'),
+  automationParse: (text: string) => ipcRenderer.invoke('automation:parse', text),
+  automationCreate: (input: any) => ipcRenderer.invoke('automation:create', input),
+  automationUpdate: (id: string, patch: any) => ipcRenderer.invoke('automation:update', id, patch),
+  automationRemove: (id: string) => ipcRenderer.invoke('automation:remove', id),
+  automationRunNow: (id: string) => ipcRenderer.invoke('automation:runNow', id),
+
   // brain
   brainChat: (agentId: string, message: string) => ipcRenderer.invoke('brain:chat', agentId, message),
   brainInsights: () => ipcRenderer.invoke('brain:insights'),
   brainDailySummary: () => ipcRenderer.invoke('brain:dailySummary'),
+  brainSleep: () => ipcRenderer.invoke('brain:sleep'),
+  brainListSleep: () => ipcRenderer.invoke('brain:listSleep'),
+  brainMemoryTiers: () => ipcRenderer.invoke('brain:memoryTiers'),
   brainListInsights: () => ipcRenderer.invoke('brain:listInsights'),
   brainListSummaries: () => ipcRenderer.invoke('brain:listSummaries'),
   brainListMemory: () => ipcRenderer.invoke('brain:listMemory'),

@@ -1,14 +1,23 @@
 import { ipcMain, shell, BrowserWindow } from 'electron'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { Store } from './store'
+import { Store, type Automation } from './store'
 import { Brain } from './services/brain'
 import { McpManager } from './services/mcp'
 import { LocalLlm, LOCAL_MODELS } from './services/local-llm'
+import { GitSync } from './services/sync'
+import { AutomationScheduler, parseNaturalSchedule } from './services/automations'
 import * as llm from './services/llm'
 import * as github from './services/github'
 
-export function registerIpc(store: Store, brain: Brain, mcp: McpManager | null, localLlm: LocalLlm | null) {
+export function registerIpc(
+  store: Store,
+  brain: Brain,
+  mcp: McpManager | null,
+  localLlm: LocalLlm | null,
+  sync: GitSync | null = null,
+  automations: AutomationScheduler | null = null
+) {
   // ── Config ──
   ipcMain.handle('config:get', () => store.get())
   ipcMain.handle('config:set', (_e, patch: any) => store.set(patch))
@@ -141,6 +150,51 @@ export function registerIpc(store: Store, brain: Brain, mcp: McpManager | null, 
   })
   ipcMain.handle('mcp:logs', () => mcpLogs)
 
+  // ── GitHub sync (bidirectional) ──
+  ipcMain.handle('sync:status', () => sync?.status() ?? { connected: false, pending: 0, lastPull: null, lastPush: null, syncing: false })
+  ipcMain.handle('sync:now', async () => sync ? sync.syncNow() : null)
+
+  // ── Automations ──
+  ipcMain.handle('automation:list', () => store.get().automations)
+  ipcMain.handle('automation:parse', (_e, text: string) => parseNaturalSchedule(text))
+  ipcMain.handle('automation:create', (_e, input: { instruction: string } & Partial<Automation>) => {
+    const parsed = parseNaturalSchedule(input.instruction)
+    const auto: Automation = {
+      id: `auto_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      name: input.name ?? parsed.name,
+      instruction: input.instruction,
+      kind: input.kind ?? parsed.kind,
+      schedule: input.schedule ?? parsed.schedule,
+      time: input.time ?? parsed.time,
+      everyMinutes: input.everyMinutes ?? parsed.everyMinutes,
+      weekday: input.weekday ?? parsed.weekday,
+      enabled: input.enabled ?? true,
+      createdAt: new Date().toISOString()
+    }
+    store.set({ automations: [...store.get().automations, auto] })
+    return auto
+  })
+  ipcMain.handle('automation:update', (_e, id: string, patch: Partial<Automation>) => {
+    store.set({
+      automations: store.get().automations.map(a => a.id === id ? { ...a, ...patch } : a)
+    })
+    return store.get().automations.find(a => a.id === id)
+  })
+  ipcMain.handle('automation:remove', (_e, id: string) => {
+    store.set({ automations: store.get().automations.filter(a => a.id !== id) })
+    return true
+  })
+  ipcMain.handle('automation:runNow', async (_e, id: string) => {
+    const auto = store.get().automations.find(a => a.id === id)
+    if (!auto) throw new Error('Unknown automation')
+    if (automations) await automations.run(auto)
+    store.set({
+      automations: store.get().automations.map(a =>
+        a.id === id ? { ...a, lastRunAt: new Date().toISOString() } : a)
+    })
+    return true
+  })
+
   // ── Brain ──
   ipcMain.handle('brain:chat', async (e, agentId: string, message: string) => {
     const win = BrowserWindow.fromWebContents(e.sender)
@@ -150,6 +204,9 @@ export function registerIpc(store: Store, brain: Brain, mcp: McpManager | null, 
   })
   ipcMain.handle('brain:insights', async () => brain.generateInsights())
   ipcMain.handle('brain:dailySummary', async () => brain.dailySummary())
+  ipcMain.handle('brain:sleep', async () => brain.sleep())
+  ipcMain.handle('brain:listSleep', () => brain.listSleepReports())
+  ipcMain.handle('brain:memoryTiers', () => brain.memoryTierStats())
   ipcMain.handle('brain:listInsights', () => brain.listInsights())
   ipcMain.handle('brain:listSummaries', () => brain.listSummaries())
   ipcMain.handle('brain:listMemory', () => {

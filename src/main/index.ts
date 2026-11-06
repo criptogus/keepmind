@@ -4,6 +4,8 @@ import { Store } from './store'
 import { Brain } from './services/brain'
 import { McpManager } from './services/mcp'
 import { LocalLlm } from './services/local-llm'
+import { GitSync } from './services/sync'
+import { AutomationScheduler } from './services/automations'
 import { registerIpc, pushMcpLog } from './ipc'
 
 let mainWindow: BrowserWindow | null = null
@@ -11,6 +13,8 @@ let store: Store
 let brain: Brain
 let mcp: McpManager | null = null
 let localLlmGlobal: LocalLlm | null = null
+let gitSyncGlobal: GitSync | null = null
+let autoSchedulerGlobal: AutomationScheduler | null = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -47,12 +51,22 @@ app.whenReady().then(() => {
   localLlmGlobal = localLlm
   brain = new Brain(store, mcp, localLlm)
   brain.setMcp(mcp)
+  const gitSync = new GitSync(store, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
+  brain.attachSync(gitSync)
+  gitSyncGlobal = gitSync
+  const autoScheduler = new AutomationScheduler(store, brain, (m) => pushMcpLog(`[auto] ${m}`))
+  autoSchedulerGlobal = autoScheduler
 
   mcp.on('log', (m: any) => pushMcpLog(`[${m.serverId}] ${m.message}`))
   mcp.on('serverExit', (e: any) => pushMcpLog(`server ${e.serverId} exited (${e.code})`))
 
-  registerIpc(store, brain, mcp, localLlm)
+  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler)
   createWindow()
+
+  // Continuous GitHub sync — push local writes, pull remote memory
+  gitSync.start()
+  // Scheduled automations (natural-language crons)
+  autoScheduler.start()
 
   // Auto-start enabled MCP servers
   for (const s of store.get().mcpServers.filter(s => s.enabled)) {
@@ -87,5 +101,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   mcp?.stopAll()
   localLlmGlobal?.stop()
+  gitSyncGlobal?.stop()
+  autoSchedulerGlobal?.stop()
   if (process.platform !== 'darwin') app.quit()
 })

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import BrainCore from './BrainCore'
-import { IconSparkle, IconDoc, IconGithub } from './icons'
+import { IconSparkle, IconDoc, IconGithub, IconMoon } from './icons'
 import { buildConnectPrompt } from '../lib/connectPrompt'
 
 export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
@@ -11,15 +11,20 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [promptOpen, setPromptOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [tiers, setTiers] = useState<any>(null)
+  const [sync, setSync] = useState<any>(null)
+  const [sleeping, setSleeping] = useState(false)
 
   const refresh = async () => {
-    const [i, s, m, c] = await Promise.all([
+    const [i, s, m, c, t, sy] = await Promise.all([
       window.sb.brainListInsights(),
       window.sb.brainListSummaries(),
       window.sb.brainListMemory(),
-      window.sb.getConfig()
+      window.sb.getConfig(),
+      window.sb.brainMemoryTiers?.() ?? Promise.resolve(null),
+      window.sb.syncStatus?.() ?? Promise.resolve(null)
     ])
-    setInsights(i); setSummaries(s); setMemory(m); setConfig(c)
+    setInsights(i); setSummaries(s); setMemory(m); setConfig(c); setTiers(t); setSync(sy)
   }
 
   useEffect(() => { refresh() }, [])
@@ -38,6 +43,13 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
     finally { setBusy(null) }
   }
 
+  const sleepNow = async () => {
+    setSleeping(true); onActivity?.()
+    try { await window.sb.brainSleep(); await refresh() }
+    catch (e: any) { alert(e?.message ?? e) }
+    finally { setSleeping(false) }
+  }
+
   const pushGitHub = async () => {
     setBusy('push')
     try {
@@ -54,7 +66,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>CÉREBRO ATIVO · {new Date().toLocaleDateString('pt-BR')}</div>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>ACTIVE BRAIN · {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
           <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>SECOND BRAIN</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
             {config?.github?.repoUrl
@@ -64,13 +76,22 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
         </div>
         <div className="actions">
           <button className="btn" onClick={genInsights} disabled={!!busy}>
-            {busy === 'insights' ? 'GERANDO…' : <><IconSparkle size={12} /> GERAR INSIGHTS</>}
+            {busy === 'insights' ? 'WORKING…' : <><IconSparkle size={12} /> GENERATE INSIGHTS</>}
           </button>
           <button className="btn" onClick={genSummary} disabled={!!busy}>
-            {busy === 'summary' ? 'GERANDO…' : <><IconDoc size={12} /> RESUMO DO DIA</>}
+            {busy === 'summary' ? 'WORKING…' : <><IconDoc size={12} /> DAILY SUMMARY</>}
           </button>
           <button className="btn btn--ghost" onClick={pushGitHub} disabled={!!busy || !config?.github?.repoUrl}>
             {busy === 'push' ? '…' : '⇪ SYNC GITHUB'}
+          </button>
+          <button
+            className="btn"
+            style={{ borderColor: 'rgba(167,139,250,.4)', color: '#c4b5fd' }}
+            onClick={sleepNow}
+            disabled={sleeping}
+            title="Nightly learning cycle — reviews the day, extracts facts/lessons/skills to long-term memory"
+          >
+            <IconMoon size={12} /> {sleeping ? 'DREAMING…' : 'SLEEP'}
           </button>
         </div>
       </div>
@@ -85,7 +106,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
           insights <b>{insights.length}</b>
         </div>
         <div className="orbit-chip" style={{ bottom: '24%', left: '12%', animationDelay: '2.6s' }}>
-          resumos <b>{summaries.length}</b>
+          summaries <b>{summaries.length}</b>
         </div>
         <div className="orbit-chip orbit-chip--violet" style={{ bottom: '30%', right: '11%', animationDelay: '.8s' }}>
           ia <b>{config?.ai?.provider ?? '—'}</b>
@@ -143,18 +164,18 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
       </div>
 
       <div className="grid grid-4" style={{ marginBottom: 20 }}>
-        <div className="card stat"><div className="stat__num">{memory.length}</div><div className="stat__label">ARQUIVOS DE MEMÓRIA</div></div>
-        <div className="card stat"><div className="stat__num">{insights.length}</div><div className="stat__label">INSIGHTS SALVOS</div></div>
-        <div className="card stat"><div className="stat__num">{summaries.length}</div><div className="stat__label">RESUMOS DIÁRIOS</div></div>
+        <div className="card stat"><div className="stat__num">{memory.length}</div><div className="stat__label">MEMORY FILES</div></div>
+        <div className="card stat"><div className="stat__num">{insights.length}</div><div className="stat__label">INSIGHTS SAVED</div></div>
+        <div className="card stat"><div className="stat__num">{summaries.length}</div><div className="stat__label">DAILY SUMMARIES</div></div>
         <div className="card stat">
           <div className="stat__num" style={{ fontSize: 15, paddingTop: 6 }}>{config?.ai?.provider ?? '—'}</div>
-          <div className="stat__label">PROVIDER DE IA{config?.ai?.model ? ` · ${config.ai.model}` : ''}</div>
+          <div className="stat__label">AI PROVIDER{config?.ai?.model ? ` · ${config.ai.model}` : ''}</div>
         </div>
       </div>
 
       <div className="grid grid-2">
         <div className="card card-pad">
-          <h2>Últimos insights</h2>
+          <h2>Latest insights</h2>
           {latestInsight ? (
             <div style={{ marginTop: 14 }}>
               <div className="faint mono" style={{ fontSize: 11, marginBottom: 10 }}>{latestInsight.date}</div>
@@ -180,7 +201,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
         </div>
 
         <div className="card card-pad">
-          <h2>Resumo mais recente</h2>
+          <h2>Latest summary</h2>
           {latestSummary ? (
             <div style={{ marginTop: 14 }}>
               <div className="faint mono" style={{ fontSize: 11, marginBottom: 10 }}>{latestSummary.date}</div>
@@ -195,7 +216,19 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
       </div>
 
       <div className="card card-pad" style={{ marginTop: 16 }}>
-        <h2>Memory ({memory.length} files)</h2>
+        <h2>
+          Memory ({memory.length} files)
+          {tiers && (
+            <span className="faint mono" style={{ fontSize: 10.5, fontWeight: 400, marginLeft: 10 }}>
+              short {tiers.shortTerm} · medium {tiers.mediumTerm} · long {tiers.longTerm} · sleep {tiers.sleepCycles}
+            </span>
+          )}
+          {sync?.connected && (
+            <span className="faint mono" style={{ fontSize: 10.5, fontWeight: 400, marginLeft: 10, color: sync.pending ? 'var(--amber)' : 'var(--lime)' }}>
+              {sync.syncing ? '↻ syncing…' : sync.pending ? `⇡ ${sync.pending} to push` : '✓ github synced'}
+            </span>
+          )}
+        </h2>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
           {memory.slice(0, 60).map((m: any) => (
             <details key={m.path} className="insight-item" style={{ cursor: 'pointer' }}>

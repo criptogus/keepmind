@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import BrainCore from './components/BrainCore'
-import { BrainMark, IconDashboard, IconChat, IconAgents, IconPlug, IconSettings } from './components/icons'
+import { BrainMark, IconDashboard, IconChat, IconAgents, IconPlug, IconSettings, IconClock } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
 import Agents from './components/Agents'
 import Connectors from './components/Connectors'
+import Automations from './components/Automations'
 import Settings from './components/Settings'
 
-type View = 'dashboard' | 'chat' | 'agents' | 'connectors' | 'settings'
+type View = 'dashboard' | 'chat' | 'agents' | 'connectors' | 'automations' | 'settings'
 
 interface Agent { id: string; name: string; emoji: string; persona: string; builtin?: boolean }
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
@@ -18,6 +19,7 @@ const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Elemen
   { id: 'chat', label: 'Chat', Icon: IconChat },
   { id: 'agents', label: 'Agents', Icon: IconAgents },
   { id: 'connectors', label: 'Connectors', Icon: IconPlug },
+  { id: 'automations', label: 'Automations', Icon: IconClock },
   { id: 'settings', label: 'Settings', Icon: IconSettings }
 ]
 
@@ -127,6 +129,7 @@ export default function App() {
         {view === 'chat' && <Chat agents={agents} onActivity={pulse} />}
         {view === 'agents' && <Agents agents={agents} onChanged={loadConfig} onToast={toast} />}
         {view === 'connectors' && <Connectors onActivity={pulse} onToast={toast} />}
+        {view === 'automations' && <Automations onActivity={pulse} onToast={toast} />}
         {view === 'settings' && <Settings onToast={toast} onActivity={pulse} />}
       </main>
 

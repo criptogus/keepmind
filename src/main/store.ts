@@ -40,6 +40,20 @@ export interface McpServerConfig {
   sessionDir?: string
 }
 
+export interface Automation {
+  id: string
+  name: string
+  instruction: string          // what the brain should do (natural language)
+  kind: 'brain' | 'sleep' | 'summary'
+  schedule: 'daily' | 'interval' | 'weekly'
+  time?: string                // 'HH:MM' for daily/weekly
+  everyMinutes?: number        // for interval
+  weekday?: number             // 0=Sun..6=Sat for weekly
+  enabled: boolean
+  lastRunAt?: string
+  createdAt: string
+}
+
 export interface AppConfig {
   onboardingDone: boolean
   ai: AiProviderConfig
@@ -47,6 +61,7 @@ export interface AppConfig {
   github: GitHubConfig
   mcpServers: McpServerConfig[]
   agents: AgentPersona[]
+  automations: Automation[]
   memoryDir?: string
 }
 
@@ -78,7 +93,8 @@ function defaultConfig(): AppConfig {
       { id: 'telegram', name: 'Telegram', kind: 'telegram', enabled: false },
       { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
     ],
-    agents: DEFAULT_AGENTS
+    agents: DEFAULT_AGENTS,
+    automations: []
   }
 }
 
@@ -102,6 +118,7 @@ export class Store {
         merged.localLlm = { ...defaultConfig().localLlm, ...raw.localLlm }
         merged.github = { ...defaultConfig().github, ...raw.github }
         merged.agents = raw.agents?.length ? raw.agents : DEFAULT_AGENTS
+        merged.automations = raw.automations ?? []
         return merged
       }
     } catch { /* corrupt config -> defaults */ }

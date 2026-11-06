@@ -81,12 +81,16 @@ export async function createRepo(token: string, name: string, description: strin
   return repo as { full_name: string; html_url: string; clone_url: string; default_branch: string }
 }
 
-export async function pushFile(cfg: GitHubConfig, path: string, content: string, message: string) {
-  if (!cfg.accessToken) throw new Error('GitHub not connected')
+function repoCoords(cfg: GitHubConfig): { owner: string; repo: string; branch: string } {
   const [owner, repo] = (cfg.repoOwner && cfg.repoName)
     ? [cfg.repoOwner, cfg.repoName]
     : (cfg.repoUrl ?? '').replace(/\.git$/, '').split('/').slice(-2)
-  const branch = cfg.defaultBranch ?? 'main'
+  return { owner, repo, branch: cfg.defaultBranch ?? 'main' }
+}
+
+export async function pushFile(cfg: GitHubConfig, path: string, content: string, message: string) {
+  if (!cfg.accessToken) throw new Error('GitHub not connected')
+  const { owner, repo, branch } = repoCoords(cfg)
   const encoded = encodeURIComponent(path)
   const apiPath = `/repos/${owner}/${repo}/contents/${encoded}`
 
@@ -112,5 +116,36 @@ export async function listRepoFiles(cfg: GitHubConfig, dir = ''): Promise<string
     return (items as any[]).map(i => i.path)
   } catch {
     return []
+  }
+}
+
+// ── Bidirectional sync helpers ──
+
+export interface RemoteFile { path: string; sha: string }
+
+// Recursive git tree under `prefix` (e.g. 'memory/'). Returns blob entries only.
+export async function listTree(cfg: GitHubConfig, prefix = 'memory/'): Promise<RemoteFile[]> {
+  if (!cfg.accessToken) return []
+  try {
+    const { owner, repo } = repoCoords(cfg)
+    const tree = await apiGet(`/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`, cfg.accessToken)
+    return ((tree.tree ?? []) as any[])
+      .filter(t => t.type === 'blob' && t.path?.startsWith(prefix))
+      .map(t => ({ path: t.path.slice(prefix.length), sha: t.sha }))
+  } catch {
+    return []
+  }
+}
+
+// Fetch a single file's content + blob sha (paths are relative to memory/).
+export async function fetchMemoryFile(cfg: GitHubConfig, relPath: string): Promise<{ content: string; sha: string } | null> {
+  if (!cfg.accessToken) return null
+  try {
+    const { owner, repo, branch } = repoCoords(cfg)
+    const data = await apiGet(`/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(relPath)}?ref=${branch}`, cfg.accessToken)
+    const content = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8')
+    return { content, sha: data.sha }
+  } catch {
+    return null
   }
 }
