@@ -8,6 +8,7 @@ import Agents from './components/Agents'
 import Connectors from './components/Connectors'
 import Automations from './components/Automations'
 import Settings from './components/Settings'
+import Login from './components/Login'
 
 type View = 'dashboard' | 'chat' | 'agents' | 'connectors' | 'automations' | 'settings'
 
@@ -29,6 +30,7 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [activity, setActivity] = useState(0)
+  const [authState, setAuthState] = useState<{ needsSetup: boolean; user: any } | null>(null)
 
   const toast = useCallback((msg: string, kind: Toast['kind'] = 'info') => {
     const id = Date.now() + Math.random()
@@ -47,13 +49,30 @@ export default function App() {
     setAgents(c.agents ?? [])
   }, [])
 
-  useEffect(() => { loadConfig() }, [loadConfig])
+  useEffect(() => {
+    loadConfig()
+    window.sb.authState?.().then(setAuthState).catch(() => setAuthState({ needsSetup: false, user: { id: 0, email: 'local', name: 'Local' } }))
+  }, [loadConfig])
 
   // decay neural activity
   useEffect(() => {
     const t = setInterval(() => setActivity(a => Math.max(0, a - 0.04)), 200)
     return () => clearInterval(t)
   }, [])
+
+  if (authState && !authState.user) {
+    return (
+      <Login
+        needsSetup={authState.needsSetup}
+        googleConfigured={!!(config?.auth?.googleClientId && config?.auth?.googleClientSecret)}
+        onDone={async () => {
+          const s = await window.sb.authState()
+          setAuthState(s)
+          await loadConfig()
+        }}
+      />
+    )
+  }
 
   if (!config) {
     return (

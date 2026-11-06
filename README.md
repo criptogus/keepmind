@@ -26,6 +26,13 @@ Second Brain is a desktop app (Electron) that gives you a persistent, *yours-onl
 - **🧠 Local AI, zero cloud required** — bundles [llama.cpp](https://github.com/ggml-org/llama.cpp) and downloads an open-source GGUF model (Qwen2.5, Llama 3.2, SmolLM2) on first run. Works fully offline. Claude / OpenAI / Gemini / Ollama also supported via BYOK.
 - **💾 Memory you own** — every conversation, insight and summary is stored as Markdown in a **private GitHub repo created for you** via OAuth device flow. Portable, versioned, yours.
 - **🔌 Connectors (MCP)** — WhatsApp via QR code (Baileys), Telegram bot, Postgres read-only, and *any* custom MCP server you add.
+- **🔁 Continuous GitHub sync** — the repo is the source of truth: every local memory write pushes in seconds, remote changes (written by Claude, Codex, Grok…) pull down automatically, before every chat.
+- **🧠 Tiered memory + sleep cycles** — short/medium/long-term memory like a real brain. The nightly "sleep" cycle reviews the day (what works, what to fix, what to stop, what to start) and distills facts, lessons and reusable skills into long-term memory.
+- **⚡ Natural-language automations** — "every day at 8am summarize my whatsapp" becomes a scheduled cron. Daily/interval/weekly, pause/resume/run-now.
+- **🔐 Local accounts + Google sign-in** — SQLite auth (scrypt), PKCE loopback Google OAuth, session tokens. Your data stays on your machine.
+- **🧮 Local semantic memory (RAG)** — optional embedding model (BGE/Nomic via llama.cpp) gives the brain meaning-based recall over everything it remembers — fully offline.
+- **🤖 More AI providers** — bundled local model, **Codex/ChatGPT sign-in** (reuses `codex login`), **Claude Pro/Max** via `claude setup-token`, plus API keys for Anthropic, OpenAI, Gemini, Grok (xAI) and Ollama.
+- **💳 Pro plan** — $19/mo via Stripe Payment Link (configurable in Settings).
 - **🎭 Specialist agents** — chat with Warren Buffett, Bill Gates, Elon Musk, Naval Ravikant, Steve Jobs — or build your own personas. They answer with your full second-brain context.
 - **✨ Neural UI** — a procedural synapse visualization (cyan/lime/amber on black) that literally *fires* when things happen in the app.
 - **📋 Insights & daily summaries** — the brain analyzes your memory and surfaces what matters, automatically once a day.
@@ -47,7 +54,10 @@ Second Brain is a desktop app (Electron) that gives you a persistent, *yours-onl
 │  │ insights │ │ provider │ │ repo sync│ │ telegram ·  │ │
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ │ postgres ·  │ │
 │       │            │            │       │ custom      │ │
-│       └────────────┴────────────┴───────┴──────┬──────┘ │
+│  ┌────┴────────────┴────────────┴───────┴──────┬──────┘ │
+│  │ GitSync ⇄ repo · Auth (SQLite) · Automations │        │
+│  │ scheduler · RAG embeddings (llama-server :8766)      │
+│  └─────────────────────────────────────────────┴────────┘ │
 └────────────────────────────────────────────────┼────────┘
                                                  │ stdio JSON-RPC
               ┌──────────────────────────────────┼───────────┐

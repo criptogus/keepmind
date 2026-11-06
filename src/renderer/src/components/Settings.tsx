@@ -8,8 +8,11 @@ interface Props {
 
 const PROVIDERS = [
   { id: 'local', emoji: '🏠', name: 'Local (built-in)', desc: 'Runs on your machine via llama.cpp. Private, offline.' },
-  { id: 'anthropic', emoji: '🧠', name: 'Claude', desc: 'Anthropic API key. Best reasoning quality.' },
+  { id: 'codex', emoji: '🟢', name: 'Codex / ChatGPT', desc: 'Reuses your Codex CLI login. No key needed.' },
+  { id: 'claude-oauth', emoji: '🧠', name: 'Claude (sign-in)', desc: 'Claude Pro/Max via `claude setup-token`.' },
+  { id: 'anthropic', emoji: '🔑', name: 'Claude API', desc: 'Anthropic API key. Pay-per-token.' },
   { id: 'openai', emoji: '⚡', name: 'OpenAI', desc: 'OpenAI API key (GPT-4o, o-series).' },
+  { id: 'grok', emoji: '𝕏', name: 'Grok', desc: 'xAI API key from console.x.ai.' },
   { id: 'gemini', emoji: '✨', name: 'Gemini', desc: 'Free API key from Google AI Studio.' },
   { id: 'ollama', emoji: '🦙', name: 'Ollama', desc: 'Uses your existing Ollama install.' }
 ]
@@ -144,12 +147,36 @@ export default function Settings({ onToast, onActivity }: Props) {
                 {busy ? 'WORKING…' : '⬇ DOWNLOAD & START LOCAL MODEL'}
               </button>
             </div>
+          ) : provider === 'codex' ? (
+            <div>
+              <CodexStatus />
+              {currentProvider?.models?.length > 0 && (
+                <div className="field" style={{ marginTop: 14 }}>
+                  <label>Model</label>
+                  <select value={model} onChange={e => setModel(e.target.value)}>
+                    <option value="">default</option>
+                    {currentProvider.models.map((m: string) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <div className="field">
-                <label>API key</label>
+                <label>{provider === 'claude-oauth' ? 'Claude token' : 'API key'}</label>
                 <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
-                  placeholder={provider === 'anthropic' ? 'sk-ant-…' : provider === 'openai' ? 'sk-…' : provider === 'gemini' ? 'AIza…' : 'http://localhost:11434'} />
+                  placeholder={
+                    provider === 'anthropic' ? 'sk-ant-…' :
+                    provider === 'claude-oauth' ? 'sk-ant-oat01-… (from `claude setup-token`)' :
+                    provider === 'openai' ? 'sk-…' :
+                    provider === 'grok' ? 'xai-… (console.x.ai)' :
+                    provider === 'gemini' ? 'AIza…' : 'http://localhost:11434'} />
+                {provider === 'claude-oauth' && (
+                  <span className="hint">Run <code>claude setup-token</code> — it prints a long-lived token for your Claude Pro/Max plan.</span>
+                )}
+                {provider === 'grok' && (
+                  <span className="hint">Create a key at console.x.ai → API Keys.</span>
+                )}
               </div>
               {currentProvider?.models?.length > 0 && provider !== 'ollama' && (
                 <div className="field">
@@ -198,6 +225,15 @@ export default function Settings({ onToast, onActivity }: Props) {
           </button>
         </div>
 
+        {/* Account & Google sign-in */}
+        <AccountCard onToast={onToast} />
+
+        {/* Pro / billing */}
+        <ProCard onToast={onToast} />
+
+        {/* Semantic memory (RAG) */}
+        <RagCard onToast={onToast} onActivity={onActivity} />
+
         {/* About */}
         <div className="card card-pad">
           <h2 style={{ marginBottom: 14 }}>About</h2>
@@ -214,5 +250,231 @@ export default function Settings({ onToast, onActivity }: Props) {
         </div>
       </div>
     </div>
+  )
+}
+
+function AccountCard({ onToast }: { onToast: Props['onToast'] }) {
+  const [auth, setAuth] = useState<any>(null)
+  const [pro, setPro] = useState<any>(null)
+  const [gId, setGId] = useState('')
+  const [gSecret, setGSecret] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    window.sb.authState?.().then(setAuth).catch(() => {})
+    window.sb.getConfig?.().then((c: any) => {
+      setGId(c?.auth?.googleClientId ?? '')
+    }).catch(() => {})
+  }, [])
+
+  const saveGoogle = async () => {
+    setBusy(true)
+    try {
+      await window.sb.authSetGoogleCreds(gId, gSecret)
+      onToast('Google sign-in configured ✓', 'success')
+    } catch (e: any) { onToast(String(e?.message ?? e), 'error') }
+    finally { setBusy(false) }
+  }
+
+  const logout = async () => {
+    await window.sb.authLogout()
+    location.reload()
+  }
+
+  return (
+    <div className="card card-pad">
+      <h2 style={{ marginBottom: 14 }}>Account & Google sign-in</h2>
+      {auth?.user ? (
+        <p style={{ fontSize: 13, marginBottom: 12 }}>
+          Signed in as <strong>{auth.user.name || auth.user.email}</strong>{' '}
+          <span className="faint mono" style={{ fontSize: 11 }}>({auth.user.email})</span>
+        </p>
+      ) : (
+        <p className="faint" style={{ fontSize: 12.5, marginBottom: 12 }}>Not signed in.</p>
+      )}
+      <div className="field">
+        <label>Google OAuth client ID</label>
+        <input value={gId} onChange={e => setGId(e.target.value)} placeholder="xxxx.apps.googleusercontent.com" />
+      </div>
+      <div className="field">
+        <label>Client secret</label>
+        <input type="password" value={gSecret} onChange={e => setGSecret(e.target.value)} placeholder="GOCSPX-…" />
+        <span className="hint">
+          Google Cloud Console → APIs & Services → Credentials → OAuth client (type: <strong>Desktop app</strong>).
+          Add <code>http://127.0.0.1</code> as authorized redirect origin is not needed — the app uses a loopback port.
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button className="btn" onClick={saveGoogle} disabled={busy}>SAVE GOOGLE CREDS</button>
+        {auth?.user && <button className="btn btn--ghost" onClick={logout}>SIGN OUT</button>}
+      </div>
+      {pro && <span className="faint" style={{ display: 'none' }}>{JSON.stringify(pro)}</span>}
+    </div>
+  )
+}
+
+function ProCard({ onToast }: { onToast: Props['onToast'] }) {
+  const [pro, setPro] = useState<any>(null)
+  const [url, setUrl] = useState('')
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    window.sb.billingStatus?.().then((p: any) => { setPro(p); setUrl(p?.paymentUrl ?? '') }).catch(() => {})
+  }, [])
+
+  const saveUrl = async () => {
+    await window.sb.billingSetPaymentUrl(url)
+    onToast('Payment link saved', 'success')
+  }
+  const activate = async () => {
+    setBusy(true)
+    try {
+      const p = await window.sb.billingActivate(key.trim() || 'manual')
+      setPro(p); onToast('Pro activated ✓', 'success')
+    } catch (e: any) { onToast(String(e?.message ?? e), 'error') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card card-pad" style={{ borderColor: pro?.active ? 'rgba(163,230,53,.35)' : undefined }}>
+      <h2 style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+        Second Brain Pro {pro?.active && <span className="chip" style={{ borderColor: 'rgba(163,230,53,.4)', color: 'var(--lime)' }}>active</span>}
+      </h2>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
+        <strong style={{ color: 'var(--text)' }}>$19/month</strong> — supports development and unlocks
+        cloud sync extras. Billed via Stripe.
+      </p>
+      <div className="field">
+        <label>Stripe Payment Link</label>
+        <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://buy.stripe.com/…" />
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <button className="btn btn--ghost" onClick={saveUrl} disabled={!url}>SAVE LINK</button>
+        {url && <button className="btn btn--primary" onClick={() => window.sb.openExternal(url)}>⬈ GO PRO — $19/MO</button>}
+      </div>
+      <div className="field" style={{ marginTop: 14, marginBottom: 0 }}>
+        <label>Have a license key?</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input value={key} onChange={e => setKey(e.target.value)} placeholder="SB-…" style={{ flex: 1 }} />
+          <button className="btn btn--sm" onClick={activate} disabled={busy || !key.trim()}>ACTIVATE</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RagCard({ onToast, onActivity }: { onToast: Props['onToast']; onActivity?: () => void }) {
+  const [rag, setRag] = useState<any>(null)
+  const [local, setLocal] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<any>(null)
+
+  const refresh = async () => {
+    const [r, l] = await Promise.all([window.sb.ragStatus?.() ?? null, window.sb.localLlmStatus()])
+    setRag(r); setLocal(l)
+  }
+  useEffect(() => {
+    refresh()
+    const off = window.sb.onLocalLlmProgress?.(setProgress)
+    return off
+  }, [])
+
+  const setup = async (modelId: string) => {
+    setBusy(true); onActivity?.()
+    try {
+      const s = await window.sb.ragSetup(modelId)
+      setRag(s)
+      onToast('Semantic memory ready 🧠', 'success')
+    } catch (e: any) { onToast(String(e?.message ?? e), 'error') }
+    finally { setBusy(false); setProgress(null) }
+  }
+
+  const reindex = async () => {
+    setBusy(true)
+    try { await window.sb.ragReindex(); await refresh(); onToast('Memory re-indexed', 'success') }
+    catch (e: any) { onToast(String(e?.message ?? e), 'error') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card card-pad">
+      <h2 style={{ marginBottom: 6 }}>Semantic memory (local RAG)</h2>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
+        Embeds your memory locally (llama.cpp) and injects the most relevant chunks into every chat —
+        the brain recalls by <em>meaning</em>, not just recency. ~65–300MB one-time download, fully offline.
+      </p>
+      {rag?.available ? (
+        <div>
+          <p style={{ fontSize: 13, marginBottom: 10 }}>
+            {rag.running
+              ? <span style={{ color: 'var(--green)' }}>● embedding server running</span>
+              : <span className="faint">○ embedding server stopped (starts on launch)</span>}
+            <span className="faint mono" style={{ fontSize: 11, marginLeft: 10 }}>
+              {rag.embedded}/{rag.chunks} chunks indexed
+            </span>
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn" onClick={reindex} disabled={busy}>RE-INDEX MEMORY</button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          {(local?.embedCatalog ?? EMBED_MODELS_FALLBACK).map((m: any) => (
+            <label key={m.id} style={{ display: 'flex', gap: 10, padding: '8px 0', alignItems: 'flex-start', cursor: 'pointer' }}>
+              <input type="radio" name="embed-model" style={{ marginTop: 3 }} />
+              <span>
+                <strong style={{ fontSize: 13 }}>{m.label}</strong>
+                <span className="faint" style={{ fontSize: 11.5 }}> · ~{m.sizeMB} MB</span>
+              </span>
+              <button
+                className="btn btn--sm"
+                style={{ marginLeft: 'auto' }}
+                disabled={busy}
+                onClick={() => setup(m.id)}
+              >
+                {busy && progress?.kind === 'embed' ? 'DOWNLOADING…' : 'ENABLE'}
+              </button>
+            </label>
+          ))}
+          {progress?.kind === 'embed' && progress.total > 0 && (
+            <div className="progress-bar" style={{ marginTop: 8 }}>
+              <div style={{ width: `${Math.min(100, ((progress.downloaded ?? 0) / progress.total) * 100)}%` }} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const EMBED_MODELS_FALLBACK = [
+  { id: 'bge-small', label: 'BGE Small EN v1.5', sizeMB: 64 },
+  { id: 'nomic-embed', label: 'Nomic Embed Text v1.5', sizeMB: 85 }
+]
+
+function CodexStatus() {
+  const [s, setS] = useState<any>(null)
+  useEffect(() => {
+    window.sb.aiCodexStatus?.().then(setS).catch(() => {})
+  }, [])
+  if (!s) return <div className="faint" style={{ fontSize: 12.5 }}>Checking Codex CLI login…</div>
+  if (!s.loggedIn) {
+    return (
+      <div>
+        <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+          No Codex login found. Install the <strong>Codex CLI</strong> and run{' '}
+          <code className="mono">codex login</code> — Second Brain reuses that session. No API key needed.
+        </p>
+        <button className="btn btn--ghost" style={{ marginTop: 10 }} onClick={() => window.sb.aiCodexStatus?.().then(setS)}>
+          ↻ RE-CHECK
+        </button>
+      </div>
+    )
+  }
+  return (
+    <p style={{ fontSize: 13, color: 'var(--green)' }}>
+      ✓ Codex CLI signed in{s.email ? ` as ${s.email}` : ''}
+    </p>
   )
 }

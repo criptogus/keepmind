@@ -1,5 +1,6 @@
 appId: com.secondbrain.app
 productName: Second Brain
+icon: build/icon
 directories:
   output: dist
 files:

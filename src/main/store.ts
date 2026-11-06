@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 export interface AiProviderConfig {
-  provider: 'local' | 'anthropic' | 'openai' | 'gemini' | 'ollama'
+  provider: 'local' | 'anthropic' | 'claude-oauth' | 'openai' | 'codex' | 'gemini' | 'grok' | 'ollama'
   apiKey?: string
   model?: string
   baseUrl?: string // for ollama/local/custom endpoints
@@ -15,6 +15,7 @@ export interface LocalLlmConfig {
   port?: number          // llama-server port (default 8765)
   downloadedBytes?: number
   totalBytes?: number
+  embedModelId?: string  // embedding model for semantic memory (RAG)
 }
 
 export interface GitHubConfig {
@@ -54,6 +55,18 @@ export interface Automation {
   createdAt: string
 }
 
+export interface AuthConfig {
+  sessionToken?: string
+  googleClientId?: string
+  googleClientSecret?: string
+}
+
+export interface ProConfig {
+  active: boolean
+  key?: string
+  paymentUrl?: string   // Stripe Payment Link for the $19/mo plan
+}
+
 export interface AppConfig {
   onboardingDone: boolean
   ai: AiProviderConfig
@@ -62,6 +75,8 @@ export interface AppConfig {
   mcpServers: McpServerConfig[]
   agents: AgentPersona[]
   automations: Automation[]
+  auth: AuthConfig
+  pro: ProConfig
   memoryDir?: string
 }
 
@@ -94,7 +109,9 @@ function defaultConfig(): AppConfig {
       { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
     ],
     agents: DEFAULT_AGENTS,
-    automations: []
+    automations: [],
+    auth: {},
+    pro: { active: false }
   }
 }
 
@@ -119,6 +136,8 @@ export class Store {
         merged.github = { ...defaultConfig().github, ...raw.github }
         merged.agents = raw.agents?.length ? raw.agents : DEFAULT_AGENTS
         merged.automations = raw.automations ?? []
+        merged.auth = { ...defaultConfig().auth, ...raw.auth }
+        merged.pro = { ...defaultConfig().pro, ...raw.pro }
         return merged
       }
     } catch { /* corrupt config -> defaults */ }

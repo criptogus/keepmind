@@ -58,6 +58,36 @@ export const LOCAL_MODELS: LocalModel[] = [
 
 const LLAMA_CPP_TAG = 'b5590' // pinned llama.cpp release; bump periodically
 
+// Embedding models for local semantic memory search (RAG).
+// Served by a second llama-server instance with --embeddings on port 8766.
+export interface EmbedModel {
+  id: string
+  label: string
+  sizeMB: number
+  hfRepo: string
+  hfFile: string
+  dims: number
+}
+
+export const EMBED_MODELS: EmbedModel[] = [
+  {
+    id: 'bge-small',
+    label: 'BGE Small EN v1.5',
+    sizeMB: 64,
+    hfRepo: 'CompendiumLabs/bge-small-en-v1.5-gguf',
+    hfFile: 'bge-small-en-v1.5-f16.gguf',
+    dims: 384
+  },
+  {
+    id: 'nomic-embed',
+    label: 'Nomic Embed Text v1.5',
+    sizeMB: 85,
+    hfRepo: 'nomic-ai/nomic-embed-text-v1.5-GGUF',
+    hfFile: 'nomic-embed-text-v1.5.Q4_K_M.gguf',
+    dims: 768
+  }
+]
+
 interface PlatformAsset { os: string; arch: string; name: string; url: string }
 
 function platformAsset(): PlatformAsset {
@@ -93,6 +123,7 @@ function platformAsset(): PlatformAsset {
 export class LocalLlm {
   private store: Store
   private proc: ChildProcess | null = null
+  private embedProc: ChildProcess | null = null
   private rootDir: string
   private modelsDir: string
   private binDir: string
@@ -212,7 +243,9 @@ export class LocalLlm {
 
   async stop() {
     try { this.proc?.kill('SIGTERM') } catch { /* noop */ }
+    try { this.embedProc?.kill('SIGTERM') } catch { /* noop */ }
     this.proc = null
+    this.embedProc = null
   }
 
   get isRunning(): boolean { return !!this.proc && !this.proc.killed }
@@ -220,6 +253,83 @@ export class LocalLlm {
   get endpoint(): string {
     const port = this.cfg.port ?? 8765
     return `http://127.0.0.1:${port}/v1`
+  }
+
+  // ── Embeddings (semantic memory / RAG) ──
+
+  get embedPort(): number { return 8766 }
+
+  get embedEndpoint(): string { return `http://127.0.0.1:${this.embedPort}/v1` }
+
+  get embedModelId(): string | undefined { return this.cfg.embedModelId }
+
+  getEmbedModelPath(modelId?: string): string {
+    const id = modelId ?? this.cfg.embedModelId ?? EMBED_MODELS[0].id
+    return join(this.modelsDir, `embed-${id}.gguf`)
+  }
+
+  isEmbedModelDownloaded(modelId?: string): boolean {
+    const p = this.getEmbedModelPath(modelId)
+    return existsSync(p) && statSync(p).size > 10_000_000
+  }
+
+  async downloadEmbedModel(modelId: string, onProgress?: (downloaded: number, total: number) => void): Promise<string> {
+    const model = EMBED_MODELS.find(m => m.id === modelId)
+    if (!model) throw new Error(`Unknown embedding model: ${modelId}`)
+    const dest = this.getEmbedModelPath(modelId)
+    if (existsSync(dest) && statSync(dest).size > 10_000_000) return dest
+    const url = `https://huggingface.co/${model.hfRepo}/resolve/main/${model.hfFile}`
+    await download(url, dest, (_pct, dl, total) => onProgress?.(dl, total ?? model.sizeMB * 1e6))
+    this.store.updateLocalLlm({ embedModelId: modelId })
+    return dest
+  }
+
+  async ensureEmbedRunning(): Promise<boolean> {
+    const id = this.cfg.embedModelId ?? EMBED_MODELS[0].id
+    const port = this.embedPort
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1500) })
+      if (res.ok) return true
+    } catch { /* not running */ }
+    const bin = this.getServerBinary()
+    const modelPath = this.getEmbedModelPath(id)
+    if (!bin || !existsSync(modelPath)) return false
+    this.embedProc = spawn(bin, [
+      '-m', modelPath,
+      '--port', String(port),
+      '--host', '127.0.0.1',
+      '--embeddings'
+    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+    this.embedProc.stdout?.on('data', d => console.log('[llama-embed]', d.toString().trim()))
+    this.embedProc.stderr?.on('data', d => console.log('[llama-embed:err]', d.toString().trim()))
+    for (let i = 0; i < 90; i++) {
+      await new Promise(r => setTimeout(r, 1000))
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1000) })
+        if (res.ok) return true
+      } catch { /* keep waiting */ }
+      if (this.embedProc.killed) return false
+    }
+    return false
+  }
+
+  async embed(texts: string[]): Promise<number[][] | null> {
+    if (!texts.length) return []
+    try {
+      const res = await fetch(`${this.embedEndpoint}/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'embed', input: texts.slice(0, 32) }),
+        signal: AbortSignal.timeout(30_000)
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      return (data.data ?? []).map((d: any) => d.embedding as number[])
+    } catch { return null }
+  }
+
+  get embedReady(): boolean {
+    return this.isEmbedModelDownloaded() && !!this.embedProc && !this.embedProc.killed
   }
 }
 

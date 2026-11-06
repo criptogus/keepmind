@@ -4,9 +4,12 @@ import { join } from 'node:path'
 import { Store, type Automation } from './store'
 import { Brain } from './services/brain'
 import { McpManager } from './services/mcp'
-import { LocalLlm, LOCAL_MODELS } from './services/local-llm'
+import { LocalLlm, LOCAL_MODELS, EMBED_MODELS } from './services/local-llm'
 import { GitSync } from './services/sync'
 import { AutomationScheduler, parseNaturalSchedule } from './services/automations'
+import { AuthService } from './services/auth'
+import { googleLogin } from './services/google-auth'
+import type { RagService } from './services/rag'
 import * as llm from './services/llm'
 import * as github from './services/github'
 
@@ -16,7 +19,9 @@ export function registerIpc(
   mcp: McpManager | null,
   localLlm: LocalLlm | null,
   sync: GitSync | null = null,
-  automations: AutomationScheduler | null = null
+  automations: AutomationScheduler | null = null,
+  auth: AuthService | null = null,
+  rag: RagService | null = null
 ) {
   // ── Config ──
   ipcMain.handle('config:get', () => store.get())
@@ -30,6 +35,7 @@ export function registerIpc(
 
   // ── AI providers ──
   ipcMain.handle('ai:providers', () => llm.listProviders())
+  ipcMain.handle('ai:codexStatus', () => llm.codexStatus())
   ipcMain.handle('ai:test', async (e, provider: any) => {
     try {
       if (provider.provider === 'local' && localLlm) {
@@ -53,7 +59,8 @@ export function registerIpc(
     running: localLlm?.isRunning ?? false,
     endpoint: localLlm?.endpoint,
     config: store.get().localLlm,
-    currentModelDownloaded: localLlm ? localLlm.isModelDownloaded() : false
+    currentModelDownloaded: localLlm ? localLlm.isModelDownloaded() : false,
+    embedCatalog: EMBED_MODELS
   }))
   ipcMain.handle('localllm:downloadServer', async (e) => {
     if (!localLlm) throw new Error('no local llm')
@@ -213,6 +220,73 @@ export function registerIpc(
     const memDir = store.memoryDir
     return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 4000) }))
   })
+
+  // ── Auth (local accounts + Google sign-in) ──
+  ipcMain.handle('auth:state', async () => {
+    if (!auth) return { needsSetup: false, user: null }
+    const token = store.get().auth.sessionToken
+    const user = await auth.userByToken(token)
+    return { needsSetup: !(await auth.hasUsers()), user }
+  })
+  ipcMain.handle('auth:register', async (_e, email: string, password: string, name: string) => {
+    if (!auth) throw new Error('auth unavailable')
+    const user = await auth.register(email, password, name)
+    const token = await auth.createSession(user.id)
+    store.set({ auth: { ...store.get().auth, sessionToken: token } })
+    return user
+  })
+  ipcMain.handle('auth:login', async (_e, email: string, password: string) => {
+    if (!auth) throw new Error('auth unavailable')
+    const user = await auth.verifyPassword(email, password)
+    if (!user) throw new Error('Invalid email or password')
+    const token = await auth.createSession(user.id)
+    store.set({ auth: { ...store.get().auth, sessionToken: token } })
+    return user
+  })
+  ipcMain.handle('auth:logout', async () => {
+    const token = store.get().auth.sessionToken
+    if (auth && token) await auth.deleteSession(token)
+    store.set({ auth: { ...store.get().auth, sessionToken: undefined } })
+    return true
+  })
+  ipcMain.handle('auth:googleLogin', async () => {
+    if (!auth) throw new Error('auth unavailable')
+    const a = store.get().auth
+    const profile = await googleLogin({ clientId: a.googleClientId ?? '', clientSecret: a.googleClientSecret ?? '' })
+    const user = await auth.upsertGoogle(profile)
+    const token = await auth.createSession(user.id)
+    store.set({ auth: { ...store.get().auth, sessionToken: token } })
+    return user
+  })
+  ipcMain.handle('auth:setGoogleCreds', (_e, clientId: string, clientSecret: string) => {
+    store.set({ auth: { ...store.get().auth, googleClientId: clientId || undefined, googleClientSecret: clientSecret || undefined } })
+    return true
+  })
+
+  // ── Billing (Stripe Pro $19/mo) ──
+  ipcMain.handle('billing:status', () => store.get().pro)
+  ipcMain.handle('billing:setPaymentUrl', (_e, url: string) => {
+    store.set({ pro: { ...store.get().pro, paymentUrl: url || undefined } })
+    return true
+  })
+  ipcMain.handle('billing:activate', (_e, key: string) => {
+    store.set({ pro: { ...store.get().pro, active: true, key: key || 'manual' } })
+    return store.get().pro
+  })
+
+  // ── Semantic memory (local RAG) ──
+  ipcMain.handle('rag:status', () => rag?.stats ?? { available: false, running: false, chunks: 0, embedded: 0 })
+  ipcMain.handle('rag:setup', async (e, modelId: string) => {
+    if (!localLlm) throw new Error('no local llm')
+    const win = BrowserWindow.fromWebContents(e.sender)
+    await localLlm.downloadEmbedModel(modelId, (dl, total) => {
+      win?.webContents.send('localllm:progress', { kind: 'embed', downloaded: dl, total })
+    })
+    await localLlm.ensureEmbedRunning()
+    if (rag) await rag.reindex()
+    return rag?.stats ?? null
+  })
+  ipcMain.handle('rag:reindex', async () => rag ? rag.reindex() : null)
 
   // ── Window ──
   ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))

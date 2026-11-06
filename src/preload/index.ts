@@ -13,6 +13,7 @@ const api = {
 
   // ai
   aiProviders: () => ipcRenderer.invoke('ai:providers'),
+  aiCodexStatus: () => ipcRenderer.invoke('ai:codexStatus'),
   aiTest: (provider: any) => ipcRenderer.invoke('ai:test', provider),
 
   // github
@@ -39,6 +40,24 @@ const api = {
   mcpStatus: () => ipcRenderer.invoke('mcp:status'),
   whatsappQr: () => ipcRenderer.invoke('mcp:whatsappQr'),
   mcpLogs: () => ipcRenderer.invoke('mcp:logs'),
+
+  // auth
+  authState: () => ipcRenderer.invoke('auth:state'),
+  authRegister: (email: string, password: string, name: string) => ipcRenderer.invoke('auth:register', email, password, name),
+  authLogin: (email: string, password: string) => ipcRenderer.invoke('auth:login', email, password),
+  authLogout: () => ipcRenderer.invoke('auth:logout'),
+  authGoogleLogin: () => ipcRenderer.invoke('auth:googleLogin'),
+  authSetGoogleCreds: (clientId: string, clientSecret: string) => ipcRenderer.invoke('auth:setGoogleCreds', clientId, clientSecret),
+
+  // billing
+  billingStatus: () => ipcRenderer.invoke('billing:status'),
+  billingSetPaymentUrl: (url: string) => ipcRenderer.invoke('billing:setPaymentUrl', url),
+  billingActivate: (key: string) => ipcRenderer.invoke('billing:activate', key),
+
+  // rag
+  ragStatus: () => ipcRenderer.invoke('rag:status'),
+  ragSetup: (modelId: string) => ipcRenderer.invoke('rag:setup', modelId),
+  ragReindex: () => ipcRenderer.invoke('rag:reindex'),
 
   // sync
   syncStatus: () => ipcRenderer.invoke('sync:status'),

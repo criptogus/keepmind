@@ -66,7 +66,11 @@ const demo = {
       { id: 'qwen2.5-7b', label: 'Qwen2.5 7B', sizeGB: 4.7, description: 'Best quality' }
     ],
     serverDownloaded: true, running: true, endpoint: 'http://127.0.0.1:8765/v1',
-    config: { modelId: 'qwen2.5-3b' }, currentModelDownloaded: true
+    config: { modelId: 'qwen2.5-3b' }, currentModelDownloaded: true,
+    embedCatalog: [
+      { id: 'bge-small', label: 'BGE Small EN v1.5', sizeMB: 64, dims: 384 },
+      { id: 'nomic-embed', label: 'Nomic Embed Text v1.5', sizeMB: 85, dims: 768 }
+    ]
   }),
   localLlmDownloadServer: noop,
   localLlmDownloadModel: noop,
@@ -134,6 +138,19 @@ const demo = {
   automationUpdate: async (id: string, patch: any) => ({ ...demoConfig.automations[0], ...patch }),
   automationRemove: async () => true,
   automationRunNow: async () => true,
+
+  authState: async () => ({ needsSetup: false, user: { id: 1, email: 'demo@secondbrain.local', name: 'Demo User' } }),
+  authRegister: async () => ({ id: 1, email: 'demo@secondbrain.local', name: 'Demo' }),
+  authLogin: async () => ({ id: 1, email: 'demo@secondbrain.local', name: 'Demo' }),
+  authLogout: async () => true,
+  authGoogleLogin: async () => ({ id: 1, email: 'demo@secondbrain.local', name: 'Demo' }),
+  authSetGoogleCreds: async () => true,
+  billingStatus: async () => ({ active: false, paymentUrl: '' }),
+  billingSetPaymentUrl: async () => true,
+  billingActivate: async () => ({ active: true, key: 'demo' }),
+  ragStatus: async () => ({ available: true, running: true, modelId: 'bge-small', chunks: 42, embedded: 42 }),
+  ragSetup: async () => ({ available: true, running: true, chunks: 42, embedded: 42 }),
+  ragReindex: async () => ({ chunks: 42, embedded: 42 }),
 
   openExternal: noopVoid
 }

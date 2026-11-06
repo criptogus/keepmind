@@ -10,8 +10,11 @@ const STEPS = ['Welcome', 'GitHub', 'AI', 'Connectors', 'Done']
 
 const PROVIDERS = [
   { id: 'local', emoji: '🏠', name: 'Local (recommended)', desc: 'Runs on your PC, offline, private. Downloads ~2GB once.' },
-  { id: 'anthropic', emoji: '🧠', name: 'Claude', desc: 'Anthropic API key. Best answer quality.' },
+  { id: 'codex', emoji: '🟢', name: 'Codex / ChatGPT', desc: 'Uses your Codex CLI login (~/.codex). No key needed.' },
+  { id: 'claude-oauth', emoji: '🧠', name: 'Claude (sign-in)', desc: 'Claude Pro/Max — run `claude setup-token` and paste it.' },
+  { id: 'anthropic', emoji: '🔑', name: 'Claude API', desc: 'Anthropic API key. Pay-per-token.' },
   { id: 'openai', emoji: '⚡', name: 'OpenAI', desc: 'OpenAI API key (GPT-4o, o-series).' },
+  { id: 'grok', emoji: '𝕏', name: 'Grok', desc: 'xAI API key from console.x.ai.' },
   { id: 'gemini', emoji: '✨', name: 'Gemini', desc: 'Free API key from Google AI Studio.' },
   { id: 'ollama', emoji: '🦙', name: 'Ollama', desc: 'If you already have Ollama installed with models.' }
 ]
@@ -32,6 +35,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   const [localStatus, setLocalStatus] = useState<any>(null)
   const [localProgress, setLocalProgress] = useState<{ kind: string; pct?: number; downloaded?: number; total?: number; modelId?: string } | null>(null)
   const [aiTest, setAiTest] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [codexStatus, setCodexStatus] = useState<any>(null)
 
   const [waQr, setWaQr] = useState<any>(null)
   const [tgToken, setTgToken] = useState('')
@@ -40,6 +44,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
 
   useEffect(() => {
     window.sb.localLlmStatus().then(setLocalStatus)
+    window.sb.aiCodexStatus?.().then(setCodexStatus).catch(() => {})
     const off = window.sb.onLocalLlmProgress(setLocalProgress)
     window.sb.mcpStatus().then(s => {
       const map: Record<string, boolean> = {}
@@ -123,7 +128,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
       if (provider !== 'local') {
         const providers: any = await window.sb.aiProviders()
         const p = providers.find((x: any) => x.id === provider)
-        const testCfg = { provider, apiKey, model: model || p?.models?.[0] }
+        const testCfg = { provider, apiKey: apiKey || undefined, model: model || p?.models?.[0] }
         const res = await window.sb.aiTest(testCfg)
         setAiTest(res.ok ? { ok: true, msg: `Connected: ${res.reply}` } : { ok: false, msg: res.error })
         if (!res.ok) { setBusy(false); return }
@@ -171,6 +176,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
     if (step === 1) return !!ghLogin
     if (step === 2) {
       if (provider === 'local') return !!aiTest?.ok || !!config?.ai?.apiKey
+      if (provider === 'codex') return !!codexStatus?.loggedIn
       return !!apiKey.trim()
     }
     return true
@@ -349,12 +355,49 @@ export default function Wizard({ config, onDone, onToast }: Props) {
               </div>
             )}
 
-            {provider !== 'local' && (
+            {provider === 'codex' && (
+              <div className="card card-pad" style={{ marginBottom: 16, background: 'rgba(3,7,18,.6)' }}>
+                {codexStatus?.loggedIn ? (
+                  <p style={{ fontSize: 13, color: 'var(--green)' }}>
+                    ✓ Codex CLI signed in{codexStatus.email ? ` as ${codexStatus.email}` : ''}
+                    {codexStatus.accountId ? ` · account ${String(codexStatus.accountId).slice(0, 8)}…` : ''}
+                  </p>
+                ) : (
+                  <>
+                    <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+                      No Codex login found. Install the Codex CLI and run <code className="mono">codex login</code> in your
+                      terminal — Second Brain reuses that session automatically. No API key needed.
+                    </p>
+                    <button className="btn btn--ghost" style={{ marginTop: 10 }} onClick={async () => setCodexStatus(await window.sb.aiCodexStatus())}>
+                      ↻ Re-check login
+                    </button>
+                  </>
+                )}
+                {aiTest && (
+                  <p style={{ marginTop: 10, fontSize: 12.5, color: aiTest.ok ? 'var(--green)' : 'var(--red)' }}>
+                    {aiTest.ok ? '✓ ' : '✗ '}{aiTest.msg}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {provider !== 'local' && provider !== 'codex' && (
               <>
                 <div className="field">
-                  <label>API key</label>
+                  <label>{provider === 'claude-oauth' ? 'Claude token' : 'API key'}</label>
                   <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
-                    placeholder={provider === 'anthropic' ? 'sk-ant-…' : provider === 'openai' ? 'sk-…' : provider === 'gemini' ? 'AIza…' : 'http://localhost:11434'} />
+                    placeholder={
+                      provider === 'anthropic' ? 'sk-ant-…' :
+                      provider === 'claude-oauth' ? 'sk-ant-oat01-… (from `claude setup-token`)' :
+                      provider === 'openai' ? 'sk-…' :
+                      provider === 'grok' ? 'xai-… (console.x.ai)' :
+                      provider === 'gemini' ? 'AIza…' : 'http://localhost:11434'} />
+                  {provider === 'claude-oauth' && (
+                    <span className="hint">Run <code>claude setup-token</code> in your terminal — it prints a long-lived token for your Claude Pro/Max plan.</span>
+                  )}
+                  {provider === 'grok' && (
+                    <span className="hint">Create a key at console.x.ai → API Keys. Grok uses an OpenAI-compatible endpoint.</span>
+                  )}
                 </div>
                 {provider === 'ollama' && (
                   <div className="field">

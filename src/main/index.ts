@@ -6,6 +6,8 @@ import { McpManager } from './services/mcp'
 import { LocalLlm } from './services/local-llm'
 import { GitSync } from './services/sync'
 import { AutomationScheduler } from './services/automations'
+import { AuthService } from './services/auth'
+import { RagService } from './services/rag'
 import { registerIpc, pushMcpLog } from './ipc'
 
 let mainWindow: BrowserWindow | null = null
@@ -56,17 +58,27 @@ app.whenReady().then(() => {
   gitSyncGlobal = gitSync
   const autoScheduler = new AutomationScheduler(store, brain, (m) => pushMcpLog(`[auto] ${m}`))
   autoSchedulerGlobal = autoScheduler
+  const auth = new AuthService(join(app.getPath('userData'), 'second-brain'))
+  const rag = new RagService(localLlm, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
+  brain.setRag(rag)
 
   mcp.on('log', (m: any) => pushMcpLog(`[${m.serverId}] ${m.message}`))
   mcp.on('serverExit', (e: any) => pushMcpLog(`server ${e.serverId} exited (${e.code})`))
 
-  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler)
+  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag)
   createWindow()
 
   // Continuous GitHub sync — push local writes, pull remote memory
   gitSync.start()
   // Scheduled automations (natural-language crons)
   autoScheduler.start()
+
+  // Semantic memory: start the embedding server if the model is already downloaded
+  if (localLlm.isEmbedModelDownloaded()) {
+    localLlm.ensureEmbedRunning()
+      .then(ok => { if (ok) rag.reindex().catch(() => {}) })
+      .catch(e => pushMcpLog(`embed server start failed: ${e}`))
+  }
 
   // Auto-start enabled MCP servers
   for (const s of store.get().mcpServers.filter(s => s.enabled)) {

@@ -8,6 +8,7 @@ import type { AgentPersona } from '../store'
 import * as github from './github'
 import type { GitHubConfig, Store } from '../store'
 import type { GitSync } from './sync'
+import type { RagService } from './rag'
 
 // ── Memory: markdown files in the local memory dir, mirrored to the GitHub repo ──
 
@@ -122,6 +123,7 @@ export class Brain {
   private mcp: McpManager | null = null
   private localLlm: LocalLlm | null = null
   private gitSync: GitSync | null = null
+  private rag: RagService | null = null
 
   constructor(store: Store, mcp: McpManager | null, localLlm: LocalLlm | null = null) {
     this.store = store
@@ -136,10 +138,11 @@ export class Brain {
     this.gitSync = sync
     this.memory.onWrite = (rel) => sync.markDirty(rel)
   }
+  setRag(rag: RagService) { this.rag = rag }
 
   getMemory() { return this.memory }
 
-  private buildSystemContext(agent: AgentPersona): string {
+  private buildSystemContext(agent: AgentPersona, recall = ''): string {
     const cfg = this.store.get()
     const parts: string[] = [
       agent.persona,
@@ -175,6 +178,8 @@ export class Brain {
       const c = this.memory.read(`insights/${f}`)
       if (c) parts.push('', `### ${f}`, c.slice(0, 1200))
     }
+    // Semantic recall (local embeddings) — memories related to this message
+    if (recall) parts.push('', '## Relevant memories (semantic search)', recall)
     return parts.join('\n')
   }
 
@@ -228,10 +233,12 @@ export class Brain {
   async chat(agentId: string, userMessage: string, onDelta?: (t: string) => void): Promise<string> {
     // Pull freshest shared memory before answering (rate-limited internally)
     await this.gitSync?.pullIfDue().catch(() => {})
+    // Semantic recall over memory (no-op if embeddings aren't set up)
+    const recall = await this.rag?.search(userMessage).catch(() => '') ?? ''
     const cfg = this.store.get()
     const agent = cfg.agents.find(a => a.id === agentId) ?? cfg.agents[0]
     const messages: ChatMessage[] = [
-      { role: 'system', content: this.buildSystemContext(agent) },
+      { role: 'system', content: this.buildSystemContext(agent, recall) },
       { role: 'user', content: userMessage }
     ]
     const tools = this.toolDefinitions()

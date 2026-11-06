@@ -1,3 +1,6 @@
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AiProviderConfig } from '../store'
 
 // Resolve the effective provider config. The bundled 'local' provider talks to
@@ -40,17 +43,30 @@ export interface ToolDefinition {
 const MODELS: Record<string, string[]> = {
   local: ['qwen2.5-3b', 'smollm2-1.7b', 'llama3.2-3b', 'qwen2.5-7b'],
   anthropic: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
+  'claude-oauth': ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'o4-mini'],
+  codex: ['gpt-5.1-codex', 'gpt-5.1-codex-mini', 'codex-mini-latest'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+  grok: ['grok-4', 'grok-3', 'grok-3-mini'],
   ollama: ['llama3.1', 'qwen2.5', 'mistral']
 }
 
 export function listProviders() {
+  const names: Record<string, string> = {
+    local: 'Local (built-in, offline)',
+    anthropic: 'Claude API key',
+    'claude-oauth': 'Claude (Pro/Max sign-in)',
+    openai: 'OpenAI API key',
+    codex: 'Codex / ChatGPT sign-in',
+    gemini: 'Google Gemini API key',
+    grok: 'Grok (xAI API key)',
+    ollama: 'Ollama (local)'
+  }
   return Object.keys(MODELS).map(id => ({
     id,
-    name: { local: 'Local (built-in, offline)', anthropic: 'Claude (Anthropic)', openai: 'OpenAI', gemini: 'Google Gemini', ollama: 'Ollama (local)' }[id]!,
+    name: names[id]!,
     models: MODELS[id]!,
-    needsKey: id !== 'ollama' && id !== 'local'
+    needsKey: !['ollama', 'local', 'codex'].includes(id)
   }))
 }
 
@@ -156,6 +172,138 @@ async function callOllama(cfg: AiProviderConfig, messages: ChatMessage[], tools:
   return { text: msg.content ?? '', toolCalls }
 }
 
+// ── Codex (ChatGPT sign-in) ──
+// Reads credentials written by the official Codex CLI (~/.codex/auth.json)
+// and calls the same backend the CLI uses. Refreshes the access token on 401.
+
+const CODEX_AUTH_FILE = join(homedir(), '.codex', 'auth.json')
+const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann' // public Codex CLI client id
+
+interface CodexAuth {
+  tokens?: { access_token?: string; refresh_token?: string; account_id?: string }
+  last_refresh?: string
+}
+
+function readCodexAuth(): CodexAuth | null {
+  try {
+    if (!existsSync(CODEX_AUTH_FILE)) return null
+    return JSON.parse(readFileSync(CODEX_AUTH_FILE, 'utf8'))
+  } catch { return null }
+}
+
+export function codexStatus(): { loggedIn: boolean; accountId?: string; email?: string } {
+  const a = readCodexAuth()
+  if (!a?.tokens?.access_token) return { loggedIn: false }
+  let email: string | undefined
+  try {
+    const payload = JSON.parse(Buffer.from(a.tokens.access_token.split('.')[1], 'base64url').toString())
+    email = payload?.email ?? payload?.['https://api.openai.com/profile']?.email
+  } catch { /* noop */ }
+  return { loggedIn: true, accountId: a.tokens.account_id, email }
+}
+
+async function refreshCodexToken(auth: CodexAuth): Promise<boolean> {
+  const rt = auth.tokens?.refresh_token
+  if (!rt) return false
+  try {
+    const res = await fetch('https://auth.openai.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: CODEX_CLIENT_ID,
+        grant_type: 'refresh_token',
+        refresh_token: rt
+      })
+    })
+    const data = await res.json()
+    if (!data.access_token) return false
+    auth.tokens = { ...auth.tokens, access_token: data.access_token, refresh_token: data.refresh_token ?? rt }
+    auth.last_refresh = new Date().toISOString()
+    writeFileSync(CODEX_AUTH_FILE, JSON.stringify(auth, null, 2))
+    return true
+  } catch { return false }
+}
+
+async function callCodex(cfg: AiProviderConfig, messages: ChatMessage[], tools: ToolDefinition[], retried = false): Promise<LlmResponse> {
+  const auth = readCodexAuth()
+  const token = auth?.tokens?.access_token
+  if (!token) {
+    throw new Error('Codex not signed in — install the Codex CLI and run `codex login` first (credentials are read from ~/.codex/auth.json)')
+  }
+  const { system, rest } = splitSystem(messages)
+  const body: any = {
+    model: cfg.model ?? MODELS.codex[0],
+    instructions: system || 'You are a helpful assistant.',
+    input: rest.map(m => ({
+      type: 'message',
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: [{ type: m.role === 'assistant' ? 'output_text' : 'input_text', text: m.content }]
+    })),
+    tools: tools.length ? tools.map(t => ({
+      type: 'function', name: t.name, description: t.description,
+      parameters: t.parameters, strict: false
+    })) : undefined,
+    tool_choice: tools.length ? 'auto' : undefined,
+    parallel_tool_calls: false,
+    store: false,
+    stream: false
+  }
+  const res = await fetch('https://chatgpt.com/backend-api/codex/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'chatgpt-account-id': auth!.tokens!.account_id ?? '',
+      'OpenAI-Beta': 'responses=experimental',
+      'originator': 'codex_cli_rs'
+    },
+    body: JSON.stringify(body)
+  })
+  if (res.status === 401 && !retried && auth) {
+    if (await refreshCodexToken(auth)) return callCodex(cfg, messages, tools, true)
+  }
+  if (!res.ok) throw new Error(`Codex API -> ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  const data = await res.json()
+  let text = ''
+  const toolCalls: ToolCall[] = []
+  for (const item of data.output ?? []) {
+    if (item.type === 'message') {
+      for (const c of item.content ?? []) if (c.type === 'output_text') text += c.text
+    } else if (item.type === 'function_call') {
+      toolCalls.push({ id: item.call_id ?? item.id, name: item.name, arguments: safeJson(item.arguments) })
+    }
+  }
+  return { text, toolCalls }
+}
+
+// ── Claude via OAuth (Claude Pro/Max "setup-token") ──
+// The user runs `claude setup-token` in a terminal and pastes the long-lived
+// token (sk-ant-oat01-…). It authenticates against the Anthropic API with the
+// oauth beta header — same messages format as the API-key path.
+
+async function callClaudeOAuth(cfg: AiProviderConfig, messages: ChatMessage[], tools: ToolDefinition[]): Promise<LlmResponse> {
+  const { system, rest } = splitSystem(messages)
+  const body: any = {
+    model: cfg.model ?? MODELS['claude-oauth'][0],
+    max_tokens: 4096,
+    messages: rest.map(m => ({ role: m.role === 'tool' ? 'user' : m.role, content: m.content }))
+  }
+  if (system) body.system = system
+  if (tools.length) {
+    body.tools = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }))
+  }
+  const data = await post('https://api.anthropic.com/v1/messages', body, {
+    'Authorization': `Bearer ${cfg.apiKey}`,
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': 'oauth-2025-04-20'
+  })
+  const text = data.content?.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('') ?? ''
+  const toolCalls = (data.content ?? []).filter((b: any) => b.type === 'tool_use').map((b: any) => ({
+    id: b.id, name: b.name, arguments: b.input ?? {}
+  }))
+  return { text, toolCalls }
+}
+
 function splitSystem(messages: ChatMessage[]): { system: string; rest: ChatMessage[] } {
   const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
   return { system, rest: messages.filter(m => m.role !== 'system') }
@@ -172,6 +320,15 @@ export async function chat(aiCfg: AiProviderConfig, messages: ChatMessage[], too
     case 'anthropic':
       if (!cfg.apiKey) throw new Error('Anthropic API key missing')
       return callAnthropic(cfg, messages, tools)
+    case 'claude-oauth':
+      if (!cfg.apiKey) throw new Error('Claude token missing — run `claude setup-token` and paste it')
+      return callClaudeOAuth(cfg, messages, tools)
+    case 'codex':
+      return callCodex(cfg, messages, tools)
+    case 'grok': {
+      if (!cfg.apiKey) throw new Error('xAI API key missing (console.x.ai)')
+      return callOpenAI({ ...cfg, baseUrl: cfg.baseUrl ?? 'https://api.x.ai/v1' }, messages, tools)
+    }
     case 'openai':
       if (!cfg.apiKey) throw new Error('OpenAI API key missing')
       return callOpenAI(cfg, messages, tools)
