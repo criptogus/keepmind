@@ -134,7 +134,13 @@ export class GitSync {
     try {
       for (const rel of batch) {
         const content = this.memory.read(rel)
-        if (content == null) { this.dirty.delete(rel); continue }
+        if (content == null) {
+          // local deletion → propagate to GitHub
+          try { await github.deleteMemoryFile(gh, rel) } catch { /* may already be gone */ }
+          delete this.state.sha[rel]
+          this.dirty.delete(rel)
+          continue
+        }
         await github.pushFile(gh, `memory/${rel}`, content, 'sync: second-brain update')
         this.dirty.delete(rel)
         this.lastPushAt = Date.now()

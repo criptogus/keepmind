@@ -87,6 +87,34 @@ const api = {
     return () => { ipcRenderer.removeListener('brain:delta', handler) }
   },
 
+  // planner: notes / tasks / goals
+  notesList: () => ipcRenderer.invoke('notes:list'),
+  notesGet: (id: string) => ipcRenderer.invoke('notes:get', id),
+  notesSave: (id: string | null, title: string, body: string) => ipcRenderer.invoke('notes:save', id, title, body),
+  notesDelete: (id: string) => ipcRenderer.invoke('notes:delete', id),
+
+  tasksList: () => ipcRenderer.invoke('tasks:list'),
+  tasksAdd: (title: string, opts?: any) => ipcRenderer.invoke('tasks:add', title, opts),
+  tasksUpdate: (id: string, patch: any) => ipcRenderer.invoke('tasks:update', id, patch),
+  tasksToggle: (id: string) => ipcRenderer.invoke('tasks:toggle', id),
+  tasksDelete: (id: string) => ipcRenderer.invoke('tasks:delete', id),
+
+  goalsGet: (date?: string) => ipcRenderer.invoke('goals:get', date),
+  goalsAdd: (date: string, text: string) => ipcRenderer.invoke('goals:add', date, text),
+  goalsToggle: (date: string, index: number) => ipcRenderer.invoke('goals:toggle', date, index),
+  goalsRemove: (date: string, index: number) => ipcRenderer.invoke('goals:remove', date, index),
+  goalsSuggest: () => ipcRenderer.invoke('goals:suggest'),
+
+  // meetings
+  meetingStart: (opts: { topic: string; participantIds: string[]; agenda?: string }) => ipcRenderer.invoke('meeting:start', opts),
+  meetingList: () => ipcRenderer.invoke('meeting:list'),
+  meetingGet: (path: string) => ipcRenderer.invoke('meeting:get', path),
+  onMeetingEvent: (cb: (e: any) => void) => {
+    const handler = (_e: any, ev: any) => cb(ev)
+    ipcRenderer.on('meeting:event', handler)
+    return () => { ipcRenderer.removeListener('meeting:event', handler) }
+  },
+
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
 }
 

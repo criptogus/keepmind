@@ -1,24 +1,30 @@
 import { useCallback, useEffect, useState } from 'react'
 import BrainCore from './components/BrainCore'
-import { BrainMark, IconDashboard, IconChat, IconAgents, IconPlug, IconSettings, IconClock } from './components/icons'
+import { BrainMark, IconDashboard, IconChat, IconAgents, IconPlug, IconSettings, IconClock, IconToday, IconNotes, IconTasks } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
+import Today from './components/Today'
+import Notes from './components/Notes'
+import Tasks from './components/Tasks'
 import Agents from './components/Agents'
 import Connectors from './components/Connectors'
 import Automations from './components/Automations'
 import Settings from './components/Settings'
 import Login from './components/Login'
 
-type View = 'dashboard' | 'chat' | 'agents' | 'connectors' | 'automations' | 'settings'
+type View = 'today' | 'dashboard' | 'chat' | 'agents' | 'notes' | 'tasks' | 'connectors' | 'automations' | 'settings'
 
 interface Agent { id: string; name: string; emoji: string; persona: string; builtin?: boolean }
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 
 const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }[] = [
+  { id: 'today', label: 'Today', Icon: IconToday },
   { id: 'dashboard', label: 'Brain', Icon: IconDashboard },
   { id: 'chat', label: 'Chat', Icon: IconChat },
   { id: 'agents', label: 'Agents', Icon: IconAgents },
+  { id: 'notes', label: 'Notes', Icon: IconNotes },
+  { id: 'tasks', label: 'Tasks', Icon: IconTasks },
   { id: 'connectors', label: 'Connectors', Icon: IconPlug },
   { id: 'automations', label: 'Automations', Icon: IconClock },
   { id: 'settings', label: 'Settings', Icon: IconSettings }
@@ -27,7 +33,7 @@ const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Elemen
 export default function App() {
   const [config, setConfig] = useState<any>(null)
   const [agents, setAgents] = useState<Agent[]>([])
-  const [view, setView] = useState<View>('dashboard')
+  const [view, setView] = useState<View>('today')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [activity, setActivity] = useState(0)
   const [authState, setAuthState] = useState<{ needsSetup: boolean; user: any } | null>(null)
@@ -144,9 +150,12 @@ export default function App() {
       </nav>
 
       <main className="main" style={{ zIndex: 1 }}>
+        {view === 'today' && <Today onNavigate={(v) => setView(v as View)} />}
         {view === 'dashboard' && <Dashboard onActivity={pulse} />}
         {view === 'chat' && <Chat agents={agents} onActivity={pulse} />}
-        {view === 'agents' && <Agents agents={agents} onChanged={loadConfig} onToast={toast} />}
+        {view === 'agents' && <Agents agents={agents} onChanged={loadConfig} onToast={toast} onActivity={pulse} />}
+        {view === 'notes' && <Notes onActivity={pulse} />}
+        {view === 'tasks' && <Tasks onActivity={pulse} />}
         {view === 'connectors' && <Connectors onActivity={pulse} onToast={toast} />}
         {view === 'automations' && <Automations onActivity={pulse} onToast={toast} />}
         {view === 'settings' && <Settings onToast={toast} onActivity={pulse} />}

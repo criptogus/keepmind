@@ -8,6 +8,7 @@ import { GitSync } from './services/sync'
 import { AutomationScheduler } from './services/automations'
 import { AuthService } from './services/auth'
 import { RagService } from './services/rag'
+import { Planner } from './services/planner'
 import { registerIpc, pushMcpLog } from './ipc'
 
 let mainWindow: BrowserWindow | null = null
@@ -65,7 +66,8 @@ app.whenReady().then(() => {
   mcp.on('log', (m: any) => pushMcpLog(`[${m.serverId}] ${m.message}`))
   mcp.on('serverExit', (e: any) => pushMcpLog(`server ${e.serverId} exited (${e.code})`))
 
-  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag)
+  const planner = new Planner(brain.getMemory(), store, localLlm)
+  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner)
   createWindow()
 
   // Continuous GitHub sync — push local writes, pull remote memory

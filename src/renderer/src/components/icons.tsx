@@ -143,6 +143,44 @@ export function IconGithub({ size = 16 }: { size?: number }) {
   )
 }
 
+export function IconToday({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </svg>
+  )
+}
+
+export function IconNotes({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+export function IconTasks({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
+      <path d="M8 12.5l2.5 2.5L16 9.5" />
+    </svg>
+  )
+}
+
+export function IconMeeting({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <rect x="3" y="6" width="12" height="12" rx="2.5" />
+      <path d="M8 21h8M12 18v3" />
+      <circle cx="18.5" cy="10" r="2.2" />
+      <path d="M15.5 15.5c.5-1.6 1.6-2.5 3-2.5s2.5.9 3 2.5" />
+    </svg>
+  )
+}
+
 // Pulsing brain logo — two hemispheres + fold curves + expanding pulse ring.
 export function BrainMark({ size = 34 }: { size?: number }) {
   return (

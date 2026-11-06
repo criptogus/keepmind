@@ -33,6 +33,27 @@ const demoMemory = [
 ]
 
 let deltaCb: ((t: string) => void) | null = null
+let meetingCb: ((e: any) => void) | null = null
+
+// ── Demo state for planner features (notes / tasks / goals / meetings) ──
+const todayStr = () => new Date().toISOString().slice(0, 10)
+const demoNotes: any[] = [
+  { id: 'reading-list', title: 'Reading list', body: '- The Almanack of Naval Ravikant\n- Thinking in Systems\n- Deep Work', updated: '2026-11-05T10:00:00Z' },
+  { id: 'gift-ideas', title: 'Gift ideas for mom', body: '1. Photo book of grandkids\n2. That jazz box set she mentioned', updated: '2026-11-04T18:30:00Z' }
+]
+const demoTasks: any[] = [
+  { id: 't1', title: 'Reply to accountant about invoices', done: false, priority: 'high', due: todayStr(), created: '2026-11-05T09:00:00Z', notes: '' },
+  { id: 't2', title: 'Book dentist appointment', done: false, priority: 'normal', due: null, created: '2026-11-05T09:05:00Z', notes: '' },
+  { id: 't3', title: 'Renew domain superbrains.dev', done: true, priority: 'normal', due: null, created: '2026-11-01T09:00:00Z', notes: '' }
+]
+const demoGoals: any[] = [
+  { text: '90 minutes of deep work on the product', done: false },
+  { text: 'Call mom', done: true },
+  { text: 'Review tomorrow\'s calendar', done: false }
+]
+const demoMeetings: any[] = [
+  { id: '2026-11-04-launch-timing', path: 'meetings/2026-11-04-launch-timing.md', title: 'Should we launch before Q4?', date: '2026-11-04', participants: 'Warren Buffett, Elon Musk, Second Brain' }
+]
 
 const demo = {
   getConfig: async () => demoConfig,
@@ -151,6 +172,53 @@ const demo = {
   ragStatus: async () => ({ available: true, running: true, modelId: 'bge-small', chunks: 42, embedded: 42 }),
   ragSetup: async () => ({ available: true, running: true, chunks: 42, embedded: 42 }),
   ragReindex: async () => ({ chunks: 42, embedded: 42 }),
+
+  // planner demo
+  notesList: async () => demoNotes,
+  notesGet: async (id: string) => demoNotes.find(n => n.id === id) ?? null,
+  notesSave: async (id: string | null, title: string, body: string) => {
+    const n = { id: id ?? `n${Date.now()}`, title, body, updated: new Date().toISOString() }
+    const i = demoNotes.findIndex(x => x.id === n.id)
+    i >= 0 ? demoNotes[i] = n : demoNotes.unshift(n)
+    return n
+  },
+  notesDelete: async (id: string) => { const i = demoNotes.findIndex(n => n.id === id); if (i >= 0) demoNotes.splice(i, 1); return true },
+
+  tasksList: async () => demoTasks,
+  tasksAdd: async (title: string, opts: any = {}) => {
+    const t = { id: `t${Date.now()}`, title, done: false, priority: opts.priority ?? 'normal', due: opts.due ?? null, created: new Date().toISOString(), notes: opts.notes ?? '' }
+    demoTasks.unshift(t); return t
+  },
+  tasksUpdate: async (id: string, patch: any) => { const t = demoTasks.find(x => x.id === id); if (t) Object.assign(t, patch); return t },
+  tasksToggle: async (id: string) => { const t = demoTasks.find(x => x.id === id); if (t) t.done = !t.done; return t },
+  tasksDelete: async (id: string) => { const i = demoTasks.findIndex(x => x.id === id); if (i >= 0) demoTasks.splice(i, 1); return true },
+
+  goalsGet: async (date?: string) => ({ date: date ?? todayStr(), items: demoGoals }),
+  goalsAdd: async (date: string, text: string) => { demoGoals.push({ text, done: false }); return { date, items: demoGoals } },
+  goalsToggle: async (date: string, index: number) => { demoGoals[index].done = !demoGoals[index].done; return { date, items: demoGoals } },
+  goalsRemove: async (date: string, index: number) => { demoGoals.splice(index, 1); return { date, items: demoGoals } },
+  goalsSuggest: async () => ['Ship the proposal draft', '30-min walk outside', 'Review open tasks'],
+
+  meetingStart: async (opts: any) => {
+    const demoMsgs = [
+      { agentId: 'warren', text: 'Before we decide, let\'s check the math. Do we have durable demand, or are we betting on a trend? My gut says wait for one more proof point.' },
+      { agentId: 'elon', text: 'Waiting is how you die. If the bottleneck is engineering speed, hire three more people and cut scope. Launch ugly, learn fast.' },
+      { agentId: 'warren', text: 'Elon, "ugly" and "fast" killed more companies than cash did. But you\'re right that speed matters — let\'s find the minimum lovable version.' },
+      { agentId: 'elon', text: 'Exactly. Delete features until it hurts, then ship that. We can iterate in public.' }
+    ]
+    for (const m of demoMsgs) {
+      const agent = demoConfig.agents.find((a: any) => a.id === m.agentId) ?? demoConfig.agents[0]
+      meetingCb?.({ kind: 'speaker', agentId: m.agentId, name: agent.name, emoji: agent.emoji, round: 1 })
+      for (const w of m.text.split(/(\s+)/)) { meetingCb?.({ kind: 'text', agentId: m.agentId, text: w }); await new Promise(r => setTimeout(r, 12)) }
+    }
+    const path = `meetings/${todayStr()}-demo.md`
+    demoMeetings.unshift({ id: 'demo-new', path, title: opts.topic, date: todayStr(), participants: opts.participantIds.join(', ') })
+    meetingCb?.({ kind: 'done', id: 'demo-new', path })
+    return { id: 'demo-new', path, tasksCreated: 2 }
+  },
+  meetingList: async () => demoMeetings,
+  meetingGet: async () => '# Meeting — Should we launch before Q4?\n\n_2026-11-04 · participants: Warren Buffett, Elon Musk, Second Brain_\n\n## Transcript\n\n**Warren Buffett:** The short-term market is a voting machine. Do we have durable demand?\n\n**Elon Musk:** Waiting is how you die. Ship ugly, learn fast.\n\n## Moderator summary\n\n===TASKS===\n- Define MVP scope | due: 2026-11-05 | priority: high\n',
+  onMeetingEvent: (cb: (e: any) => void) => { meetingCb = cb; return () => { meetingCb = null } },
 
   openExternal: noopVoid
 }

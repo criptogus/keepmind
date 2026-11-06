@@ -137,6 +137,21 @@ export async function listTree(cfg: GitHubConfig, prefix = 'memory/'): Promise<R
   }
 }
 
+// Delete a file under memory/ (relPath is relative to memory/).
+export async function deleteMemoryFile(cfg: GitHubConfig, relPath: string) {
+  if (!cfg.accessToken) throw new Error('GitHub not connected')
+  const { owner, repo, branch } = repoCoords(cfg)
+  const apiPath = `/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(relPath)}`
+  let sha: string
+  try {
+    const existing = await apiGet(`${apiPath}?ref=${branch}`, cfg.accessToken)
+    sha = existing.sha
+  } catch {
+    return // already gone
+  }
+  await apiSend('DELETE', apiPath, cfg.accessToken, { message: 'sync: remove memory file', sha, branch })
+}
+
 // Fetch a single file's content + blob sha (paths are relative to memory/).
 export async function fetchMemoryFile(cfg: GitHubConfig, relPath: string): Promise<{ content: string; sha: string } | null> {
   if (!cfg.accessToken) return null

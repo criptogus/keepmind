@@ -33,6 +33,10 @@ Second Brain is a desktop app (Electron) that gives you a persistent, *yours-onl
 - **🧮 Local semantic memory (RAG)** — optional embedding model (BGE/Nomic via llama.cpp) gives the brain meaning-based recall over everything it remembers — fully offline.
 - **🤖 More AI providers** — bundled local model, **Codex/ChatGPT sign-in** (reuses `codex login`), **Claude Pro/Max** via `claude setup-token`, plus API keys for Anthropic, OpenAI, Gemini, Grok (xAI) and Ollama.
 - **💳 Pro plan** — $19/mo via Stripe Payment Link (configurable in Settings).
+- **📅 Today command center** — daily intentions, open tasks and quick notes on one screen. The app opens here every morning.
+- **📝 Notes** — Markdown notes in `memory/notes/`, synced and readable by every connected AI.
+- **✅ Tasks** — lightweight to-dos with due dates and priorities in `memory/tasks/`.
+- **🗣️ Agent meetings** — convene your specialists (Warren, Elon, your custom agents…) in a roundtable: they debate your topic live, the moderator extracts consensus and action items straight into Tasks.
 - **🎭 Specialist agents** — chat with Warren Buffett, Bill Gates, Elon Musk, Naval Ravikant, Steve Jobs — or build your own personas. They answer with your full second-brain context.
 - **✨ Neural UI** — a procedural synapse visualization (cyan/lime/amber on black) that literally *fires* when things happen in the app.
 - **📋 Insights & daily summaries** — the brain analyzes your memory and surfaces what matters, automatically once a day.
@@ -92,10 +96,15 @@ First launch walks you through a 4-step wizard:
 
 ```
 memory/
-├── INDEX.md                  # table of contents (created on demand)
-├── inbox/YYYY-MM-DD.md       # daily conversation logs (append-only)
-├── insights/YYYY-MM-DD.md    # generated insights
-├── summaries/YYYY-MM-DD.md   # daily summaries
+├── short-term/               # daily raw logs (working memory)
+├── medium-term/              # weekly consolidations
+├── long-term/                # facts.md, lessons.md, skills.md, notes/
+├── sleep/                    # nightly learning reports
+├── insights/  summaries/     # generated insights & daily summaries
+├── notes/                    # user notes (Markdown)
+├── tasks/                    # to-dos with due dates & priorities
+├── daily/                    # daily intentions/goals
+├── meetings/                 # specialist roundtable transcripts
 └── agents/                   # per-agent notes
 ```
 

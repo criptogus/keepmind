@@ -233,6 +233,9 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={() => setStep(1)}>
               Get started →
             </button>
+            <button className="btn btn--ghost" style={{ width: '100%', marginTop: 10 }} onClick={skipConnectors}>
+              Skip setup — explore first, configure later
+            </button>
           </div>
         )}
 
@@ -290,6 +293,19 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                   </div>
                 )}
               </>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button className="btn btn--ghost" style={{ flex: 1 }} onClick={() => setStep(2)}>
+                Continue without GitHub
+              </button>
+              <button className="btn btn--primary btn--lg" style={{ flex: 1 }} onClick={next} disabled={!canNext() || busy}>
+                {busy ? 'Working…' : ghLogin ? 'Continue →' : 'Connect GitHub →'}
+              </button>
+            </div>
+            {!ghLogin && (
+              <p className="faint" style={{ fontSize: 11.5, marginTop: 10, textAlign: 'center' }}>
+                GitHub sync can be set up later in Settings — the brain works locally without it.
+              </p>
             )}
           </div>
         )}
@@ -419,6 +435,9 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                 {busy ? 'Testing…' : provider === 'local' ? 'Use local AI →' : 'Test & continue →'}
               </button>
             </div>
+            <button className="btn btn--ghost" style={{ width: '100%', marginTop: 10, fontSize: 12 }} onClick={skipConnectors}>
+              Skip — I'll pick an AI later in Settings
+            </button>
           </div>
         )}
 

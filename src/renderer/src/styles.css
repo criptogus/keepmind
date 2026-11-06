@@ -480,13 +480,15 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
   .sidebar { display: none; }
   .mobile-nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
-    display: flex; justify-content: space-around; align-items: center;
+    display: flex; justify-content: flex-start; align-items: center; gap: 4px;
     padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+    overflow-x: auto; scrollbar-width: none;
     background: rgba(1,4,12,.85); backdrop-filter: blur(14px);
     border-top: 1px solid var(--line);
   }
+  .mobile-nav::-webkit-scrollbar { display: none; }
   .mobile-nav__item {
-    width: 46px; height: 46px; border-radius: 999px;
+    width: 42px; height: 42px; flex-shrink: 0; border-radius: 999px;
     display: grid; place-items: center;
     color: var(--text-dim); background: transparent; border: 1px solid transparent;
     transition: all .18s;
@@ -519,4 +521,105 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
 
 @media (max-width: 1100px) {
   .grid-3 { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Planner: today / notes / tasks / meetings ── */
+
+/* bare inputs inside cards get the field look */
+.card input:not([type='checkbox']):not([type='radio']),
+.card textarea,
+.card select {
+  background: rgba(3,7,18,.7);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 13px;
+  color: var(--text); font-size: 13.5px;
+  outline: none; transition: border-color .15s, box-shadow .15s;
+}
+.card input:focus, .card textarea:focus, .card select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(96,165,250,.15), 0 0 12px rgba(96,165,250,.15);
+}
+.card textarea { font-family: inherit; }
+
+/* tabs (Agents / Meetings) */
+.tabs { display: flex; gap: 4px; background: rgba(3,7,18,.6); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
+.tab {
+  padding: 7px 16px; border-radius: 999px; border: none; background: transparent;
+  font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-dim); cursor: pointer; transition: all .15s;
+}
+.tab.is-active { background: rgba(8,145,178,.3); color: #fff; box-shadow: 0 0 12px rgba(34,211,238,.25); }
+
+/* selectable chips */
+.chip--active { border-color: rgba(34,211,238,.55); color: #fff; background: rgba(8,145,178,.25); box-shadow: 0 0 10px rgba(34,211,238,.2); }
+.chip--amber { border-color: rgba(250,204,21,.35); color: #fde047; }
+button.chip { cursor: pointer; font-family: var(--mono); }
+
+/* goal / task rows */
+.goal-row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid rgba(148,163,184,.07); }
+.goal-row:last-child { border-bottom: none; }
+.goal-check {
+  width: 22px; height: 22px; flex-shrink: 0; border-radius: 7px;
+  border: 1.5px solid var(--line-bright); background: rgba(3,7,18,.6);
+  color: transparent; font-size: 13px; font-weight: 700; cursor: pointer;
+  display: grid; place-items: center; transition: all .15s;
+}
+.goal-check:hover { border-color: var(--cyan); box-shadow: 0 0 8px rgba(34,211,238,.3); }
+.goal-check.is-done { background: rgba(163,230,53,.18); border-color: var(--lime); color: var(--lime); }
+.goal-text { flex: 1; font-size: 13.5px; min-width: 0; }
+.goal-text.is-done { color: var(--text-faint); text-decoration: line-through; }
+.goal-x {
+  background: none; border: none; color: var(--text-faint); cursor: pointer;
+  font-size: 16px; padding: 2px 6px; border-radius: 6px; transition: color .15s;
+}
+.goal-x:hover { color: var(--red); }
+
+.task-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 4px; border-bottom: 1px solid rgba(148,163,184,.07); }
+.task-row:last-child { border-bottom: none; }
+.task-row.is-done .task-row__title { color: var(--text-faint); text-decoration: line-through; }
+.task-row__title { font-size: 13.5px; }
+
+/* notes layout */
+.notes-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
+.notes-list { padding: 10px; max-height: 70vh; overflow-y: auto; }
+.note-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: 10px; border: 1px solid transparent;
+  background: transparent; color: var(--text); cursor: pointer; transition: all .13s;
+}
+.note-item:hover { background: rgba(34,211,238,.06); }
+.note-item.is-active { background: rgba(8,145,178,.18); border-color: rgba(34,211,238,.3); }
+.note-item__title { flex: 1; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notes-editor textarea { min-height: 340px; }
+
+/* rows reused in Today + Meetings lists */
+.note-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 10px 4px; border: none; border-bottom: 1px solid rgba(148,163,184,.07);
+  background: none; color: var(--text); cursor: pointer; text-align: left; transition: background .13s;
+}
+.note-row:hover { background: rgba(34,211,238,.05); }
+.note-row__title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* meeting transcript */
+.meeting-msg { padding: 10px 0; border-bottom: 1px solid rgba(148,163,184,.07); }
+.meeting-msg:last-child { border-bottom: none; }
+.meeting-msg__who { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--violet); }
+.meeting-msg p { margin: 5px 0 0; font-size: 13px; line-height: 1.65; color: var(--text-dim); }
+.meeting-view { font-size: 13px; line-height: 1.7; max-height: 60vh; overflow-y: auto; }
+.meeting-view h1 { font-size: 18px; } .meeting-view h2 { font-size: 15px; margin-top: 16px; } .meeting-view h3 { font-size: 13.5px; }
+.meeting-view p { margin: 8px 0; }
+
+/* modal */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 100; background: rgba(1,4,12,.75);
+  backdrop-filter: blur(6px); display: grid; place-items: center; padding: 24px;
+}
+.modal { width: min(760px, 100%); max-height: 85vh; overflow-y: auto; }
+
+@media (max-width: 860px) {
+  .notes-layout { grid-template-columns: 1fr; }
+  .notes-list { max-height: 220px; }
+  .grid[style*="1fr 1fr"] { grid-template-columns: 1fr !important; }
 }

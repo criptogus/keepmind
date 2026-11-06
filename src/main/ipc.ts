@@ -10,6 +10,7 @@ import { AutomationScheduler, parseNaturalSchedule } from './services/automation
 import { AuthService } from './services/auth'
 import { googleLogin } from './services/google-auth'
 import type { RagService } from './services/rag'
+import type { Planner } from './services/planner'
 import * as llm from './services/llm'
 import * as github from './services/github'
 
@@ -21,7 +22,8 @@ export function registerIpc(
   sync: GitSync | null = null,
   automations: AutomationScheduler | null = null,
   auth: AuthService | null = null,
-  rag: RagService | null = null
+  rag: RagService | null = null,
+  planner: Planner | null = null
 ) {
   // ── Config ──
   ipcMain.handle('config:get', () => store.get())
@@ -289,6 +291,44 @@ export function registerIpc(
   ipcMain.handle('rag:reindex', async () => rag ? rag.reindex() : null)
 
   // ── Window ──
+  // ── Planner: notes / tasks / daily goals ──
+  ipcMain.handle('notes:list', () => planner?.listNotes() ?? [])
+  ipcMain.handle('notes:get', (_e, id: string) => planner?.getNote(id) ?? null)
+  ipcMain.handle('notes:save', (_e, id: string | null, title: string, body: string) => planner?.saveNote(id, title, body))
+  ipcMain.handle('notes:delete', (_e, id: string) => { planner?.deleteNote(id); return true })
+
+  ipcMain.handle('tasks:list', () => planner?.listTasks() ?? [])
+  ipcMain.handle('tasks:add', (_e, title: string, opts?: any) => planner?.addTask(title, opts))
+  ipcMain.handle('tasks:update', (_e, id: string, patch: any) => planner?.updateTask(id, patch))
+  ipcMain.handle('tasks:toggle', (_e, id: string) => planner?.toggleTask(id))
+  ipcMain.handle('tasks:delete', (_e, id: string) => { planner?.deleteTask(id); return true })
+
+  ipcMain.handle('goals:get', (_e, date?: string) => planner?.getDailyGoals(date) ?? { date: '', items: [] })
+  ipcMain.handle('goals:set', (_e, date: string, items: any[]) => planner?.setDailyGoals(date, items))
+  ipcMain.handle('goals:add', (_e, date: string, text: string) => planner?.addGoal(date, text))
+  ipcMain.handle('goals:toggle', (_e, date: string, index: number) => planner?.toggleGoal(date, index))
+  ipcMain.handle('goals:remove', (_e, date: string, index: number) => planner?.removeGoal(date, index))
+  ipcMain.handle('goals:suggest', async () => planner ? planner.suggestGoals() : [])
+
+  // ── Meetings: multi-agent roundtable ──
+  ipcMain.handle('meeting:start', async (e, opts: { topic: string; participantIds: string[]; agenda?: string }) => {
+    try {
+      const result = await brain.runMeeting(opts, (ev) => {
+        e.sender.send('meeting:event', ev)
+      })
+      // Persist extracted action items as tasks
+      for (const t of result.tasks) {
+        planner?.addTask(t.title, { due: t.due, priority: (t.priority as any) ?? 'normal', notes: t.notes ?? 'From meeting' })
+      }
+      return { ...result, tasksCreated: result.tasks.length }
+    } catch (err: any) {
+      e.sender.send('meeting:event', { kind: 'error', message: String(err?.message ?? err) })
+      throw err
+    }
+  })
+  ipcMain.handle('meeting:list', () => brain.listMeetings())
+  ipcMain.handle('meeting:get', (_e, path: string) => brain.getMemory().read(path.replace(/^memory\//, '')) ?? null)
+
   ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))
 }
 

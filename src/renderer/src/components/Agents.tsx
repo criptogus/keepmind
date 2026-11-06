@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { IconPlus, IconTrash } from './icons'
+import Meetings from './Meetings'
 
 interface Agent { id: string; name: string; emoji: string; persona: string; builtin?: boolean }
 
-export default function Agents({ agents, onChanged, onToast }: {
+export default function Agents({ agents, onChanged, onToast, onActivity }: {
   agents: Agent[]
   onChanged: () => void
   onToast: (m: string, k?: 'info' | 'error' | 'success') => void
+  onActivity?: () => void
 }) {
+  const [tab, setTab] = useState<'agents' | 'meetings'>('agents')
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [emoji, setEmoji] = useState('🎭')
@@ -39,14 +42,25 @@ export default function Agents({ agents, onChanged, onToast }: {
           <div className="hud-tag" style={{ marginBottom: 6 }}>EXPERT PERSONAS</div>
           <h1>Specialist agents</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Personas that chat with your second brain&apos;s full context.
+            Personas that chat with your second brain&apos;s full context — or convene them in a meeting.
           </p>
         </div>
-        <button className="btn btn--primary" onClick={() => setShowForm(s => !s)}>
-          {showForm ? 'Cancel' : <><IconPlus size={12} /> New agent</>}
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="tabs">
+            <button className={`tab ${tab === 'agents' ? 'is-active' : ''}`} onClick={() => setTab('agents')}>Agents</button>
+            <button className={`tab ${tab === 'meetings' ? 'is-active' : ''}`} onClick={() => setTab('meetings')}>Meetings</button>
+          </div>
+          {tab === 'agents' && (
+            <button className="btn btn--primary" onClick={() => setShowForm(s => !s)}>
+              {showForm ? 'Cancel' : <><IconPlus size={12} /> New agent</>}
+            </button>
+          )}
+        </div>
       </div>
 
+      {tab === 'meetings' ? (
+        <Meetings agents={agents} onActivity={onActivity} onToast={onToast} />
+      ) : (<>
       {showForm && (
         <div className="card card-pad" style={{ marginBottom: 20, maxWidth: 860 }}>
           <h2 style={{ marginBottom: 14 }}>Create custom agent</h2>
@@ -92,6 +106,7 @@ export default function Agents({ agents, onChanged, onToast }: {
           </div>
         ))}
       </div>
+      </>)}
     </div>
   )
 }
