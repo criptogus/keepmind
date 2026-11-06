@@ -5,7 +5,7 @@ const API = 'https://api.github.com'
 // GitHub OAuth App credentials.
 // For the open-source release we ship a public client_id for the device flow.
 // Power users can override via env SECOND_BRAIN_GH_CLIENT_ID.
-const CLIENT_ID = process.env.SECOND_BRAIN_GH_CLIENT_ID ?? 'Ov23liPLACEHOLDER_REPLACE_WITH_OAUTH_APP_CLIENT_ID'
+const CLIENT_ID = process.env.SECOND_BRAIN_GH_CLIENT_ID ?? 'Ov23liBpws7Gw3TAaJCx'
 const SCOPES = 'repo read:user'
 
 export interface DeviceCode {
