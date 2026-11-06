@@ -13,10 +13,10 @@ const demoConfig = {
     { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
   ],
   agents: [
-    { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'Você é o second brain do usuário.', builtin: true },
+    { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'You are the user\'s second brain.', builtin: true },
     { id: 'warren', name: 'Warren Buffett', emoji: '🎩', persona: 'Fale como Warren Buffett: direto, valor, longo prazo.', builtin: true },
     { id: 'bill', name: 'Bill Gates', emoji: '🖥️', persona: 'Fale como Bill Gates: tecnologia, dados, otimismo.', builtin: true },
-    { id: 'elon', name: 'Elon Musk', emoji: '🚀', persona: 'Fale como Elon Musk: first principles, ambição.', builtin: true }
+    { id: 'elon', name: 'Elon Musk', emoji: '🚀', persona: 'Speak like Elon Musk: first principles, ambition.', builtin: true }
   ]
 }
 
@@ -24,9 +24,9 @@ const noop = async () => ({})
 const noopVoid = async () => undefined
 
 const demoMemory = [
-  { path: 'inbox/2026-11-05.md', content: '# 2026-11-05\n\n## Conversa com Warren Buffett\n\n**Você:** como pensar em longo prazo?\n\n**Warren:** O mercado de curto prazo é um máquina de votar; o de longo prazo é uma máquina de pesar. Construa algo que ainda exista em 10 anos.\n' },
-  { path: 'insights/2026-11-05.md', content: '# Insights — 2026-11-05\n\n- 📌 Você mencionou 3x "foco" esta semana — considere proteger blocos de deep work\n- ⚠️ Nenhuma mensagem respondida há 2 dias no WhatsApp conectado\n- 🎯 Meta Q4: revisar anualmente seus "círculos de competência"' },
-  { path: 'summaries/2026-11-04.md', content: '# Daily summary — 2026-11-04\n\n- Dia focado em produto; 2 decisões importantes tomadas\n- Warren Buffett sugeriu revisar alocação de tempo\n- Amanhã: bloco de escrita sugerido pelo cérebro' }
+  { path: 'inbox/2026-11-05.md', content: '# 2026-11-05\n\n## Chat with Warren Buffett\n\n**You:** how to think long-term?\n\n**Warren:** The short-term market is a voting machine; the long-term market is a weighing machine. Build something that still exists in 10 years.\n' },
+  { path: 'insights/2026-11-05.md', content: '# Insights — 2026-11-05\n\n- 📌 You mentioned "focus" 3x this week — consider protecting deep-work blocks\n- ⚠️ No messages answered in 2 days on connected WhatsApp\n- 🎯 Q4 goal: review your circles of competence yearly' },
+  { path: 'summaries/2026-11-04.md', content: '# Daily summary — 2026-11-04\n\n- Product-focused day; 2 important decisions made\n- Warren Buffett suggested reviewing time allocation\n- Tomorrow: writing block suggested by the brain' }
 ]
 
 let deltaCb: ((t: string) => void) | null = null
@@ -87,8 +87,8 @@ const demo = {
   brainChat: async (agentId: string, message: string) => {
     // emit fake streaming
     const replies: Record<string, string> = {
-      brain: `🧠 **Second Brain (demo)**\n\nRecebi sua mensagem: "${message}"\n\nNo app real, eu consultaria sua memória, os conectores MCP e responderia com contexto completo.`,
-      warren: `🎩 **Warren Buffett**\n\n"Price is what you pay, value is what you get."\n\nSobre "${message}": eu pensaria em vantagem competitiva duradoura e fluxo de caixa. O mercado de curto prazo é um máquina de votar — o seu second brain me ajuda a ver o longo prazo.`,
+      brain: `🧠 **Second Brain (demo)**\n\nGot your message: "${message}"\n\nIn the real app, I would query your memory, the MCP connectors, and reply with full context.`,
+      warren: `🎩 **Warren Buffett**\n\n"Price is what you pay, value is what you get."\n\nOn "${message}": I'd think durable competitive advantage and cash flow. The short-term market is a voting machine — your second brain helps me see the long term.`,
       bill: `🖥️ **Bill Gates**\n\nGreat question about "${message}". I'd approach it with data first — measure what matters, then move fast on the highest-leverage thing. Technology should amplify human potential.`,
       elon: `🚀 **Elon Musk**\n\n"${message}" — let's break this to first principles. What's the actual physics/economics of it? Most people optimize the wrong variable. Think bigger, delete the step entirely if you can.`,
     }
@@ -107,7 +107,7 @@ const demo = {
   brainInsights: async () => ['💡 Demo insight'],
   brainDailySummary: async () => 'Resumo demo',
   brainListInsights: async () => [
-    { date: '2026-11-05', content: '# Insights — 2026-11-05\n\n- 📌 Você mencionou 3x "foco" esta semana — considere proteger blocos de deep work\n- ⚠️ Nenhuma mensagem respondida há 2 dias\n- 🎯 Revise seus "círculos de competência"' }
+    { date: '2026-11-05', content: '# Insights — 2026-11-05\n\n- 📌 You mentioned "focus" 3x this week — consider protecting deep-work blocks\n- ⚠️ No messages answered in 2 days\n- 🎯 Review your circles of competence' }
   ],
   brainListSummaries: async () => [
     { date: '2026-11-04', content: '# Daily summary — 2026-11-04\n\n- Dia focado em produto; 2 decisões importantes\n- Sugestão: bloco de escrita amanhã' }

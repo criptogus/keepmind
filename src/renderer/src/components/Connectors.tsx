@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
+import { IconPlus, IconTrash } from './icons'
 
-// Manage MCP connectors after onboarding.
-export default function Connectors({ onActivity, onToast }: {
+interface Props {
   onActivity?: () => void
   onToast: (m: string, k?: 'info' | 'error' | 'success') => void
-}) {
+}
+
+export default function Connectors({ onActivity, onToast }: Props) {
   const [config, setConfig] = useState<any>(null)
   const [status, setStatus] = useState<any>({ running: [], allTools: [] })
   const [waQr, setWaQr] = useState<any>(null)
   const [inputs, setInputs] = useState<Record<string, string>>({})
+  const [showCustom, setShowCustom] = useState(false)
+  const [custom, setCustom] = useState({ name: '', command: '', args: '' })
 
   const refresh = async () => {
     const [c, s] = await Promise.all([window.sb.getConfig(), window.sb.mcpStatus()])
@@ -38,7 +42,7 @@ export default function Connectors({ onActivity, onToast }: {
         if (Object.keys(env).length) await window.sb.updateMcp(srv.id, { env, enabled: true })
         else await window.sb.updateMcp(srv.id, { enabled: true })
         const res = await window.sb.mcpStart(srv.id)
-        onToast(`${srv.name}: ${res.tools.length} tools ativas`, 'success')
+        onToast(`${srv.name}: ${res.tools.length} tools active`, 'success')
       }
       await refresh()
     } catch (e: any) {
@@ -46,51 +50,120 @@ export default function Connectors({ onActivity, onToast }: {
     }
   }
 
+  const addCustom = async () => {
+    if (!custom.name.trim() || !custom.command.trim()) {
+      onToast('Name and command are required', 'error'); return
+    }
+    const id = `custom-${Date.now()}`
+    const args = custom.args.trim() ? custom.args.trim().split(/\s+/) : []
+    // persist via config patch — mcpServers lives inside config
+    const cfg = await window.sb.getConfig()
+    const servers = [...(cfg.mcpServers ?? []), {
+      id, name: custom.name.trim(), kind: 'custom', enabled: false,
+      command: custom.command.trim(), args
+    }]
+    await window.sb.setConfig({ mcpServers: servers })
+    setShowCustom(false)
+    setCustom({ name: '', command: '', args: '' })
+    await refresh()
+    onToast('Custom connector added — click Connect to start it', 'success')
+  }
+
+  const removeCustom = async (srv: any) => {
+    const cfg = await window.sb.getConfig()
+    await window.sb.setConfig({ mcpServers: (cfg.mcpServers ?? []).filter((s: any) => s.id !== srv.id) })
+    await window.sb.mcpStop(srv.id).catch(() => {})
+    await refresh()
+  }
+
   const meta: Record<string, { emoji: string; desc: string; hint: string }> = {
-    whatsapp: { emoji: '🟢', desc: 'WhatsApp via QR code (estilo WhatsApp Web, não-oficial)', hint: 'Escaneie o QR com seu WhatsApp' },
-    telegram: { emoji: '✈️', desc: 'Bot do Telegram — converse com seu second brain de qualquer lugar', hint: 'Token do @BotFather' },
-    postgres: { emoji: '🐘', desc: 'Banco Postgres em modo somente-leitura', hint: 'postgres://user:pass@host:5432/db' }
+    whatsapp: { emoji: '🟢', desc: 'WhatsApp via QR code (WhatsApp Web style, unofficial)', hint: 'Scan the QR with WhatsApp → Linked devices' },
+    telegram: { emoji: '✈️', desc: 'Telegram bot — chat with your second brain anywhere', hint: 'Bot token from @BotFather' },
+    postgres: { emoji: '🐘', desc: 'Postgres database in read-only mode', hint: 'postgres://user:pass@host:5432/db' }
   }
 
   return (
     <div className="view">
       <div className="view-head">
         <div>
-          <h1>Conectores</h1>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>MCP CONNECTORS</div>
+          <h1>Connectors</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Apps e fontes de dados que alimentam seu second brain via MCP.
+            Apps and data sources feeding your second brain via MCP.
           </p>
         </div>
+        <button className="btn" onClick={() => setShowCustom(s => !s)}>
+          <IconPlus size={12} /> CUSTOM MCP
+        </button>
       </div>
+
+      {showCustom && (
+        <div className="card card-pad" style={{ marginBottom: 16, maxWidth: 860 }}>
+          <h2 style={{ marginBottom: 12 }}>Add custom MCP server</h2>
+          <div className="grid grid-3">
+            <div className="field">
+              <label>Name</label>
+              <input value={custom.name} onChange={e => setCustom(c => ({ ...c, name: e.target.value }))} placeholder="e.g. Gmail MCP" />
+            </div>
+            <div className="field">
+              <label>Command</label>
+              <input value={custom.command} onChange={e => setCustom(c => ({ ...c, command: e.target.value }))} placeholder="npx / node / uvx" className="mono" />
+            </div>
+            <div className="field">
+              <label>Args</label>
+              <input value={custom.args} onChange={e => setCustom(c => ({ ...c, args: e.target.value }))} placeholder="-y @scope/mcp-server" className="mono" />
+            </div>
+          </div>
+          <button className="btn btn--primary" onClick={addCustom}>ADD CONNECTOR</button>
+        </div>
+      )}
 
       <div className="grid" style={{ maxWidth: 860 }}>
         {(config?.mcpServers ?? []).map((srv: any) => {
-          const m = meta[srv.id] ?? { emoji: '🔌', desc: srv.name, hint: '' }
+          const m = meta[srv.id] ?? { emoji: '🔌', desc: srv.kind === 'custom' ? 'Custom MCP server' : srv.name, hint: '' }
           const running = status.running.includes(srv.id)
+          const isCustom = srv.kind === 'custom'
           return (
             <div key={srv.id} className="card card-pad">
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <span style={{ fontSize: 30 }}>{m.emoji}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <h3>{srv.name}</h3>
-                    <span className={`mcp-row`} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 20, border: '1px solid', borderColor: running ? 'rgba(52,211,153,.4)' : 'var(--line)', color: running ? 'var(--green)' : 'var(--text-faint)' }}>
-                      {running ? '● conectado' : '○ offline'}
+                    {isCustom && <span className="badge badge--custom">custom</span>}
+                    <span className="m-status" style={{
+                      fontSize: 11, fontFamily: 'var(--mono)', padding: '3px 10px', borderRadius: 20,
+                      border: '1px solid', borderColor: running ? 'rgba(52,211,153,.4)' : 'var(--line)',
+                      color: running ? 'var(--green)' : 'var(--text-faint)'
+                    }}>
+                      {running ? '● connected' : '○ offline'}
                     </span>
                   </div>
                   <p className="faint" style={{ fontSize: 12.5, marginTop: 3 }}>{m.desc}</p>
+                  {isCustom && (
+                    <div className="faint mono" style={{ fontSize: 11, marginTop: 6, wordBreak: 'break-all' }}>
+                      {srv.command} {(srv.args ?? []).join(' ')}
+                    </div>
+                  )}
                   {running && (
                     <div className="faint mono" style={{ fontSize: 11, marginTop: 6 }}>
-                      {status.allTools.filter((t: any) => t.serverId === srv.id).map((t: any) => t.name).join(' · ') || 'iniciando…'}
+                      {status.allTools.filter((t: any) => t.serverId === srv.id).map((t: any) => t.name).join(' · ') || 'starting…'}
                     </div>
                   )}
                 </div>
-                <button className={`btn btn--sm ${running ? 'btn--danger' : 'btn--primary'}`} onClick={() => toggle(srv)}>
-                  {running ? 'Desconectar' : 'Conectar'}
-                </button>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  <button className={`btn btn--sm ${running ? 'btn--danger' : 'btn--primary'}`} onClick={() => toggle(srv)}>
+                    {running ? 'Disconnect' : 'Connect'}
+                  </button>
+                  {isCustom && (
+                    <button className="btn btn--ghost btn--sm" onClick={() => removeCustom(srv)} title="Remove">
+                      <IconTrash size={13} />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {!running && srv.kind !== 'whatsapp' && (
+              {!running && !isCustom && srv.kind !== 'whatsapp' && (
                 <input
                   value={inputs[srv.id] ?? ''}
                   onChange={e => setInputs(s => ({ ...s, [srv.id]: e.target.value }))}
@@ -103,11 +176,11 @@ export default function Connectors({ onActivity, onToast }: {
               {srv.id === 'whatsapp' && waQr?.status === 'qr' && (
                 <div className="qr-box" style={{ marginTop: 14 }}>
                   <img src={waQr.dataUrl} alt="QR" style={{ width: 200, height: 200 }} />
-                  <p style={{ color: '#333', fontSize: 12 }}>Escaneie com WhatsApp → Aparelhos conectados</p>
+                  <p style={{ color: '#333', fontSize: 12 }}>Scan with WhatsApp → Linked devices</p>
                 </div>
               )}
               {srv.id === 'whatsapp' && waQr?.status === 'connected' && (
-                <p style={{ color: 'var(--green)', fontSize: 12.5, marginTop: 10 }}>✓ WhatsApp conectado</p>
+                <p style={{ color: 'var(--green)', fontSize: 12.5, marginTop: 10 }}>✓ WhatsApp connected</p>
               )}
             </div>
           )

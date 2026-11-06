@@ -132,7 +132,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
           <div>
             <h3>{agent?.name ?? 'Second Brain'}</h3>
             <div className="faint" style={{ fontSize: 12 }}>
-              {agent?.builtin ? 'Especialista integrado' : 'Agente customizado'} · com contexto do seu second brain
+              {agent?.builtin ? 'Built-in specialist' : 'Custom agent'} · with your second brain context
             </div>
           </div>
         </div>
@@ -141,11 +141,11 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
           {msgs.length === 0 && (
             <div className="empty">
               <div className="e-emoji">{agent?.emoji}</div>
-              <h3>Fale com {agent?.name}</h3>
+              <h3>Talk to {agent?.name}</h3>
               <p>
                 {agent?.id === 'brain'
-                  ? 'Pergunte qualquer coisa — eu conheço tudo que você conectou: apps, memória, insights.'
-                  : `Você está conversando com uma persona de ${agent?.name}. Ela responde com o contexto completo do seu second brain.`}
+                  ? 'Ask anything — I know everything you connected: apps, memory, insights.'
+                  : `You're chatting with a ${agent?.name} persona. It answers with your full second brain context.`}
               </p>
             </div>
           )}
@@ -176,7 +176,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
             }}
-            placeholder={`Mensagem para ${agent?.name ?? 'Second Brain'}… (Enter envia)`}
+            placeholder={`Message ${agent?.name ?? 'Second Brain'}… (Enter to send)`}
             rows={1}
           />
           <button className="btn btn--primary" onClick={send} disabled={busy || !input.trim()} style={{ borderRadius: 999, padding: '0 18px', height: 42 }}>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { IconPlus, IconTrash } from './icons'
 
 interface Agent { id: string; name: string; emoji: string; persona: string; builtin?: boolean }
 
@@ -23,7 +24,7 @@ export default function Agents({ agents, onChanged, onToast }: {
     onChanged()
     setShowForm(false)
     setName(''); setPersona('')
-    onToast('Agente criado! Encontre-o no chat.', 'success')
+    onToast('Agent created! Find it in Chat.', 'success')
   }
 
   const remove = async (id: string) => {
@@ -35,38 +36,39 @@ export default function Agents({ agents, onChanged, onToast }: {
     <div className="view">
       <div className="view-head">
         <div>
-          <h1>Agentes especialistas</h1>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>EXPERT PERSONAS</div>
+          <h1>Specialist agents</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Personas que conversam com o contexto completo do seu second brain.
+            Personas that chat with your second brain&apos;s full context.
           </p>
         </div>
         <button className="btn btn--primary" onClick={() => setShowForm(s => !s)}>
-          {showForm ? 'Cancelar' : '+ Novo agente'}
+          {showForm ? 'Cancel' : <><IconPlus size={12} /> New agent</>}
         </button>
       </div>
 
       {showForm && (
-        <div className="card card-pad" style={{ marginBottom: 20 }}>
-          <h2 style={{ marginBottom: 14 }}>Criar agente personalizado</h2>
+        <div className="card card-pad" style={{ marginBottom: 20, maxWidth: 860 }}>
+          <h2 style={{ marginBottom: 14 }}>Create custom agent</h2>
           <div className="grid grid-3">
             <div className="field">
-              <label>Nome</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Minha mentora de finanças" />
+              <label>Name</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. My finance mentor" />
             </div>
             <div className="field">
               <label>Emoji</label>
               <input value={emoji} onChange={e => setEmoji(e.target.value)} style={{ maxWidth: 90 }} />
             </div>
             <div className="field">
-              <label>Personalidade / instruções</label>
-              <input value={persona} onChange={e => setPersona(e.target.value)} placeholder="Ex: Fale como um CIO experiente, direto e estratégico…" />
+              <label>Personality / instructions</label>
+              <input value={persona} onChange={e => setPersona(e.target.value)} placeholder="e.g. Speak like a seasoned CIO — direct and strategic…" />
             </div>
           </div>
           <p className="faint" style={{ fontSize: 12, marginBottom: 14 }}>
-            Dica: descreva estilo de fala, valores e foco. O agente sempre recebe o contexto do seu second brain automaticamente.
+            Tip: describe speaking style, values and focus. The agent always receives your second brain context automatically.
           </p>
           <button className="btn btn--primary" onClick={create} disabled={!name.trim() || !persona.trim()}>
-            Criar agente
+            Create agent
           </button>
         </div>
       )}
@@ -77,14 +79,14 @@ export default function Agents({ agents, onChanged, onToast }: {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <span className="a-emoji">{a.emoji}</span>
               <span className={`badge ${a.builtin ? 'badge--builtin' : 'badge--custom'}`}>
-                {a.builtin ? 'nativo' : 'custom'}
+                {a.builtin ? 'native' : 'custom'}
               </span>
             </div>
             <div className="a-name">{a.name}</div>
             <div className="a-persona">{a.persona}</div>
             {!a.builtin && (
               <button className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => remove(a.id)}>
-                Remover
+                <IconTrash size={12} /> Remove
               </button>
             )}
           </div>

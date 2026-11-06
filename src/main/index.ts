@@ -64,6 +64,21 @@ app.whenReady().then(() => {
     localLlm.ensureRunning().catch(e => pushMcpLog(`local-llm start failed: ${e}`))
   }
 
+  // Auto-generate daily insights + summary once per day (best-effort, background)
+  setTimeout(async () => {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const hasSummary = brain.listSummaries().some(s => s.date === today)
+      if (!hasSummary && store.isConfigured) {
+        await brain.generateInsights()
+        await brain.dailySummary()
+        pushMcpLog('auto: daily insights + summary generated')
+      }
+    } catch (e) {
+      pushMcpLog(`auto-summary failed: ${e}`)
+    }
+  }, 45_000)
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

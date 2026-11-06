@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import BrainCore from './BrainCore'
-import { IconSparkle, IconDoc } from './icons'
+import { IconSparkle, IconDoc, IconGithub } from './icons'
+import { buildConnectPrompt } from '../lib/connectPrompt'
 
 export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
   const [insights, setInsights] = useState<any[]>([])
@@ -8,6 +9,8 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
   const [memory, setMemory] = useState<any[]>([])
   const [config, setConfig] = useState<any>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [promptOpen, setPromptOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const refresh = async () => {
     const [i, s, m, c] = await Promise.all([
@@ -39,7 +42,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
     setBusy('push')
     try {
       const r = await window.sb.ghPushMemory('sync: memory update')
-      alert(`Sincronizado: ${r.pushed} arquivos → GitHub`)
+      alert(`Synced: ${r.pushed} files → GitHub`)
     } catch (e: any) { alert(e?.message ?? e) }
     finally { setBusy(null) }
   }
@@ -55,8 +58,8 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
           <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>SECOND BRAIN</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
             {config?.github?.repoUrl
-              ? <>memória persistida em <span className="mono" style={{ color: 'var(--cyan)' }}>{config.github.repoUrl}</span></>
-              : 'conecte o GitHub no wizard para ativar a memória persistente.'}
+              ? <>memory persisted at <span className="mono" style={{ color: 'var(--cyan)' }}>{config.github.repoUrl}</span></>
+              : 'connect GitHub in the wizard to activate persistent memory.'}
           </p>
         </div>
         <div className="actions">
@@ -76,7 +79,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
       <div className="brain-stage" style={{ marginBottom: 20 }}>
         <BrainCore activity={0.55} />
         <div className="orbit-chip orbit-chip--lime" style={{ top: '14%', left: '8%', animationDelay: '0s' }}>
-          memórias <b>{memory.length}</b>
+          memories <b>{memory.length}</b>
         </div>
         <div className="orbit-chip orbit-chip--amber" style={{ top: '22%', right: '9%', animationDelay: '1.4s' }}>
           insights <b>{insights.length}</b>
@@ -88,9 +91,55 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
           ia <b>{config?.ai?.provider ?? '—'}</b>
         </div>
         <div className="orbit-chip orbit-chip--lime" style={{ top: '48%', left: '3%', animationDelay: '3.4s' }}>
-          {config?.github?.repoUrl ? 'github linkado' : 'github offline'}
+          {config?.github?.repoUrl ? 'github linked' : 'github offline'}
         </div>
-        <div className="brain-label">córtex sináptico · segundo brain</div>
+        <div className="brain-label">synaptic cortex · second brain</div>
+      </div>
+
+      {/* Connect your AI */}
+      <div className="card card-pad" style={{ marginBottom: 20, borderColor: 'rgba(163,230,53,.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <IconGithub size={15} /> Plug in your AI
+            </h2>
+            <p className="faint" style={{ fontSize: 12.5, marginTop: 4, maxWidth: 560, lineHeight: 1.6 }}>
+              Copy one prompt into Claude, Codex, Grok, Gemini or ChatGPT — it teaches that AI to read
+              and write memory in <strong>your</strong> GitHub repo. Emails sent, PDFs created,
+              decisions, insights — everything gets remembered.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn--ghost" onClick={() => setPromptOpen(o => !o)}>
+              {promptOpen ? 'Hide prompt' : 'Show prompt'}
+            </button>
+            <button
+              className="btn btn--primary"
+              disabled={!config?.github?.repoUrl}
+              onClick={async () => {
+                await navigator.clipboard.writeText(buildConnectPrompt(config?.github?.repoUrl))
+                setCopied(true); setTimeout(() => setCopied(false), 2000)
+              }}
+            >
+              {copied ? '✓ Copied!' : '⧉ Copy prompt'}
+            </button>
+          </div>
+        </div>
+        {promptOpen && (
+          <pre className="mono" style={{
+            marginTop: 16, padding: 16, borderRadius: 10, fontSize: 11.5, lineHeight: 1.65,
+            background: 'rgba(3,7,18,.8)', border: '1px solid var(--line)',
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 340, overflowY: 'auto',
+            color: 'var(--text-dim)'
+          }}>
+            {buildConnectPrompt(config?.github?.repoUrl)}
+          </pre>
+        )}
+        {!config?.github?.repoUrl && (
+          <p className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>
+            Connect GitHub first (Settings → re-run setup) to generate a prompt with your real repo URL.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-4" style={{ marginBottom: 20 }}>
@@ -113,13 +162,13 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
             </div>
           ) : (
             <p className="faint" style={{ fontSize: 13, marginTop: 14, lineHeight: 1.6 }}>
-              Nenhum insight ainda. Converse com o cérebro e clique em "Gerar insights" —
-              ele analisa sua memória e aponta o que importa.
+              No insights yet. Chat with the brain, then hit "Generate insights" —
+              it analyzes your memory and surfaces what matters.
             </p>
           )}
           {insights.length > 1 && (
             <details style={{ marginTop: 14 }}>
-              <summary className="faint" style={{ fontSize: 12, cursor: 'pointer' }}>Ver anteriores ({insights.length - 1})</summary>
+              <summary className="faint" style={{ fontSize: 12, cursor: 'pointer' }}>Show earlier ({insights.length - 1})</summary>
               {insights.slice(1).map((i: any) => (
                 <div key={i.date} style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
                   <div className="faint mono" style={{ fontSize: 11, marginBottom: 6 }}>{i.date}</div>
@@ -139,14 +188,14 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
             </div>
           ) : (
             <p className="faint" style={{ fontSize: 13, marginTop: 14, lineHeight: 1.6 }}>
-              Sem resumos ainda. O resumo diário consolida o que aconteceu no seu segundo brain.
+              No summaries yet. The daily summary consolidates what happened in your second brain.
             </p>
           )}
         </div>
       </div>
 
       <div className="card card-pad" style={{ marginTop: 16 }}>
-        <h2>Memória ({memory.length} arquivos)</h2>
+        <h2>Memory ({memory.length} files)</h2>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
           {memory.slice(0, 60).map((m: any) => (
             <details key={m.path} className="insight-item" style={{ cursor: 'pointer' }}>
@@ -156,7 +205,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
               <div className="msg__body" style={{ fontSize: 12, marginTop: 10, whiteSpace: 'pre-wrap' }}>{m.content.slice(0, 2000)}</div>
             </details>
           ))}
-          {memory.length === 0 && <p className="faint" style={{ fontSize: 13 }}>A memória começa a ser gravada conforme você conversa.</p>}
+          {memory.length === 0 && <p className="faint" style={{ fontSize: 13 }}>Memory starts being written as you chat.</p>}
         </div>
       </div>
     </div>
