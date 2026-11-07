@@ -13,6 +13,7 @@ import type { RagService } from './services/rag'
 import type { Planner } from './services/planner'
 import * as llm from './services/llm'
 import * as github from './services/github'
+import { checkForUpdates, installUpdate, updaterStatus } from './services/updater'
 
 export function registerIpc(
   store: Store,
@@ -328,6 +329,11 @@ export function registerIpc(
   })
   ipcMain.handle('meeting:list', () => brain.listMeetings())
   ipcMain.handle('meeting:get', (_e, path: string) => brain.getMemory().read(path.replace(/^memory\//, '')) ?? null)
+
+  // ── Auto-updater ──
+  ipcMain.handle('updater:status', () => updaterStatus())
+  ipcMain.handle('updater:check', () => checkForUpdates())
+  ipcMain.handle('updater:install', () => installUpdate())
 
   ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))
 }

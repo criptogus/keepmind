@@ -115,6 +115,16 @@ const api = {
     return () => { ipcRenderer.removeListener('meeting:event', handler) }
   },
 
+  // updater
+  updaterStatus: () => ipcRenderer.invoke('updater:status'),
+  updaterCheck: () => ipcRenderer.invoke('updater:check'),
+  updaterInstall: () => ipcRenderer.invoke('updater:install'),
+  onUpdaterEvent: (cb: (e: any) => void) => {
+    const handler = (_e: any, ev: any) => cb(ev)
+    ipcRenderer.on('updater:event', handler)
+    return () => { ipcRenderer.removeListener('updater:event', handler) }
+  },
+
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
 }
 

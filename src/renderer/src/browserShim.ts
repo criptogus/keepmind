@@ -220,6 +220,11 @@ const demo = {
   meetingGet: async () => '# Meeting — Should we launch before Q4?\n\n_2026-11-04 · participants: Warren Buffett, Elon Musk, Second Brain_\n\n## Transcript\n\n**Warren Buffett:** The short-term market is a voting machine. Do we have durable demand?\n\n**Elon Musk:** Waiting is how you die. Ship ugly, learn fast.\n\n## Moderator summary\n\n===TASKS===\n- Define MVP scope | due: 2026-11-05 | priority: high\n',
   onMeetingEvent: (cb: (e: any) => void) => { meetingCb = cb; return () => { meetingCb = null } },
 
+  updaterStatus: async () => ({ version: '0.1.0', packaged: false }),
+  updaterCheck: async () => ({ packaged: false }),
+  updaterInstall: async () => false,
+  onUpdaterEvent: () => () => {},
+
   openExternal: noopVoid
 }
 

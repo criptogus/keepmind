@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconSend } from './icons'
+import { mdToHtml } from '../lib/markdown'
 
 interface Msg { role: 'user' | 'assistant'; content: string; agent?: string; streaming?: boolean }
 
@@ -12,6 +13,16 @@ const AGENT_ACCENTS: Record<string, string> = {
   elon: '#facc15',
   naval: '#a78bfa',
   jobs: '#f1f5f9'
+}
+
+const storeKey = (agentId: string) => `sb-chat:${agentId}`
+const loadHistory = (agentId: string): Msg[] => {
+  try {
+    const raw = localStorage.getItem(storeKey(agentId))
+    if (!raw) return []
+    const list = JSON.parse(raw) as Msg[]
+    return list.filter(m => m && typeof m.content === 'string' && !m.streaming).slice(-50)
+  } catch { return [] }
 }
 
 export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivity?: () => void }) {
@@ -28,6 +39,18 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [msgs])
+
+  // Hydrate per-agent history from localStorage on first visit
+  useEffect(() => {
+    setMessages(prev => prev[activeAgent] ? prev : { ...prev, [activeAgent]: loadHistory(activeAgent) })
+  }, [activeAgent])
+
+  // Persist finished conversations (skip while a reply is still streaming)
+  useEffect(() => {
+    const list = messages[activeAgent]
+    if (!list?.length || list.some(m => m.streaming)) return
+    try { localStorage.setItem(storeKey(activeAgent), JSON.stringify(list.slice(-50))) } catch { /* quota */ }
+  }, [messages, activeAgent])
 
   useEffect(() => {
     unsubRef.current?.()
@@ -76,25 +99,9 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
     }
   }
 
-  const renderMd = (text: string) => {
-    // very light markdown: code blocks, bold, lists
-    const parts = text.split(/(```[\s\S]*?```)/g)
-    return parts.map((part, i) => {
-      if (part.startsWith('```')) {
-        const code = part.replace(/^```\w*\n?/, '').replace(/```$/, '')
-        return <pre key={i}><code>{code}</code></pre>
-      }
-      return <span key={i} dangerouslySetInnerHTML={{ __html: mdInline(part) }} />
-    })
+  const copyMsg = (text: string) => {
+    navigator.clipboard?.writeText(text).catch(() => {})
   }
-
-  const mdInline = (s: string) =>
-    s
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/^[-*] /gm, '• ')
 
   return (
     <div className="chat-wrap">
@@ -159,10 +166,15 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
                   {m.streaming && !m.content ? (
                     <span className="typing"><span /><span /><span /></span>
                   ) : (
-                    renderMd(m.content)
+                    <span dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />
                   )}
                 </div>
-                {m.agent && <div className="msg__meta">{m.agent}</div>}
+                <div className="msg__meta" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {m.agent && <span>{m.agent}</span>}
+                  {m.role === 'assistant' && m.content && (
+                    <button className="msg__copy" onClick={() => copyMsg(m.content)} title="Copy">⧉</button>
+                  )}
+                </div>
               </div>
             </div>
           ))}

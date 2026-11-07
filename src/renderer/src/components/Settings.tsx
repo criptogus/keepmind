@@ -234,6 +234,9 @@ export default function Settings({ onToast, onActivity }: Props) {
         {/* Semantic memory (RAG) */}
         <RagCard onToast={onToast} onActivity={onActivity} />
 
+        {/* Auto-updates */}
+        <UpdatesCard onToast={onToast} />
+
         {/* About */}
         <div className="card card-pad">
           <h2 style={{ marginBottom: 14 }}>About</h2>
@@ -444,6 +447,81 @@ function RagCard({ onToast, onActivity }: { onToast: Props['onToast']; onActivit
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function UpdatesCard({ onToast }: { onToast: Props['onToast'] }) {
+  const [status, setStatus] = useState<any>(null)
+  const [state, setState] = useState<string>('idle')
+  const [version, setVersion] = useState('')
+  const [pct, setPct] = useState<number | null>(null)
+
+  useEffect(() => {
+    window.sb.updaterStatus?.().then(setStatus).catch(() => {})
+    const off = window.sb.onUpdaterEvent?.((e: any) => {
+      if (e.channel === 'checking') setState('checking')
+      else if (e.channel === 'available') setState('downloading')
+      else if (e.channel === 'up-to-date') { setState('up-to-date'); onToast('You are on the latest version', 'success') }
+      else if (e.channel === 'progress') setPct(e.percent)
+      else if (e.channel === 'downloaded') { setState('ready'); setVersion(e.version ?? '') }
+      else if (e.channel === 'error') { setState('error'); onToast(`Update failed: ${e.message}`, 'error') }
+    })
+    return off
+  }, [])
+
+  const check = async () => {
+    setState('checking'); setPct(null)
+    try {
+      const r: any = await window.sb.updaterCheck?.()
+      if (r && r.packaged === false) setState('dev')
+    } catch { setState('error') }
+  }
+
+  const install = async () => {
+    await window.sb.updaterInstall?.()
+  }
+
+  const label: Record<string, string> = {
+    idle: 'Auto-updates from GitHub Releases are enabled in packaged builds.',
+    checking: 'Checking for updates…',
+    downloading: 'Downloading update…',
+    'up-to-date': 'You are on the latest version.',
+    ready: `Version ${version} downloaded — restart to apply.`,
+    error: 'Update check failed.',
+    dev: 'Updates only run in the installed app, not in dev mode.'
+  }
+
+  return (
+    <div className="card card-pad">
+      <h2 style={{ marginBottom: 6 }}>Updates</h2>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
+        {status?.packaged === false
+          ? 'Running in development mode — auto-update is disabled.'
+          : 'The app checks GitHub Releases on launch and every 6 hours.'}
+        {status?.version && <span className="mono" style={{ fontSize: 11 }}> · v{status.version}</span>}
+      </p>
+      <p style={{ fontSize: 12.5, marginBottom: state === 'downloading' ? 8 : 12, color: state === 'ready' ? 'var(--lime)' : state === 'error' ? 'var(--red)' : 'var(--text)' }}>
+        {label[state] ?? label.idle}
+      </p>
+      {state === 'downloading' && pct != null && (
+        <div className="progress-bar" style={{ marginBottom: 12 }}>
+          <div style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 10 }}>
+        {state !== 'ready' && (
+          <button className="btn" onClick={check} disabled={state === 'checking' || state === 'downloading'}>
+            {state === 'checking' ? 'CHECKING…' : 'CHECK FOR UPDATES'}
+          </button>
+        )}
+        {state === 'ready' && (
+          <button className="btn btn--primary" onClick={install}>RESTART & UPDATE</button>
+        )}
+        <button className="btn btn--ghost" onClick={() => window.sb.openExternal('https://github.com/criptogus/second-brain-app/releases')}>
+          RELEASE NOTES ↗
+        </button>
+      </div>
     </div>
   )
 }

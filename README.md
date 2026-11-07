@@ -124,11 +124,13 @@ the app generates a ready-to-paste prompt under **Brain → Plug in your AI**.
 
 ## Roadmap
 
+- [x] Scheduled agents (natural-language automations + sleep cycles)
+- [x] Local semantic memory (RAG via llama.cpp embeddings)
+- [x] Codex/ChatGPT sign-in as an AI backend
 - [ ] Composio as a universal connector (Gmail, Calendar, Notion, Drive…)
-- [ ] Claude Code / Codex CLI as an optional "brain" backend
-- [ ] Local embeddings for semantic memory search
+- [ ] Claude Code / Gemini CLI as optional "brain" backends
 - [ ] Real `git clone/push` sync in addition to the Contents API
-- [ ] Scheduled agents (cron) — e.g. automatic daily briefings
+- [ ] Mobile companion (read-only memory viewer)
 
 ## ⚠️ Notes & risks
 

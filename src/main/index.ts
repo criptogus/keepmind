@@ -10,6 +10,7 @@ import { AuthService } from './services/auth'
 import { RagService } from './services/rag'
 import { Planner } from './services/planner'
 import { registerIpc, pushMcpLog } from './ipc'
+import { initUpdater } from './services/updater'
 
 let mainWindow: BrowserWindow | null = null
 let store: Store
@@ -68,6 +69,7 @@ app.whenReady().then(() => {
 
   const planner = new Planner(brain.getMemory(), store, localLlm)
   registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner)
+  initUpdater()
   createWindow()
 
   // Continuous GitHub sync — push local writes, pull remote memory
