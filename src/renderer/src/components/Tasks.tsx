@@ -92,7 +92,7 @@ export default function Tasks({ onActivity }: { onActivity?: () => void }) {
               <div className="task-row__title">{t.title}</div>
               <div className="faint" style={{ fontSize: 11, marginTop: 2 }}>
                 {t.priority !== 'normal' && <span style={{ color: t.priority === 'high' ? 'var(--amber)' : 'var(--cyan)' }}>{t.priority} · </span>}
-                {t.due ? (t.due === today ? 'due today' : `due ${t.due}`) : 'no due date'}
+                {t.due ? (t.due === today ? 'due today' : t.due < today ? `overdue · ${t.due}` : `due ${t.due}`) : 'no due date'}
                 {t.notes ? ` · ${t.notes}` : ''}
               </div>
             </div>

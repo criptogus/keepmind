@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { IconNotes, IconPlus, IconTrash, IconDoc } from './icons'
+import { mdToHtml } from '../lib/markdown'
 
 interface Note { id: string; title: string; body: string; updated: string }
 
@@ -10,6 +11,7 @@ export default function Notes({ onActivity }: { onActivity?: () => void }) {
   const [body, setBody] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [preview, setPreview] = useState(false)
 
   const refresh = async () => {
     const list = await window.sb.notesList()
@@ -25,11 +27,11 @@ export default function Notes({ onActivity }: { onActivity?: () => void }) {
   }, [])
 
   const open = (n: Note) => {
-    setCurrent(n); setTitle(n.title); setBody(n.body); setDirty(false)
+    setCurrent(n); setTitle(n.title); setBody(n.body); setDirty(false); setPreview(false)
   }
 
   const newNote = () => {
-    setCurrent(null); setTitle(''); setBody(''); setDirty(true)
+    setCurrent(null); setTitle(''); setBody(''); setDirty(true); setPreview(false)
   }
 
   const save = async () => {
@@ -91,20 +93,34 @@ export default function Notes({ onActivity }: { onActivity?: () => void }) {
           )}
           {(current || dirty) && (
             <>
-              <div className="field" style={{ marginBottom: 12 }}>
-                <input
-                  value={title}
-                  onChange={e => { setTitle(e.target.value); setDirty(true) }}
-                  placeholder="Note title"
-                  style={{ fontSize: 16, fontWeight: 600 }}
-                />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                  <input
+                    value={title}
+                    onChange={e => { setTitle(e.target.value); setDirty(true) }}
+                    placeholder="Note title"
+                    style={{ fontSize: 16, fontWeight: 600 }}
+                  />
+                </div>
+                <div className="tabs">
+                  <button className={`tab ${!preview ? 'is-active' : ''}`} onClick={() => setPreview(false)}>Edit</button>
+                  <button className={`tab ${preview ? 'is-active' : ''}`} onClick={() => setPreview(true)}>Preview</button>
+                </div>
               </div>
-              <textarea
-                value={body}
-                onChange={e => { setBody(e.target.value); setDirty(true) }}
-                placeholder="Write in Markdown… # headings, **bold**, - lists, `code`"
-                style={{ width: '100%', minHeight: 320, resize: 'vertical', fontFamily: 'var(--mono)', fontSize: 13 }}
-              />
+              {preview ? (
+                <div
+                  className="note-preview"
+                  style={{ minHeight: 320, maxHeight: '55vh', overflowY: 'auto', fontSize: 13.5, lineHeight: 1.7 }}
+                  dangerouslySetInnerHTML={{ __html: mdToHtml(`# ${title || 'Untitled'}\n\n${body}`) }}
+                />
+              ) : (
+                <textarea
+                  value={body}
+                  onChange={e => { setBody(e.target.value); setDirty(true) }}
+                  placeholder="Write in Markdown… # headings, **bold**, - lists, `code`"
+                  style={{ width: '100%', minHeight: 320, resize: 'vertical', fontFamily: 'var(--mono)', fontSize: 13 }}
+                />
+              )}
               <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
                 <button className="btn btn--primary" onClick={save} disabled={saving || !dirty}>
                   {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}

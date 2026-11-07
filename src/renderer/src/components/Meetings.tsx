@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconMeeting, IconPlay } from './icons'
+import { mdToHtml } from '../lib/markdown'
 
 interface MeetingMeta { id: string; path: string; title: string; date: string; participants: string }
 interface Agent { id: string; name: string; emoji: string }
@@ -176,16 +177,4 @@ export default function Meetings({ agents, onActivity, onToast }: {
       )}
     </div>
   )
-}
-
-function mdToHtml(md: string): string {
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return esc(md)
-    .replace(/^### (.*)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.*)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.*)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n{2,}/g, '</p><p>')
-    .replace(/\n/g, '<br>')
-    .replace(/^/, '<p>').replace(/$/, '</p>')
 }
