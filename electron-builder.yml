@@ -21,5 +21,6 @@ win:
   target:
     - nsis
 linux:
+  category: Utility
   target:
     - AppImage

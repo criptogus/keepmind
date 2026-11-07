@@ -1,6 +1,6 @@
 {
   "name": "second-brain",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open-source installable second brain — connects your apps, remembers everything, thinks with you.",
   "license": "MIT",
   "main": "./out/main/index.js",
@@ -29,5 +29,6 @@
     "react-dom": "^18.3.1",
     "typescript": "^5.7.2",
     "vite": "^5.4.11"
-  }
+  },
+  "author": "Second Brain contributors"
 }

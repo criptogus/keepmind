@@ -3,13 +3,14 @@
 All notable changes to Second Brain are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.1] — 2026-11
 
 ### Added
 - **Auto-updater** — packaged builds check GitHub Releases on launch and every 6h, download in the background, and offer one-click restart. Settings → Updates.
 - **Chat history persistence** — conversations survive view switches and restarts (per-agent, local).
 - Richer Markdown rendering in chat (headings, lists, todos, fenced code blocks) shared with Notes/Meetings preview.
 - Copy button on assistant messages.
+- Releases now ship macOS universal (Intel + Apple Silicon), Windows x64/ARM64 and Linux AppImage builds.
 
 ### Changed
 - Neural background canvas runs in a lite mode and pauses when the window is hidden — much lower RAM/CPU footprint.
