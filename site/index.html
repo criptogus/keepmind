@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Second Brain — your memory, your repo, your AI</title>
+<meta name="description" content="Open-source local-first second brain for desktop. Markdown memory synced to your own GitHub repo, specialist AI agents, local LLM, sleep-mode learning. Free forever, MIT." />
+<link rel="icon" type="image/png" href="icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #030712;
+    --panel: rgba(15, 23, 42, .55);
+    --line: rgba(34, 211, 238, .14);
+    --cyan: #22d3ee;
+    --lime: #a3e635;
+    --amber: #facc15;
+    --violet: #a78bfa;
+    --text: #e2e8f0;
+    --muted: #8b98a9;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Space Grotesk', system-ui, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: rgba(34,211,238,.3); }
+
+  /* ambient synapse field */
+  #synapses { position: fixed; inset: 0; z-index: 0; opacity: .5; pointer-events: none; }
+  .wrap { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* nav */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    backdrop-filter: blur(14px);
+    background: rgba(3,7,18,.7);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
+  .brand svg { width: 30px; height: 30px; }
+  .brand b { font-family: var(--mono); font-size: 14px; letter-spacing: .12em; text-transform: uppercase; }
+  .brand b em { color: var(--cyan); font-style: normal; text-shadow: 0 0 12px rgba(34,211,238,.6); }
+  .nav-links { display: flex; gap: 26px; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; transition: color .2s; }
+  .nav-links a:hover { color: var(--cyan); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12.5px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; text-decoration: none;
+    padding: 12px 22px; border-radius: 999px; cursor: pointer; border: 1px solid transparent;
+    transition: transform .15s, box-shadow .2s, border-color .2s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn--primary {
+    background: linear-gradient(135deg, rgba(34,211,238,.18), rgba(163,230,53,.12));
+    border-color: rgba(34,211,238,.45); color: #fff;
+    box-shadow: 0 0 24px rgba(34,211,238,.18), inset 0 0 18px rgba(34,211,238,.06);
+  }
+  .btn--primary:hover { box-shadow: 0 0 34px rgba(34,211,238,.35), inset 0 0 22px rgba(34,211,238,.1); border-color: var(--cyan); }
+  .btn--ghost { border-color: var(--line); color: var(--muted); background: transparent; }
+  .btn--ghost:hover { color: var(--text); border-color: rgba(34,211,238,.4); }
+
+  /* hero */
+  .hero { padding: 110px 0 80px; text-align: center; }
+  .hud-tag {
+    display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
+    text-transform: uppercase; color: var(--cyan); margin-bottom: 22px;
+    padding: 6px 14px; border: 1px solid rgba(34,211,238,.3); border-radius: 999px;
+    background: rgba(34,211,238,.06); text-shadow: 0 0 10px rgba(34,211,238,.7);
+  }
+  .hero h1 {
+    font-size: clamp(42px, 7vw, 84px); line-height: 1.02; font-weight: 700; letter-spacing: -.02em;
+  }
+  .hero h1 .glow-cyan { color: var(--cyan); text-shadow: 0 0 30px rgba(34,211,238,.55); }
+  .hero h1 .glow-lime { color: var(--lime); text-shadow: 0 0 30px rgba(163,230,53,.45); }
+  .hero p.sub {
+    max-width: 620px; margin: 26px auto 0; font-size: 17px; line-height: 1.65; color: var(--muted);
+  }
+  .hero .cta-row { display: flex; gap: 14px; justify-content: center; margin-top: 38px; flex-wrap: wrap; }
+  .hero .fine { margin-top: 18px; font-family: var(--mono); font-size: 11.5px; color: #5b6b7d; letter-spacing: .04em; }
+
+  /* brain stage */
+  .stage { position: relative; margin: 30px auto 0; width: min(680px, 100%); aspect-ratio: 16/9; }
+  .stage canvas { width: 100%; height: 100%; display: block; }
+  .stage .chip {
+    position: absolute; display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 11.5px; padding: 9px 15px; border-radius: 999px;
+    background: rgba(10,15,30,.72); backdrop-filter: blur(8px);
+    border: 1px solid var(--line); color: var(--text); white-space: nowrap;
+    animation: float 6s ease-in-out infinite;
+  }
+  .stage .chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .chip--1 { top: 12%; left: 4%; animation-delay: 0s; }
+  .chip--2 { top: 20%; right: 2%; animation-delay: 1.2s; }
+  .chip--3 { bottom: 16%; left: 8%; animation-delay: 2.1s; }
+  .chip--4 { bottom: 10%; right: 6%; animation-delay: .6s; }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+
+  /* sections */
+  section { padding: 90px 0; }
+  .sec-tag {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--lime); margin-bottom: 14px;
+  }
+  h2 { font-size: clamp(28px, 4vw, 44px); font-weight: 700; letter-spacing: -.015em; line-height: 1.1; }
+  h2 em { font-style: normal; color: var(--cyan); text-shadow: 0 0 22px rgba(34,211,238,.4); }
+  .sec-sub { color: var(--muted); font-size: 16px; margin-top: 14px; max-width: 560px; line-height: 1.6; }
+
+  .grid { display: grid; gap: 18px; margin-top: 46px; }
+  .grid--3 { grid-template-columns: repeat(3, 1fr); }
+  .grid--2 { grid-template-columns: repeat(2, 1fr); }
+  .card {
+    position: relative; padding: 26px 24px; border-radius: 18px;
+    background: var(--panel); border: 1px solid var(--line);
+    transition: transform .2s, border-color .2s, box-shadow .2s;
+    overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; inset: 0 0 auto 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent); opacity: .6;
+  }
+  .card:hover { transform: translateY(-4px); border-color: rgba(34,211,238,.35); box-shadow: 0 12px 40px rgba(34,211,238,.08); }
+  .card .ic {
+    width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+    font-size: 19px; margin-bottom: 16px;
+    background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.22);
+    box-shadow: 0 0 16px rgba(34,211,238,.12);
+  }
+  .card h3 { font-size: 16.5px; margin-bottom: 8px; letter-spacing: .01em; }
+  .card p { font-size: 13.5px; color: var(--muted); line-height: 1.6; }
+  .card .tag { position: absolute; top: 20px; right: 20px; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--lime); }
+
+  /* tiers visual */
+  .tiers { display: flex; flex-direction: column; gap: 12px; margin-top: 40px; }
+  .tier {
+    display: flex; align-items: center; gap: 18px; padding: 18px 22px; border-radius: 14px;
+    border: 1px solid var(--line); background: var(--panel);
+  }
+  .tier .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .tier b { font-family: var(--mono); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; min-width: 130px; }
+  .tier span { font-size: 13.5px; color: var(--muted); }
+  .tier--short .dot { background: var(--amber); box-shadow: 0 0 10px var(--amber); } .tier--short b { color: var(--amber); }
+  .tier--med .dot { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); } .tier--med b { color: var(--cyan); }
+  .tier--long .dot { background: var(--lime); box-shadow: 0 0 10px var(--lime); } .tier--long b { color: var(--lime); }
+
+  /* agents marquee */
+  .agents-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 40px; }
+  .agent-pill {
+    display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel); font-family: var(--mono); font-size: 13px;
+  }
+  .agent-pill i { font-style: normal; font-size: 18px; }
+
+  /* how */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 46px; counter-reset: step; }
+  .step { padding: 26px 24px; border-radius: 18px; border: 1px dashed rgba(34,211,238,.25); position: relative; }
+  .step::before {
+    counter-increment: step; content: '0' counter(step);
+    font-family: var(--mono); font-size: 12px; color: var(--cyan); letter-spacing: .15em;
+  }
+  .step h3 { margin: 12px 0 8px; font-size: 16px; }
+  .step p { font-size: 13.5px; color: var(--muted); line-height: 1.6; }
+  .step code { font-family: var(--mono); font-size: 12px; color: var(--lime); background: rgba(163,230,53,.08); padding: 2px 7px; border-radius: 6px; }
+
+  /* download */
+  .dl { text-align: center; }
+  .dl .grid--3 { max-width: 860px; margin-left: auto; margin-right: auto; }
+  .dl-card { display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; }
+  .dl-card .os { font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--cyan); }
+  .dl-card .size { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0; margin-top: 40px; }
+  footer .wrap { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; }
+  footer p { font-family: var(--mono); font-size: 12px; color: #5b6b7d; }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--cyan); }
+
+  @media (max-width: 860px) {
+    .grid--3, .grid--2, .steps { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+    .hero { padding: 80px 0 60px; }
+    section { padding: 64px 0; }
+    .tier { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .stage .chip { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+<canvas id="synapses"></canvas>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <defs>
+          <filter id="g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a3e635"/></linearGradient>
+        </defs>
+        <circle cx="24" cy="24" r="20" stroke="url(#cg)" stroke-width="1.6" opacity=".9" filter="url(#g)"/>
+        <path d="M15 17c4-3.4 14-3.4 18 0M15 31c4 3.4 14 3.4 18 0M15 17v14M33 17v14" stroke="url(#cg)" stroke-width="1.8" stroke-linecap="round" filter="url(#g)"/>
+        <circle cx="24" cy="24" r="4.6" fill="#22d3ee" filter="url(#g)"/>
+        <circle cx="8" cy="12" r="2.4" fill="#a3e635"/><circle cx="40" cy="36" r="2.4" fill="#a78bfa"/><circle cx="40" cy="12" r="2" fill="#facc15"/>
+      </svg>
+      <b>second<em>brain</em></b>
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#memory">Memory</a>
+      <a href="#agents">Agents</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/criptogus/second-brain-app">GitHub</a>
+    </div>
+    <a class="btn btn--primary" href="https://github.com/criptogus/second-brain-app/releases/latest">Download</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="hud-tag">◈ open source · local-first · mit</span>
+    <h1>Your second brain,<br/><span class="glow-cyan">in your own repo.</span></h1>
+    <p class="sub">
+      Second Brain remembers everything you tell it — as Markdown files in a private
+      GitHub repository <em>you</em> own. Chat with specialist AI agents, run nightly
+      learning cycles, automate your routine. Works fully offline with a local LLM.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn--primary" href="https://github.com/criptogus/second-brain-app/releases/latest">⬇ Download free</a>
+      <a class="btn btn--ghost" href="https://github.com/criptogus/second-brain-app#readme">Read the docs</a>
+    </div>
+    <p class="fine">macOS · Windows · Linux — no account required, no subscription to start</p>
+
+    <div class="stage">
+      <canvas id="core"></canvas>
+      <div class="chip chip--1"><i></i>memory synced → github</div>
+      <div class="chip chip--2"><i style="background:var(--lime);box-shadow:0 0 8px var(--lime)"></i>3 memory tiers</div>
+      <div class="chip chip--3"><i style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></i>sleep cycle active</div>
+      <div class="chip chip--4"><i style="background:var(--violet);box-shadow:0 0 8px var(--violet)"></i>6 ai providers</div>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-tag">// capabilities</div>
+    <h2>Everything a second brain<br/>should <em>actually do.</em></h2>
+    <div class="grid grid--3">
+      <div class="card"><div class="ic">🧠</div><h3>Tiered memory</h3><p>Short, medium and long-term memory — like a real brain. Nightly "sleep" cycles review the day and distill facts, lessons and skills.</p></div>
+      <div class="card"><div class="ic">🤖</div><h3>Specialist agents</h3><p>Chat with Buffett, Gates, Musk, Naval and Jobs personas — or build your own. They answer with your full memory context.</p></div>
+      <div class="card"><div class="ic">🗣️</div><h3>Agent meetings</h3><p>Convene a roundtable on any topic. They debate live, reach consensus, and action items land straight in your task list.</p></div>
+      <div class="card"><div class="ic">📅</div><h3>Today command center</h3><p>Daily intentions, tasks with due dates, quick notes — one screen that opens every morning.</p></div>
+      <div class="card"><div class="ic">⚡</div><h3>Natural automations</h3><p>"Every day at 8am summarize my WhatsApp" becomes a scheduled cron. Daily, interval or weekly — pause, resume, run now.</p></div>
+      <div class="card"><div class="ic">🧮</div><h3>Local semantic search</h3><p>Optional RAG embeddings (BGE/Nomic via llama.cpp) give the brain meaning-based recall — fully offline.</p></div>
+      <div class="card"><div class="ic">🔌</div><h3>MCP connectors</h3><p>WhatsApp via QR, Telegram bot, Postgres read-only, and any custom MCP server you add.</p></div>
+      <div class="card"><div class="ic">🔐다</div><h3>Local accounts + Google</h3><p>SQLite auth with scrypt hashing, Google sign-in via PKCE. Your data never leaves your machine unless you want it to.</p></div>
+      <div class="card"><div class="ic">🔄</div><h3>Auto-updates</h3><p>Built-in updater checks GitHub Releases on launch. New versions install themselves in the background.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="memory" style="background:rgba(15,23,42,.35);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-tag">// your data, your repo</div>
+    <h2>Memory that lives in <em>your</em> GitHub.</h2>
+    <p class="sec-sub">Every note, insight, task and meeting is a plain Markdown file in a private repo only you control. Portable, versioned, greppable — and readable by Claude, Codex or any AI you plug in.</p>
+    <div class="tiers">
+      <div class="tier tier--short"><i class="dot"></i><b>short-term</b><span>daily raw logs — working memory, last ~10 days in context</span></div>
+      <div class="tier tier--med"><i class="dot"></i><b>medium-term</b><span>weekly consolidations — patterns emerge</span></div>
+      <div class="tier tier--long"><i class="dot"></i><b>long-term</b><span>facts · lessons · skills — permanent, injected into every chat</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="agents">
+  <div class="wrap">
+    <div class="sec-tag">// specialist agents</div>
+    <h2>Ask the greats.<br/><em>They've read your diary.</em></h2>
+    <p class="sec-sub">Each agent has a persona and full access to your second-brain context — past decisions, lessons learned, open tasks.</p>
+    <div class="agents-row">
+      <div class="agent-pill"><i>🎩</i> Warren Buffett</div>
+      <div class="agent-pill"><i>🖥️</i> Bill Gates</div>
+      <div class="agent-pill"><i>🚀</i> Elon Musk</div>
+      <div class="agent-pill"><i>⚓</i> Naval Ravikant</div>
+      <div class="agent-pill"><i>🍎</i> Steve Jobs</div>
+      <div class="agent-pill"><i>🧠</i> + your own personas</div>
+    </div>
+    <div class="grid grid--2" style="max-width:860px;margin-left:auto;margin-right:auto">
+      <div class="card"><h3>6 AI providers</h3><p>Bundled local llama.cpp (fully offline) · Codex/ChatGPT sign-in · Claude Pro/Max · OpenAI · Gemini · Grok · Ollama.</p></div>
+      <div class="card"><h3>Plug in your other AIs</h3><p>One prompt teaches Claude, Codex, Grok or Gemini to read and write memory in your repo — emails sent, PDFs made, decisions remembered.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="install" class="dl">
+  <div class="wrap">
+    <div class="sec-tag">// install</div>
+    <h2>Free forever.<br/><em>MIT licensed.</em></h2>
+    <p class="sec-sub" style="margin-left:auto;margin-right:auto">Download the latest release — auto-updates are built in.</p>
+    <div class="grid grid--3" style="margin-top:40px">
+      <div class="card dl-card">
+        <span class="os">macOS</span>
+        <span class="size">Universal · dmg / zip</span>
+        <a class="btn btn--primary" href="https://github.com/criptogus/second-brain-app/releases/latest">Download</a>
+      </div>
+      <div class="card dl-card">
+        <span class="os">Windows</span>
+        <span class="size">x64 + ARM64 · exe</span>
+        <a class="btn btn--primary" href="https://github.com/criptogus/second-brain-app/releases/latest">Download</a>
+      </div>
+      <div class="card dl-card">
+        <span class="os">Linux</span>
+        <span class="size">x64 · AppImage</span>
+        <a class="btn btn--primary" href="https://github.com/criptogus/second-brain-app/releases/latest">Download</a>
+      </div>
+    </div>
+    <p style="margin-top:26px;font-family:var(--mono);font-size:12px;color:#5b6b7d">
+      or <code style="color:var(--lime)">git clone</code> and <code style="color:var(--lime)">npm run dev</code> — see the README
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>© 2026 Second Brain — MIT License</p>
+    <p>
+      <a href="https://github.com/criptogus/second-brain-app">github.com/criptogus/second-brain-app</a>
+      · <a href="https://github.com/criptogus/second-brain-app/blob/main/CHANGELOG.md">changelog</a>
+      · <a href="https://github.com/criptogus/second-brain-app/issues">issues</a>
+    </p>
+  </div>
+</footer>
+
+<script>
+// Ambient synapse field — cheap particle network, pauses when hidden.
+(function () {
+  const cv = document.getElementById('synapses');
+  const cx = document.getElementById('core');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function field(canvas, count, speed, hue) {
+    const ctx = canvas.getContext('2d');
+    let W, H, pts = [], raf;
+    const resize = () => {
+      const dpr = Math.min(devicePixelRatio || 1, 1.5);
+      W = canvas.clientWidth; H = canvas.clientHeight;
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    const seed = () => {
+      pts = Array.from({ length: count }, () => ({
+        x: Math.random() * W, y: Math.random() * H,
+        vx: (Math.random() - .5) * speed, vy: (Math.random() - .5) * speed,
+        r: Math.random() * 1.6 + .6
+      }));
+    };
+    const colors = hue === 'core'
+      ? ['34,211,238', '163,230,53', '250,204,21', '167,139,250']
+      : ['34,211,238', '34,211,238', '163,230,53'];
+    const draw = () => {
+      ctx.clearRect(0, 0, W, H);
+      for (const p of pts) {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0 || p.x > W) p.vx *= -1;
+        if (p.y < 0 || p.y > H) p.vy *= -1;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7);
+        ctx.fillStyle = `rgba(${colors[(Math.random() * colors.length) | 0]},.8)`;
+        ctx.fill();
+      }
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+        const a = pts[i], b = pts[j];
+        const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+        if (d2 < 140 * 140) {
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = `rgba(34,211,238,${(1 - Math.sqrt(d2) / 140) * .14})`;
+          ctx.lineWidth = 1; ctx.stroke();
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    resize(); seed();
+    if (!reduced) draw();
+    addEventListener('resize', () => { resize(); seed(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { cancelAnimationFrame(raf); raf = 0; }
+      else if (!reduced && !raf) draw();
+    });
+  }
+  field(cv, innerWidth < 700 ? 40 : 90, .35, 'bg');
+  field(cx, 60, .5, 'core');
+})();
+</script>
+</body>
+</html>
