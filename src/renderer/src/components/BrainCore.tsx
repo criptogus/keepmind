@@ -16,7 +16,7 @@ function mulberry32(seed: number) {
   }
 }
 
-export default function BrainCore({ activity = 0, className = '' }: { activity?: number; className?: string }) {
+export default function BrainCore({ activity = 0, className = '', lite = false }: { activity?: number; className?: string; lite?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const actRef = useRef(activity)
   actRef.current = activity
@@ -52,7 +52,8 @@ export default function BrainCore({ activity = 0, className = '' }: { activity?:
 
       // rejection-sample points inside two ellipses, keep outside fissure
       let tries = 0
-      while (nodes.length < 420 && tries++ < 30000) {
+      const target = lite ? 170 : 420
+      while (nodes.length < target && tries++ < 30000) {
         const a = rand() * Math.PI * 2
         const rr = Math.sqrt(rand())
         const x = cx + rr * rx * Math.cos(a)
@@ -99,13 +100,14 @@ export default function BrainCore({ activity = 0, className = '' }: { activity?:
         }
       })
       // cap edges for perf
-      if (edges.length > 1600) {
-        edges = edges.filter(() => Math.random() < 1600 / edges.length)
+      const edgeCap = lite ? 550 : 1600
+      if (edges.length > edgeCap) {
+        edges = edges.filter(() => Math.random() < edgeCap / edges.length)
       }
     }
 
     const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
+      dpr = Math.min(window.devicePixelRatio || 1, lite ? 1.25 : 2)
       const rect = canvas.getBoundingClientRect()
       w = rect.width; h = rect.height
       canvas.width = w * dpr; canvas.height = h * dpr
@@ -144,7 +146,7 @@ export default function BrainCore({ activity = 0, className = '' }: { activity?:
       }
 
       // spawn pulses
-      const spawnN = Math.floor((0.6 + act * 4) * (dt / 16))
+      const spawnN = Math.floor((0.6 + act * 4) * (dt / 16) * (lite ? 0.45 : 1))
       for (let i = 0; i < spawnN && edges.length; i++) {
         const e = edges[(Math.random() * edges.length) | 0]
         pulses.push({
@@ -185,13 +187,25 @@ export default function BrainCore({ activity = 0, className = '' }: { activity?:
 
       raf = requestAnimationFrame(tick)
     }
+    let running = true
+    const start = () => { if (running && !raf) raf = requestAnimationFrame(tick) }
+    const stop = () => { running = false; if (raf) cancelAnimationFrame(raf); raf = 0 }
+    const onVis = () => { document.hidden ? stop() : (running = true, start()) }
+    const onBlur = () => { if (document.hasFocus()) return; stop() }
+    const onFocus = () => { running = true; start() }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('focus', onFocus)
     raf = requestAnimationFrame(tick)
 
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('focus', onFocus)
       ro.disconnect()
     }
-  }, [])
+  }, [lite])
 
   return <canvas ref={ref} className={`brain-core ${className}`} />
 }

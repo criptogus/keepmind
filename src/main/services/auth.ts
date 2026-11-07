@@ -116,19 +116,22 @@ export class AuthService {
 
   // Google sign-in: link by google_sub or email, create if needed
   async upsertGoogle(profile: { sub: string; email: string; name?: string }): Promise<AuthUser> {
-    const e = profile.email.trim().toLowerCase()
+    const sub = String(profile.sub ?? '')
+    const e = String(profile.email ?? '').trim().toLowerCase()
+    const name = String(profile.name ?? '')
+    if (!sub && !e) throw new Error('Google profile is missing both sub and email')
     return this.q(db => {
-      let r = db.exec('SELECT * FROM users WHERE google_sub = ?', [profile.sub])
+      let r = db.exec('SELECT * FROM users WHERE google_sub = ?', [sub])
       if (!r.length && e) r = db.exec('SELECT * FROM users WHERE email = ?', [e])
       if (r.length) {
         const row: any = r[0].values[0]
-        if (!row[5]) db.run('UPDATE users SET google_sub = ? WHERE id = ?', [profile.sub, row[0]])
+        if (!row[5] && sub) db.run('UPDATE users SET google_sub = ? WHERE id = ?', [sub, row[0]])
         const rr = db.exec('SELECT * FROM users WHERE id = ?', [row[0]])
         return AuthService.toUser(rr[0].values[0] as any)
       }
       db.run('INSERT INTO users(email,name,google_sub,created_at) VALUES(?,?,?,?)',
-        [e || `google-${profile.sub}@users.local`, profile.name ?? '', profile.sub, new Date().toISOString()])
-      const rr = db.exec('SELECT * FROM users WHERE google_sub = ?', [profile.sub])
+        [e || `google-${sub}@users.local`, name, sub || null, new Date().toISOString()])
+      const rr = db.exec('SELECT * FROM users WHERE id = (SELECT MAX(id) FROM users)')
       return AuthService.toUser(rr[0].values[0] as any)
     })
   }

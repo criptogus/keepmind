@@ -96,7 +96,7 @@ export default function App() {
   if (!config.onboardingDone) {
     return (
       <>
-        <BrainCore activity={0.4} className="brain-bg" />
+        <BrainCore activity={0.4} className="brain-bg" lite />
         <Wizard config={config} onDone={loadConfig} onToast={toast} />
         <ToastWrap toasts={toasts} />
       </>
@@ -105,7 +105,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <BrainCore activity={activity} className="brain-bg" />
+      <BrainCore activity={activity} className="brain-bg" lite />
 
       <aside className="sidebar">
         <div className="brand">
