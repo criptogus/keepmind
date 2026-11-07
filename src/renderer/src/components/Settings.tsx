@@ -238,19 +238,29 @@ export default function Settings({ onToast, onActivity }: Props) {
         <UpdatesCard onToast={onToast} />
 
         {/* About */}
-        <div className="card card-pad">
-          <h2 style={{ marginBottom: 14 }}>About</h2>
-          <div className="faint" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-            <p><strong style={{ color: 'var(--text)' }}>Second Brain</strong> v0.1.0 — open source, MIT.</p>
-            <p style={{ marginTop: 8 }}>
-              Local-first AI memory. Your data lives in <em>your</em> GitHub repo.
-              The LLM can run fully offline on your machine.
-            </p>
-            <p className="mono" style={{ marginTop: 8, fontSize: 11 }}>
-              electron · react · typescript · llama.cpp · mcp
-            </p>
-          </div>
-        </div>
+        <AboutCard />
+      </div>
+    </div>
+  )
+}
+
+function AboutCard() {
+  const [version, setVersion] = useState('')
+  useEffect(() => {
+    window.sb.updaterStatus?.().then((s: any) => setVersion(s?.version ?? '')).catch(() => {})
+  }, [])
+  return (
+    <div className="card card-pad">
+      <h2 style={{ marginBottom: 14 }}>About</h2>
+      <div className="faint" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+        <p><strong style={{ color: 'var(--text)' }}>Second Brain</strong>{version ? ` v${version}` : ''} — open source, MIT.</p>
+        <p style={{ marginTop: 8 }}>
+          Local-first AI memory. Your data lives in <em>your</em> GitHub repo.
+          The LLM can run fully offline on your machine.
+        </p>
+        <p className="mono" style={{ marginTop: 8, fontSize: 11 }}>
+          electron · react · typescript · llama.cpp · mcp
+        </p>
       </div>
     </div>
   )
