@@ -119,6 +119,8 @@ export function registerIpc(
       repoUrl: repo.html_url,
       defaultBranch: repo.default_branch
     })
+    // Push agent-onboarding files (AGENTS.md, .mcp.json, MCP server) into the repo
+    sync?.maybeScaffold().catch(() => {})
     return repo
   })
   ipcMain.handle('github:pushMemory', async (_e, message: string) => {

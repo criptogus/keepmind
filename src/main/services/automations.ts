@@ -29,6 +29,7 @@ export function parseNaturalSchedule(text: string): ParsedSchedule {
   // What kind of job?
   let kind: Automation['kind'] = 'brain'
   if (/\b(sleep|sono|dormir|learning cycle)\b/.test(t)) kind = 'sleep'
+  else if (/\b(librarian|hygiene|defrag|vault|dedup|limpeza|faxina)\b/.test(t)) kind = 'librarian'
   else if (/\b(daily summary|sum[aá]rio|recap|briefing)\b/.test(t)) kind = 'summary'
 
   // Suggested name: first meaningful words
@@ -168,6 +169,8 @@ export class AutomationScheduler {
     this.log(`automation "${auto.name}" running (${auto.kind})`)
     if (auto.kind === 'sleep') {
       await this.brain.sleep()
+    } else if (auto.kind === 'librarian') {
+      await this.brain.librarian()
     } else if (auto.kind === 'summary') {
       await this.brain.generateInsights()
       await this.brain.dailySummary()

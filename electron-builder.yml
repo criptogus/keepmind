@@ -10,6 +10,7 @@ directories:
 files:
   - out/**
   - package.json
+  - tools/**
   - node_modules/**
 asar: true
 mac:

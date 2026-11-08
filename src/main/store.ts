@@ -45,7 +45,7 @@ export interface Automation {
   id: string
   name: string
   instruction: string          // what the brain should do (natural language)
-  kind: 'brain' | 'sleep' | 'summary'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string                // 'HH:MM' for daily/weekly
   everyMinutes?: number        // for interval
@@ -109,7 +109,15 @@ function defaultConfig(): AppConfig {
       { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
     ],
     agents: DEFAULT_AGENTS,
-    automations: [],
+    // Weekly librarian pass keeps the memory base clean (dedupe, archive, triage)
+    automations: [
+      {
+        id: 'librarian-weekly', name: 'Weekly librarian',
+        instruction: 'Weekly vault hygiene: consolidate old logs, dedupe long-term memory, refresh entity pages.',
+        kind: 'librarian', schedule: 'weekly', weekday: 1, time: '09:00',
+        enabled: true, createdAt: new Date().toISOString()
+      }
+    ],
     auth: {},
     pro: { active: false }
   }
@@ -135,7 +143,7 @@ export class Store {
         merged.localLlm = { ...defaultConfig().localLlm, ...raw.localLlm }
         merged.github = { ...defaultConfig().github, ...raw.github }
         merged.agents = raw.agents?.length ? raw.agents : DEFAULT_AGENTS
-        merged.automations = raw.automations ?? []
+        merged.automations = raw.automations?.length ? raw.automations : defaultConfig().automations
         merged.auth = { ...defaultConfig().auth, ...raw.auth }
         merged.pro = { ...defaultConfig().pro, ...raw.pro }
         return merged

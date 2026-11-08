@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path'
 import type { Store } from '../store'
 import type { Memory } from './brain'
 import * as github from './github'
+import { ensureRepoScaffold } from './scaffold'
 
 // ── GitSync: keeps local memory/ and the GitHub repo continuously in sync ──
 //
@@ -78,11 +79,31 @@ export class GitSync {
     this.emit()
   }
 
+  private scaffoldDone = false
+
+  // Public so connect flows can trigger it right after repo creation
+  async maybeScaffold() { return this.ensureScaffold() }
+
   start() {
     // Periodic pull — remote AIs may have written memory
     this.pullTimer = setInterval(() => { void this.pull() }, PULL_INTERVAL_MS)
     // First pull shortly after boot
     setTimeout(() => { void this.pull() }, 8_000)
+    // One-time: push agent-onboarding files (AGENTS.md, .mcp.json, MCP server)
+    // into the repo root so Codex/Claude/Grok discover the memory automatically
+    setTimeout(() => { void this.ensureScaffold() }, 20_000)
+  }
+
+  private async ensureScaffold() {
+    if (this.scaffoldDone || !this.connected()) return
+    this.scaffoldDone = true
+    try {
+      const pushed = await ensureRepoScaffold(this.store.get().github)
+      if (pushed.length) console.log(`[sync] repo scaffold pushed: ${pushed.join(', ')}`)
+    } catch (e) {
+      this.scaffoldDone = false // retry on next start
+      console.warn('[sync] scaffold failed:', e)
+    }
   }
 
   stop() {

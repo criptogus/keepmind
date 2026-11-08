@@ -5,7 +5,7 @@ interface Automation {
   id: string
   name: string
   instruction: string
-  kind: 'brain' | 'sleep' | 'summary'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string
   everyMinutes?: number
@@ -28,7 +28,8 @@ interface Parsed {
 const KIND_LABEL: Record<string, string> = {
   brain: 'brain task',
   sleep: 'sleep cycle',
-  summary: 'summary'
+  summary: 'summary',
+  librarian: 'librarian'
 }
 
 function scheduleLabel(a: Automation): string {

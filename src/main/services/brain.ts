@@ -9,6 +9,7 @@ import * as github from './github'
 import type { GitHubConfig, Store } from '../store'
 import type { GitSync } from './sync'
 import type { RagService } from './rag'
+import { refreshEntities } from './entities'
 
 // ── Memory: markdown files in the local memory dir, mirrored to the GitHub repo ──
 
@@ -25,7 +26,7 @@ export class Memory {
     //   long-term   = durable facts, lessons, skills (never forgotten)
     //   sleep       = nightly learning reports
     //   inbox       = legacy dir kept for backward compatibility
-    for (const sub of ['short-term', 'medium-term', 'long-term', 'sleep', 'inbox', 'insights', 'summaries', 'agents', 'notes', 'tasks', 'daily', 'meetings']) {
+    for (const sub of ['short-term', 'medium-term', 'long-term', 'sleep', 'inbox', 'insights', 'summaries', 'agents', 'notes', 'tasks', 'daily', 'meetings', 'entities']) {
       mkdirSync(join(this.dir, sub), { recursive: true })
     }
   }
@@ -418,7 +419,15 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     // 3) Consolidate short-term logs older than 7 days into medium-term weekly files
     const consolidated = await this.consolidateShortTerm()
 
-    // 4) Sync to GitHub — GitSync pushes dirty paths + pulls remote changes
+    // 4) Refresh the entity layer (knowledge graph in Markdown)
+    try {
+      const r = await refreshEntities(this.memory, this.entityCompleter())
+      console.log(`[brain] entities refreshed: ${r.created} new, ${r.updated} updated, ${r.total} total`)
+    } catch (e) {
+      console.warn('[brain] entity refresh failed:', e)
+    }
+
+    // 5) Sync to GitHub — GitSync pushes dirty paths + pulls remote changes
     try {
       if (this.gitSync) await this.gitSync.syncNow()
       else await this.memory.syncToGitHub(`sleep cycle ${day}`)
@@ -472,6 +481,72 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
       consolidated += files.length
     }
     return consolidated
+  }
+
+  // Single-shot LLM completion used by the entity layer (descriptions).
+  private entityCompleter(): (prompt: string) => Promise<string> {
+    return async (prompt: string) => {
+      const cfg = this.store.get()
+      const res = await chat(cfg.ai as AiProviderConfig, [
+        { role: 'system', content: 'You extract structured data from text. Output only the requested lines — no commentary, no markdown.' },
+        { role: 'user', content: prompt }
+      ], [], this.localLlm?.endpoint)
+      return res.text
+    }
+  }
+
+  // ── Librarian: weekly vault hygiene ──
+  // Consolidates old logs, dedupes long-term memory, refreshes entities,
+  // and writes a report. Runs as a scheduled automation (kind: 'librarian').
+
+  private dedupeLongTerm(): number {
+    let removed = 0
+    for (const file of ['facts.md', 'lessons.md', 'skills.md']) {
+      const rel = `long-term/${file}`
+      const content = this.memory.read(rel)
+      if (!content) continue
+      const seen = new Set<string>()
+      const out: string[] = []
+      for (const line of content.split('\n')) {
+        const t = line.trim()
+        // dedupe bullet-like lines; keep headers/blank lines always
+        if (/^[-*•]/.test(t) || /^\d+\./.test(t)) {
+          const key = t.toLowerCase().replace(/\s+/g, ' ')
+          if (seen.has(key)) { removed++; continue }
+          seen.add(key)
+        }
+        out.push(line)
+      }
+      const next = out.join('\n')
+      if (next !== content) this.memory.write(rel, next)
+    }
+    return removed
+  }
+
+  async librarian(): Promise<string> {
+    const day = new Date().toISOString().slice(0, 10)
+    const consolidated = await this.consolidateShortTerm()
+    const deduped = this.dedupeLongTerm()
+    let entities = { created: 0, updated: 0, total: 0 }
+    try {
+      entities = await refreshEntities(this.memory, this.entityCompleter())
+    } catch (e) {
+      console.warn('[brain] librarian: entity refresh failed:', e)
+    }
+    try {
+      if (this.gitSync) await this.gitSync.syncNow()
+    } catch { /* offline ok */ }
+
+    const report = [
+      `# Librarian — ${day}`,
+      '',
+      `- consolidated ${consolidated} short-term log(s) into medium-term`,
+      `- removed ${deduped} duplicate long-term line(s)`,
+      `- entities: ${entities.created} new, ${entities.updated} updated (${entities.total} total)`,
+      ''
+    ].join('\n')
+    this.memory.write(`insights/librarian-${day}.md`, report)
+    return report
   }
 
   // ── Meetings: multi-agent roundtable that produces a transcript + action items ──

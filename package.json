@@ -4,6 +4,9 @@
   "description": "Open-source installable second brain — connects your apps, remembers everything, thinks with you.",
   "license": "MIT",
   "main": "./out/main/index.js",
+  "bin": {
+    "second-brain-mcp": "./tools/second-brain-mcp.mjs"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",

@@ -33,6 +33,10 @@ replaceable runtime, the repo is the brain:
 - **📦 Knowledge outlives models** — every conversation, insight and summary is Markdown in a **private GitHub repo created for you** via OAuth device flow. Not weights in a provider's silo — files you own, versioned and portable. Any AI that can read a repo can use it.
 - **🖥️ Runs anywhere** — desktop app (Electron) on macOS/Windows/Linux, headless on a VPS, or installed by an agent on its own VM. A GitHub repo is the only hard requirement — it's the durable memory backend every LLM workflow already speaks.
 - **🔌 Connectors (MCP)** — a generic MCP stdio client plus bundled servers: WhatsApp via QR (Baileys), Telegram bot, Postgres read-only, and *any* custom MCP server. LLMs call connector tools natively.
+- **🧠 Second Brain MCP server** — the repo ships its own zero-dependency MCP server (`tools/second-brain-mcp.mjs`, Node 18+). Claude Code, Codex, Gemini CLI, Grok or any MCP client connects with one command and gets `sb_search` / `sb_read` / `sb_write` / `sb_remember` / `sb_tasks` — structured memory access, not just raw files.
+- **📄 Agent-ready repo** — on connect, the app pushes `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json` and the MCP server into your repo. Codex/Claude/Grok discover and use the memory automatically — no prompt-pasting needed.
+- **🧹 Weekly librarian** — a scheduled hygiene pass (consolidate old logs, dedupe long-term memory, refresh entities) keeps the knowledge base clean on its own.
+- **🕸️ Entity layer** — recurring people/projects/topics get their own page in `memory/entities/` with `[[wikilinks]]` — a lightweight knowledge graph in plain Markdown.
 - **🔁 Continuous GitHub sync** — the repo is the source of truth: every local memory write pushes in seconds, remote changes (written by Claude, Codex, Grok, or a bot on a VPS…) pull down automatically, before every chat.
 - **🧠 Tiered memory + sleep cycles** — short/medium/long-term memory like a real brain. The nightly "sleep" cycle reviews the day (what works, what to fix, what to stop, what to start) and distills facts, lessons and reusable skills into long-term memory.
 - **⚡ Natural-language automations** — "every day at 8am summarize my whatsapp" becomes a scheduled cron. Daily/interval/weekly, pause/resume/run-now.
@@ -67,6 +71,7 @@ replaceable runtime, the repo is the brain:
 │       │            │            │       │ custom      │ │
 │  ┌────┴────────────┴────────────┴───────┴──────┬──────┘ │
 │  │ GitSync ⇄ repo · Auth (SQLite) · Automations │        │
+│  │ scheduler · Librarian · Entities · RAG       │        │
 │  │ scheduler · RAG embeddings (llama-server :8766)      │
 │  └─────────────────────────────────────────────┴────────┘ │
 └────────────────────────────────────────────────┼────────┘
@@ -161,11 +166,31 @@ memory/
 ├── tasks/                    # to-dos with due dates & priorities
 ├── daily/                    # daily intentions/goals
 ├── meetings/                 # specialist roundtable transcripts
+├── entities/                 # knowledge graph: one page per entity + index
 └── agents/                   # per-agent notes
 ```
 
 External AIs (Claude, Codex, Grok, Gemini…) can plug into the same repo —
 the app generates a ready-to-paste prompt under **Brain → Plug in your AI**.
+
+### Connect Codex / Claude / Grok directly (MCP)
+
+Every connected repo contains `tools/second-brain-mcp.mjs` — a zero-dependency
+MCP server over your `memory/` directory. Any MCP-capable agent gets
+structured memory tools:
+
+```bash
+# Claude Code — already wired via the .mcp.json the app pushes
+# Codex CLI / Gemini CLI / any MCP client:
+node tools/second-brain-mcp.mjs --dir ./memory
+
+# or from this repo / npm:
+npx second-brain-mcp --dir /path/to/your/memory-clone
+```
+
+Available tools: `sb_search` (search memory first), `sb_read`, `sb_write`,
+`sb_append`, `sb_remember` (durable fact/lesson/skill), `sb_recent`,
+`sb_list`, `sb_tree`, `sb_tasks` — plus `memory://` resources for browsing.
 
 ## Tech stack
 
@@ -183,8 +208,11 @@ the app generates a ready-to-paste prompt under **Brain → Plug in your AI**.
 - [x] Scheduled agents (natural-language automations + sleep cycles)
 - [x] Local semantic memory (RAG via llama.cpp embeddings)
 - [x] Codex/ChatGPT sign-in as an AI backend
+- [x] MCP server exposing memory to external agents (Claude, Codex, Grok…)
+- [x] Agent-ready repo scaffold (AGENTS.md, CLAUDE.md, .mcp.json, bundled MCP server)
+- [x] Weekly librarian hygiene automation + entity/knowledge-graph layer
 - [ ] Composio as a universal connector (Gmail, Calendar, Notion, Drive…)
-- [ ] Claude Code / Gemini CLI as optional "brain" backends
+- [ ] Semantic search inside the standalone MCP server (embeddings endpoint)
 - [ ] Real `git clone/push` sync in addition to the Contents API
 - [ ] Mobile companion (read-only memory viewer)
 
