@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { GitHubConfig } from '../store'
+import type { AppConfig, GitHubConfig } from '../store'
 import * as github from './github'
 
 // ── Repo scaffold: files that teach ANY agent how to use this memory repo ──
@@ -129,4 +129,35 @@ export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
     pushed.push(path)
   }
   return pushed
+}
+
+// ── keepmind.json: "brain as code" ──
+// A sanitized declaration of the brain — agents, automations, connectors,
+// model prefs — at the repo ROOT (outside memory/). Any bot or agent that
+// clones the repo can see how the brain is configured. NEVER includes
+// secrets: no API keys, tokens, env values or webhook tokens.
+
+export function brainConfigJson(cfg: AppConfig): string {
+  const doc = {
+    $schema: 'keepmind/v1',
+    generatedAt: new Date().toISOString(),
+    note: 'Declarative snapshot of this KeepMind brain. Secrets are never included. Memory lives under memory/.',
+    ai: { provider: cfg.ai.provider, model: cfg.ai.model ?? null, localModel: cfg.localLlm.modelId ?? null },
+    agents: cfg.agents.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, builtin: !!a.builtin })),
+    automations: cfg.automations.map(a => ({
+      id: a.id, name: a.name, kind: a.kind, schedule: a.schedule,
+      time: a.time ?? null, everyMinutes: a.everyMinutes ?? null,
+      weekday: a.weekday ?? null, enabled: a.enabled, mode: a.mode ?? 'auto'
+    })),
+    connectors: cfg.mcpServers.map(s => ({
+      id: s.id, name: s.name, kind: s.kind, enabled: s.enabled,
+      permission: s.permission ?? 'allow', custom: s.kind === 'custom'
+    }))
+  }
+  return JSON.stringify(doc, null, 2) + '\n'
+}
+
+export async function exportBrainConfig(gh: GitHubConfig, cfg: AppConfig): Promise<void> {
+  if (!gh.accessToken || !gh.repoOwner) throw new Error('GitHub not configured')
+  await github.pushFile(gh, 'keepmind.json', brainConfigJson(cfg), 'chore: refresh keepmind.json brain config')
 }

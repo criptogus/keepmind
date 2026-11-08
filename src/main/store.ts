@@ -39,6 +39,9 @@ export interface McpServerConfig {
   env?: Record<string, string>
   // bundled servers
   sessionDir?: string
+  // connector permission — 'block' never spawns, 'ask' waits for manual
+  // connect, 'allow'/undefined may auto-start
+  permission?: 'allow' | 'ask' | 'block'
 }
 
 export interface Automation {
@@ -52,6 +55,8 @@ export interface Automation {
   weekday?: number             // 0=Sun..6=Sat for weekly
   enabled: boolean
   mode?: 'auto' | 'approval'  // 'approval' = scheduled runs queue for user OK
+  webhook?: boolean          // expose POST /hook/<id> trigger
+  webhookToken?: string      // shared secret for the webhook (server-generated)
   lastRunAt?: string
   createdAt: string
 }
@@ -88,6 +93,7 @@ export interface AppConfig {
   pendingApprovals: PendingApproval[]
   auth: AuthConfig
   pro: ProConfig
+  hooks: { lan: boolean }    // webhook listener: localhost-only vs LAN
   memoryDir?: string
 }
 
@@ -117,6 +123,7 @@ function defaultConfig(): AppConfig {
       { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
     ],
     agents: DEFAULT_AGENTS,
+    hooks: { lan: false },
     // Self-learning defaults: nightly sleep, morning summary, weekly
     // librarian hygiene, weekly evolution review, nightly note enrichment.
     automations: [
@@ -233,6 +240,7 @@ export class Store {
         merged.pendingApprovals = raw.pendingApprovals ?? []
         merged.auth = { ...defaultConfig().auth, ...raw.auth }
         merged.pro = { ...defaultConfig().pro, ...raw.pro }
+        merged.hooks = { ...defaultConfig().hooks, ...raw.hooks }
         // decrypt secrets only after all merges — raw.* values may still
         // carry the "enc:" envelope from the sealed file
         return unsealConfig(merged)

@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path'
 import type { Store } from '../store'
 import type { Memory } from './brain'
 import * as github from './github'
-import { ensureRepoScaffold } from './scaffold'
+import { ensureRepoScaffold, exportBrainConfig } from './scaffold'
 
 // ── GitSync: keeps local memory/ and the GitHub repo continuously in sync ──
 //
@@ -100,6 +100,8 @@ export class GitSync {
     try {
       const pushed = await ensureRepoScaffold(this.store.get().github)
       if (pushed.length) console.log(`[sync] repo scaffold pushed: ${pushed.join(', ')}`)
+      // keepmind.json — sanitized brain-as-code snapshot at repo root
+      await exportBrainConfig(this.store.get().github, this.store.get())
     } catch (e) {
       this.scaffoldDone = false // retry on next start
       console.warn('[sync] scaffold failed:', e)

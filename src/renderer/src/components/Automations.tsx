@@ -12,6 +12,8 @@ interface Automation {
   weekday?: number
   enabled: boolean
   mode?: 'auto' | 'approval'
+  webhook?: boolean
+  webhookToken?: string
   lastRunAt?: string
   createdAt: string
 }
@@ -93,6 +95,7 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
   const [parsed, setParsed] = useState<Parsed | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [sleeping, setSleeping] = useState(false)
+  const [hookInfo, setHookInfo] = useState<Record<string, { url: string; token: string }>>({})
   const parseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refresh = async () => {
@@ -159,6 +162,23 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
     await window.sb.automationUpdate(a.id, { mode })
     await refresh()
   }
+  const setWebhook = async (a: Automation) => {
+    setBusy(`wh-${a.id}`)
+    try {
+      const r: any = await window.sb.automationSetWebhook(a.id, !a.webhook)
+      if (r?.url) setHookInfo(prev => ({ ...prev, [a.id]: { url: r.url, token: r.token } }))
+      else setHookInfo(prev => { const n = { ...prev }; delete n[a.id]; return n })
+      onToast?.(r?.webhook ? `Webhook live: ${r.url}` : 'Webhook disabled', 'success')
+      await refresh()
+    } catch (e: any) { onToast?.(e?.message ?? String(e), 'error') }
+    finally { setBusy(null) }
+  }
+  const exportConfig = async () => {
+    setBusy('export')
+    try { await window.sb.brainExportConfig(); onToast?.('keepmind.json pushed to repo root ✓', 'success') }
+    catch (e: any) { onToast?.(e?.message ?? String(e), 'error') }
+    finally { setBusy(null) }
+  }
   const approve = async (p: PendingApproval) => {
     setBusy(`ap-${p.id}`)
     try { await window.sb.automationApprove(p.id); onToast?.(`"${p.name}" approved & running`, 'success'); await refresh() }
@@ -202,6 +222,9 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
           </p>
         </div>
         <div className="actions">
+          <button className="btn btn--ghost" onClick={exportConfig} disabled={busy === 'export' || !sync?.connected} title="Push keepmind.json — declarative brain config — to the repo root">
+            ⤴ {busy === 'export' ? 'EXPORTING…' : 'BRAIN CONFIG'}
+          </button>
           <button className="btn btn--ghost" onClick={syncNow} disabled={busy === 'sync' || !sync?.connected}>
             <IconSync size={12} /> {busy === 'sync' ? 'SYNCING…' : sync?.connected ? 'SYNC NOW' : 'NO REPO'}
           </button>
@@ -371,12 +394,32 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
                     >
                       {a.mode === 'approval' ? '⏳ APPROVAL' : '⚡ AUTO'}
                     </button>
+                    <button
+                      className="chip"
+                      title={a.webhook ? 'Webhook enabled — click to disable' : 'Enable webhook trigger (POST /hook/<id> with token)'}
+                      onClick={() => setWebhook(a)}
+                      style={{
+                        fontSize: 9.5, cursor: 'pointer',
+                        borderColor: a.webhook ? 'rgba(34,211,238,.5)' : 'var(--line)',
+                        color: a.webhook ? 'var(--cyan)' : 'var(--muted)',
+                        background: a.webhook ? 'rgba(34,211,238,.08)' : 'transparent'
+                      }}
+                    >
+                      {busy === `wh-${a.id}` ? '…' : a.webhook ? '🔗 HOOK' : '⊘ HOOK'}
+                    </button>
                     {!a.enabled && <span className="chip" style={{ fontSize: 9.5, opacity: .6 }}>paused</span>}
                   </div>
                   <p className="faint" style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>{a.instruction}</p>
                   <p className="faint mono" style={{ fontSize: 10.5, marginTop: 6 }}>
                     last run: {a.lastRunAt ? new Date(a.lastRunAt).toLocaleString() : 'never'}
                   </p>
+                  {a.webhook && (hookInfo[a.id] || a.webhookToken) && (
+                    <div className="mono" style={{ marginTop: 6, fontSize: 10, background: 'rgba(3,7,18,.6)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', wordBreak: 'break-all' }}>
+                      <div style={{ color: 'var(--muted)' }}>POST {(hookInfo[a.id]?.url) ?? `http://127.0.0.1:4789/hook/${a.id}`}</div>
+                      <div style={{ color: 'var(--cyan)', marginTop: 2 }}>token: {hookInfo[a.id]?.token ?? a.webhookToken}</div>
+                      <div style={{ color: 'var(--muted)', marginTop: 4 }}>header: <code>x-hook-token</code> · approval-mode jobs queue for you</div>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button className="btn btn--ghost" style={{ padding: '6px 12px', fontSize: 10 }} disabled={busy === a.id} onClick={() => runNow(a)}>

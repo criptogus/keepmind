@@ -6,6 +6,7 @@ import { McpManager } from './services/mcp'
 import { LocalLlm } from './services/local-llm'
 import { GitSync } from './services/sync'
 import { AutomationScheduler } from './services/automations'
+import { HookServer } from './services/hooks'
 import { AuthService } from './services/auth'
 import { RagService } from './services/rag'
 import { LayaService } from './services/laya'
@@ -74,6 +75,7 @@ app.whenReady().then(() => {
   gitSyncGlobal = gitSync
   const autoScheduler = new AutomationScheduler(store, brain, (m) => pushMcpLog(`[auto] ${m}`))
   autoSchedulerGlobal = autoScheduler
+  const hookServer = new HookServer(store, autoScheduler, (m) => pushMcpLog(`[hook] ${m}`))
   const auth = new AuthService(join(app.getPath('userData'), 'second-brain'))
   const rag = new RagService(localLlm, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
   brain.setRag(rag)
@@ -87,7 +89,7 @@ app.whenReady().then(() => {
   mcp.on('serverExit', (e: any) => pushMcpLog(`server ${e.serverId} exited (${e.code})`))
 
   const planner = new Planner(brain.getMemory(), store, localLlm)
-  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner, laya)
+  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner, laya, hookServer)
   initUpdater()
   if (!HEADLESS) createWindow()
   else console.log('[keepmind] headless mode — services only, no window')
@@ -104,9 +106,16 @@ app.whenReady().then(() => {
       .catch(e => pushMcpLog(`embed server start failed: ${e}`))
   }
 
-  // Auto-start enabled MCP servers
-  for (const s of store.get().mcpServers.filter(s => s.enabled)) {
+  // Auto-start enabled MCP servers (respect connector permission:
+  // 'ask' waits for a manual connect, 'block' never spawns)
+  for (const s of store.get().mcpServers.filter(s =>
+    s.enabled && s.permission !== 'block' && s.permission !== 'ask')) {
     mcp.startServer(s).catch(e => pushMcpLog(`auto-start ${s.id} failed: ${e}`))
+  }
+
+  // Webhook listener — only when at least one automation opted in
+  if (store.get().automations.some(a => a.enabled && a.webhook)) {
+    hookServer.ensureStarted()
   }
 
   // Auto-start the bundled local LLM if it's the configured provider

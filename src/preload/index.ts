@@ -81,6 +81,9 @@ const api = {
   automationPending: () => ipcRenderer.invoke('automation:pending'),
   automationApprove: (id: string) => ipcRenderer.invoke('automation:approve', id),
   automationReject: (id: string) => ipcRenderer.invoke('automation:reject', id),
+  automationSetWebhook: (id: string, enabled: boolean) => ipcRenderer.invoke('automation:setWebhook', id, enabled),
+  hooksStatus: () => ipcRenderer.invoke('hooks:status'),
+  hooksSetLan: (lan: boolean) => ipcRenderer.invoke('hooks:setLan', lan),
 
   // brain
   brainChat: (agentId: string, message: string) => ipcRenderer.invoke('brain:chat', agentId, message),
@@ -93,6 +96,7 @@ const api = {
   brainListSummaries: () => ipcRenderer.invoke('brain:listSummaries'),
   brainListMemory: () => ipcRenderer.invoke('brain:listMemory'),
   brainActivity: (limit?: number) => ipcRenderer.invoke('brain:activity', limit),
+  brainExportConfig: () => ipcRenderer.invoke('brain:exportConfig'),
   onBrainDelta: (cb: (t: string) => void) => {
     const handler = (_e: any, t: string) => cb(t)
     ipcRenderer.on('brain:delta', handler)

@@ -151,7 +151,23 @@ export default function Connectors({ onActivity, onToast }: Props) {
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                  <select
+                    value={srv.permission ?? 'allow'}
+                    title="Connector permission: allow = may auto-start · ask = manual connect only · block = never runs"
+                    onChange={async e => {
+                      await window.sb.updateMcp(srv.id, { permission: e.target.value })
+                      await refresh()
+                    }}
+                    style={{
+                      background: 'rgba(3,7,18,.7)', color: 'var(--text)', border: '1px solid var(--line)',
+                      borderRadius: 8, fontFamily: 'var(--mono)', fontSize: 10, padding: '6px 6px'
+                    }}
+                  >
+                    <option value="allow">⚡ allow</option>
+                    <option value="ask">⏳ ask</option>
+                    <option value="block">⛔ block</option>
+                  </select>
                   <button className={`btn btn--sm ${running ? 'btn--danger' : 'btn--primary'}`} onClick={() => toggle(srv)}>
                     {running ? 'Disconnect' : 'Connect'}
                   </button>

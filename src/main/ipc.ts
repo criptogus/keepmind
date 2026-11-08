@@ -14,8 +14,10 @@ import type { Planner } from './services/planner'
 import * as llm from './services/llm'
 import * as github from './services/github'
 import { checkForUpdates, installUpdate, updaterStatus } from './services/updater'
+import { exportBrainConfig } from './services/scaffold'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
 import type { McpServerConfig } from './store'
+import type { HookServer } from './services/hooks'
 
 // ── IPC input validation ──
 // Renderer is sandboxed, but a compromised renderer (XSS, malicious
@@ -26,7 +28,8 @@ import type { McpServerConfig } from './store'
 const AI_PROVIDERS = new Set(['local', 'anthropic', 'claude-oauth', 'openai', 'codex', 'gemini', 'grok', 'ollama'])
 const MCP_KINDS = new Set(['whatsapp', 'telegram', 'postgres', 'custom'])
 const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone'])
-const MCP_PATCH_KEYS = new Set(['id', 'name', 'kind', 'enabled', 'command', 'args', 'env', 'sessionDir'])
+const MCP_PATCH_KEYS = new Set(['id', 'name', 'kind', 'enabled', 'command', 'args', 'env', 'sessionDir', 'permission'])
+const MCP_PERMISSIONS = new Set(['allow', 'ask', 'block'])
 const AUTOMATION_PATCH_KEYS = new Set(['name', 'instruction', 'kind', 'schedule', 'time', 'everyMinutes', 'weekday', 'enabled', 'mode'])
 const AUTOMATION_KINDS = new Set(['brain', 'sleep', 'summary', 'librarian', 'evolve', 'enrich', 'review', 'security', 'skills', 'triage'])
 const AUTOMATION_SCHEDULES = new Set(['daily', 'interval', 'weekly'])
@@ -54,6 +57,7 @@ function validateMcpServerShape(s: any, partial: boolean): void {
     if (!MCP_KINDS.has(s.kind)) bad('mcp.kind')
   }
   if (s.enabled !== undefined && typeof s.enabled !== 'boolean') bad('mcp.enabled')
+  if (s.permission !== undefined && !MCP_PERMISSIONS.has(s.permission)) bad('mcp.permission')
   optStr(s.command, 'mcp.command')
   optStr(s.sessionDir, 'mcp.sessionDir', 1024)
   if (s.args !== undefined) {
@@ -123,7 +127,8 @@ export function registerIpc(
   auth: AuthService | null = null,
   rag: RagService | null = null,
   planner: Planner | null = null,
-  laya: import('./services/laya').LayaService | null = null
+  laya: import('./services/laya').LayaService | null = null,
+  hooks: HookServer | null = null
 ) {
   // ── Config ──
   ipcMain.handle('config:get', () => store.get())
@@ -311,12 +316,37 @@ export function registerIpc(
   ipcMain.handle('automation:runNow', async (_e, id: string) => {
     const auto = store.get().automations.find(a => a.id === id)
     if (!auto) throw new Error('Unknown automation')
+    // clicking "run now" IS the approval — bypass the approval queue
     if (automations) await automations.run(auto)
     store.set({
       automations: store.get().automations.map(a =>
         a.id === id ? { ...a, lastRunAt: new Date().toISOString() } : a)
     })
     return true
+  })
+  ipcMain.handle('automation:setWebhook', (_e, id: string, enabled: boolean) => {
+    reqStr(id, 'automation id', 128)
+    if (typeof enabled !== 'boolean') bad('webhook flag')
+    const auto = automations?.setWebhook(id, enabled)
+    if (!auto) throw new Error('Unknown automation')
+    if (enabled) hooks?.ensureStarted()
+    return {
+      webhook: !!auto.webhook,
+      url: auto.webhook && hooks ? `http://${hooks.host}:${hooks.port}/hook/${auto.id}` : null,
+      token: auto.webhook ? auto.webhookToken : null
+    }
+  })
+  ipcMain.handle('hooks:status', () => ({
+    running: hooks?.running ?? false,
+    host: hooks?.host ?? '127.0.0.1',
+    port: hooks?.port ?? 4789,
+    lan: !!store.get().hooks?.lan
+  }))
+  ipcMain.handle('hooks:setLan', (_e, lan: boolean) => {
+    if (typeof lan !== 'boolean') bad('lan flag')
+    store.set({ hooks: { lan } })
+    hooks?.restart()
+    return { lan }
   })
   ipcMain.handle('automation:pending', () => store.get().pendingApprovals)
   ipcMain.handle('automation:approve', async (_e, pendingId: string) => {
@@ -356,6 +386,12 @@ export function registerIpc(
   ipcMain.handle('brain:listMemory', () => {
     const memDir = store.memoryDir
     return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 4000) }))
+  })
+  ipcMain.handle('brain:exportConfig', async () => {
+    const gh = store.get().github
+    if (!gh.accessToken || !gh.repoOwner) throw new Error('GitHub not configured')
+    await exportBrainConfig(gh, store.get())
+    return true
   })
   ipcMain.handle('brain:activity', (_e, limit?: number) => brain.getMemory().activity(limit ?? 200))
 

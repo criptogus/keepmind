@@ -170,6 +170,7 @@ export class McpManager extends EventEmitter {
   }
 
   async startServer(cfg: McpServerConfig): Promise<McpTool[]> {
+    if (cfg.permission === 'block') throw new Error(`connector "${cfg.name ?? cfg.id}" is blocked`)
     await this.stopServer(cfg.id)
     const resolved = this.resolveCommand(cfg)
     const client = new McpClient(cfg.id)
