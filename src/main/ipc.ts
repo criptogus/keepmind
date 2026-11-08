@@ -204,17 +204,37 @@ export function registerIpc(
     })
     return true
   })
+  ipcMain.handle('automation:pending', () => store.get().pendingApprovals)
+  ipcMain.handle('automation:approve', async (_e, pendingId: string) => {
+    const pending = store.get().pendingApprovals.find(p => p.id === pendingId)
+    if (!pending) throw new Error('Unknown pending approval')
+    const auto = store.get().automations.find(a => a.id === pending.automationId)
+    store.set({ pendingApprovals: store.get().pendingApprovals.filter(p => p.id !== pendingId) })
+    if (auto && automations) {
+      await automations.run(auto)
+      store.set({
+        automations: store.get().automations.map(a =>
+          a.id === auto.id ? { ...a, lastRunAt: new Date().toISOString() } : a)
+      })
+    }
+    return true
+  })
+  ipcMain.handle('automation:reject', (_e, pendingId: string) => {
+    store.set({ pendingApprovals: store.get().pendingApprovals.filter(p => p.id !== pendingId) })
+    return true
+  })
 
   // ── Brain ──
   ipcMain.handle('brain:chat', async (e, agentId: string, message: string) => {
+    brain.setActivitySource('chat')
     const win = BrowserWindow.fromWebContents(e.sender)
     return brain.chat(agentId, message, (t) => {
       win?.webContents.send('brain:delta', t)
     })
   })
-  ipcMain.handle('brain:insights', async () => brain.generateInsights())
-  ipcMain.handle('brain:dailySummary', async () => brain.dailySummary())
-  ipcMain.handle('brain:sleep', async () => brain.sleep())
+  ipcMain.handle('brain:insights', async () => { brain.setActivitySource('summary'); return brain.generateInsights() })
+  ipcMain.handle('brain:dailySummary', async () => { brain.setActivitySource('summary'); return brain.dailySummary() })
+  ipcMain.handle('brain:sleep', async () => { brain.setActivitySource('sleep'); return brain.sleep() })
   ipcMain.handle('brain:listSleep', () => brain.listSleepReports())
   ipcMain.handle('brain:memoryTiers', () => brain.memoryTierStats())
   ipcMain.handle('brain:listInsights', () => brain.listInsights())
@@ -223,6 +243,7 @@ export function registerIpc(
     const memDir = store.memoryDir
     return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 4000) }))
   })
+  ipcMain.handle('brain:activity', (_e, limit?: number) => brain.getMemory().activity(limit ?? 200))
 
   // ── Auth (local accounts + Google sign-in) ──
   ipcMain.handle('auth:state', async () => {
@@ -295,20 +316,21 @@ export function registerIpc(
   // ── Planner: notes / tasks / daily goals ──
   ipcMain.handle('notes:list', () => planner?.listNotes() ?? [])
   ipcMain.handle('notes:get', (_e, id: string) => planner?.getNote(id) ?? null)
-  ipcMain.handle('notes:save', (_e, id: string | null, title: string, body: string) => planner?.saveNote(id, title, body))
-  ipcMain.handle('notes:delete', (_e, id: string) => { planner?.deleteNote(id); return true })
+  const ui = <T>(fn: () => T): T => { brain.setActivitySource('ui'); return fn() }
+  ipcMain.handle('notes:save', (_e, id: string | null, title: string, body: string) => ui(() => planner?.saveNote(id, title, body)))
+  ipcMain.handle('notes:delete', (_e, id: string) => ui(() => { planner?.deleteNote(id); return true }))
 
   ipcMain.handle('tasks:list', () => planner?.listTasks() ?? [])
-  ipcMain.handle('tasks:add', (_e, title: string, opts?: any) => planner?.addTask(title, opts))
-  ipcMain.handle('tasks:update', (_e, id: string, patch: any) => planner?.updateTask(id, patch))
-  ipcMain.handle('tasks:toggle', (_e, id: string) => planner?.toggleTask(id))
-  ipcMain.handle('tasks:delete', (_e, id: string) => { planner?.deleteTask(id); return true })
+  ipcMain.handle('tasks:add', (_e, title: string, opts?: any) => ui(() => planner?.addTask(title, opts)))
+  ipcMain.handle('tasks:update', (_e, id: string, patch: any) => ui(() => planner?.updateTask(id, patch)))
+  ipcMain.handle('tasks:toggle', (_e, id: string) => ui(() => planner?.toggleTask(id)))
+  ipcMain.handle('tasks:delete', (_e, id: string) => ui(() => { planner?.deleteTask(id); return true }))
 
   ipcMain.handle('goals:get', (_e, date?: string) => planner?.getDailyGoals(date) ?? { date: '', items: [] })
-  ipcMain.handle('goals:set', (_e, date: string, items: any[]) => planner?.setDailyGoals(date, items))
-  ipcMain.handle('goals:add', (_e, date: string, text: string) => planner?.addGoal(date, text))
-  ipcMain.handle('goals:toggle', (_e, date: string, index: number) => planner?.toggleGoal(date, index))
-  ipcMain.handle('goals:remove', (_e, date: string, index: number) => planner?.removeGoal(date, index))
+  ipcMain.handle('goals:set', (_e, date: string, items: any[]) => ui(() => planner?.setDailyGoals(date, items)))
+  ipcMain.handle('goals:add', (_e, date: string, text: string) => ui(() => planner?.addGoal(date, text)))
+  ipcMain.handle('goals:toggle', (_e, date: string, index: number) => ui(() => planner?.toggleGoal(date, index)))
+  ipcMain.handle('goals:remove', (_e, date: string, index: number) => ui(() => planner?.removeGoal(date, index)))
   ipcMain.handle('goals:suggest', async () => planner ? planner.suggestGoals() : [])
 
   // ── Auto-updater ──

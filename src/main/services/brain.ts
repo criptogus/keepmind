@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, appendFileSync, unlinkSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, appendFileSync, unlinkSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { chat, chatStream, type ChatMessage, type ToolDefinition } from './llm'
 import type { AiProviderConfig } from '../store'
@@ -13,13 +13,28 @@ import { refreshEntities } from './entities'
 
 // ── Memory: markdown files in the local memory dir, mirrored to the GitHub repo ──
 
+export interface ActivityEntry {
+  ts: number
+  op: 'write' | 'append' | 'remove'
+  path: string
+  source: string // 'system' | 'ui' | 'chat' | 'sleep' | 'auto:<name>' | ...
+}
+
 export class Memory {
   // Called after every local write/append — used by GitSync to mark dirty paths
   onWrite: ((relPath: string) => void) | null = null
+  // Who is writing right now — Brain methods set this so the activity
+  // journal can attribute each change (sleep cycle, chat, ui, automation…)
+  activitySource = 'system'
   private quiet = false
+  private journal: ActivityEntry[] = []
+  private journalFile: string
+  private journalAppends = 0
 
   constructor(private dir: string, private gh: GitHubConfig | null) {
     mkdirSync(this.dir, { recursive: true })
+    this.journalFile = join(this.dir, 'ops', 'activity.jsonl')
+    this.loadJournal()
     // Memory tiers — modeled on human memory:
     //   short-term  = raw daily logs (working memory, recent days)
     //   medium-term = weekly consolidations of older short-term logs
@@ -37,14 +52,52 @@ export class Memory {
     const p = this.path(relative)
     mkdirSync(join(p, '..'), { recursive: true })
     writeFileSync(p, content, 'utf8')
-    if (!this.quiet) this.onWrite?.(relative)
+    if (!this.quiet) {
+      this.onWrite?.(relative)
+      this.journalPush('write', relative)
+    }
   }
 
   append(relative: string, content: string) {
     const p = this.path(relative)
     mkdirSync(join(p, '..'), { recursive: true })
     appendFileSync(p, content, 'utf8')
-    if (!this.quiet) this.onWrite?.(relative)
+    if (!this.quiet) {
+      this.onWrite?.(relative)
+      this.journalPush('append', relative)
+    }
+  }
+
+  // Activity journal — every local mutation is recorded to
+  // ops/activity.jsonl (local-only, .jsonl so it never syncs to GitHub)
+  // and kept in a ring buffer for the UI feed.
+  private journalPush(op: ActivityEntry['op'], rel: string) {
+    const entry: ActivityEntry = { ts: Date.now(), op, path: rel, source: this.activitySource }
+    this.journal.push(entry)
+    if (this.journal.length > 600) this.journal.splice(0, this.journal.length - 600)
+    try {
+      mkdirSync(join(this.dir, 'ops'), { recursive: true })
+      appendFileSync(this.journalFile, JSON.stringify(entry) + '\n', 'utf8')
+      // occasional rotation: keep the file bounded
+      if (++this.journalAppends % 200 === 0 && existsSync(this.journalFile) && statSync(this.journalFile).size > 300_000) {
+        const lines = readFileSync(this.journalFile, 'utf8').trim().split('\n')
+        writeFileSync(this.journalFile, lines.slice(-2000).join('\n') + '\n', 'utf8')
+      }
+    } catch { /* journal is best-effort */ }
+  }
+
+  private loadJournal() {
+    try {
+      if (!existsSync(this.journalFile)) return
+      const lines = readFileSync(this.journalFile, 'utf8').trim().split('\n').slice(-600)
+      for (const l of lines) {
+        try { this.journal.push(JSON.parse(l)) } catch { /* skip bad lines */ }
+      }
+    } catch { /* noop */ }
+  }
+
+  activity(limit = 200): ActivityEntry[] {
+    return this.journal.slice(-limit).reverse()
   }
 
   // Writes/removes that must NOT trigger a sync push (used by GitSync.pull)
@@ -69,7 +122,10 @@ export class Memory {
     const p = this.path(relative)
     if (existsSync(p)) {
       unlinkSync(p)
-      if (!this.quiet) this.onWrite?.(relative)
+      if (!this.quiet) {
+        this.onWrite?.(relative)
+        this.journalPush('remove', relative)
+      }
     }
   }
 
@@ -145,6 +201,7 @@ export class Brain {
   setRag(rag: RagService) { this.rag = rag }
 
   getMemory() { return this.memory }
+  setActivitySource(src: string) { this.memory.activitySource = src }
 
   private buildSystemContext(agent: AgentPersona, recall = ''): string {
     const cfg = this.store.get()

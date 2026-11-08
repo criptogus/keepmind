@@ -129,6 +129,32 @@ export class AutomationScheduler {
     for (const auto of this.store.get().automations) {
       if (!auto.enabled || this.running.has(auto.id)) continue
       if (!this.isDue(auto, now)) continue
+
+      // Approval mode: queue for the user instead of running autonomously
+      if (auto.mode === 'approval') {
+        const pending = this.store.get().pendingApprovals
+        if (!pending.some(p => p.automationId === auto.id)) {
+          this.store.set({
+            pendingApprovals: [...pending, {
+              id: `ap-${Date.now().toString(36)}-${auto.id}`,
+              automationId: auto.id,
+              name: auto.name,
+              kind: auto.kind,
+              instruction: auto.instruction,
+              createdAt: new Date().toISOString()
+            }]
+          })
+          this.log(`automation "${auto.name}" queued for approval`)
+          for (const cb of this.listeners) cb(auto)
+        }
+        // mark as handled so it doesn't re-queue every tick; approval runs it
+        this.store.set({
+          automations: this.store.get().automations.map(a =>
+            a.id === auto.id ? { ...a, lastRunAt: new Date().toISOString() } : a)
+        })
+        continue
+      }
+
       this.running.add(auto.id)
       try {
         await this.run(auto)
@@ -172,6 +198,7 @@ export class AutomationScheduler {
 
   async run(auto: Automation) {
     this.log(`automation "${auto.name}" running (${auto.kind})`)
+    this.brain.setActivitySource(`auto:${auto.name}`)
     if (auto.kind === 'sleep') {
       await this.brain.sleep()
     } else if (auto.kind === 'librarian') {

@@ -11,8 +11,25 @@ interface Automation {
   everyMinutes?: number
   weekday?: number
   enabled: boolean
+  mode?: 'auto' | 'approval'
   lastRunAt?: string
   createdAt: string
+}
+
+interface PendingApproval {
+  id: string
+  automationId: string
+  name: string
+  kind: string
+  instruction: string
+  createdAt: string
+}
+
+interface ActivityEntry {
+  ts: number
+  op: 'write' | 'append' | 'remove'
+  path: string
+  source: string
 }
 
 interface Parsed {
@@ -65,6 +82,8 @@ function scheduleLabel(a: Automation): string {
 
 export default function Automations({ onActivity, onToast }: { onActivity?: () => void; onToast?: (m: string, k?: 'info' | 'error' | 'success') => void }) {
   const [autos, setAutos] = useState<Automation[]>([])
+  const [pending, setPending] = useState<PendingApproval[]>([])
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
   const [tiers, setTiers] = useState<any>(null)
   const [sleepReports, setSleepReports] = useState<any[]>([])
   const [sync, setSync] = useState<any>(null)
@@ -75,13 +94,15 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
   const parseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refresh = async () => {
-    const [a, t, s, sy] = await Promise.all([
+    const [a, p, act, t, s, sy] = await Promise.all([
       window.sb.automationList(),
+      window.sb.automationPending(),
+      window.sb.brainActivity(120),
       window.sb.brainMemoryTiers(),
       window.sb.brainListSleep(),
       window.sb.syncStatus()
     ])
-    setAutos(a ?? []); setTiers(t); setSleepReports(s ?? []); setSync(sy)
+    setAutos(a ?? []); setPending(p ?? []); setActivity(act ?? []); setTiers(t); setSleepReports(s ?? []); setSync(sy)
   }
 
   useEffect(() => { refresh() }, [])
@@ -130,6 +151,20 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
   }
   const remove = async (a: Automation) => {
     await window.sb.automationRemove(a.id)
+    await refresh()
+  }
+  const setMode = async (a: Automation, mode: 'auto' | 'approval') => {
+    await window.sb.automationUpdate(a.id, { mode })
+    await refresh()
+  }
+  const approve = async (p: PendingApproval) => {
+    setBusy(`ap-${p.id}`)
+    try { await window.sb.automationApprove(p.id); onToast?.(`"${p.name}" approved & running`, 'success'); await refresh() }
+    catch (e: any) { onToast?.(e?.message ?? String(e), 'error') }
+    finally { setBusy(null) }
+  }
+  const reject = async (p: PendingApproval) => {
+    await window.sb.automationReject(p.id)
     await refresh()
   }
 
@@ -242,6 +277,40 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
         </div>
       </div>
 
+      {/* Pending approvals — automations in 'approval' mode queue here */}
+      {pending.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 20, borderColor: 'rgba(251,191,36,.35)' }}>
+          <h2 style={{ color: 'var(--amber)' }}>⏳ Awaiting your approval ({pending.length})</h2>
+          <p className="faint" style={{ fontSize: 12, marginTop: 4 }}>
+            These automations are set to <strong>approval mode</strong> — nothing runs until you say yes.
+          </p>
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {pending.map(p => (
+              <div key={p.id} className="insight-item" style={{ alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <strong style={{ fontSize: 13 }}>{p.name}</strong>
+                    <span className="chip" style={{ fontSize: 9.5 }}>{KIND_LABEL[p.kind] ?? p.kind}</span>
+                  </div>
+                  <p className="faint" style={{ fontSize: 12, marginTop: 4 }}>{p.instruction}</p>
+                  <p className="faint mono" style={{ fontSize: 10.5, marginTop: 4 }}>
+                    queued {new Date(p.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button className="btn btn--primary" style={{ padding: '6px 14px', fontSize: 10 }} disabled={busy === `ap-${p.id}`} onClick={() => approve(p)}>
+                    {busy === `ap-${p.id}` ? '…' : 'APPROVE'}
+                  </button>
+                  <button className="btn btn--ghost" style={{ padding: '6px 12px', fontSize: 10, color: '#f87171' }} onClick={() => reject(p)}>
+                    REJECT
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Learning templates */}
       <div className="card card-pad" style={{ marginBottom: 20 }}>
         <h2>Self-learning templates</h2>
@@ -287,6 +356,19 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
                     <strong style={{ fontSize: 13 }}>{a.name}</strong>
                     <span className="chip" style={{ fontSize: 9.5 }}>{scheduleLabel(a)}</span>
                     <span className="chip" style={{ fontSize: 9.5, opacity: .8 }}>{KIND_LABEL[a.kind]}</span>
+                    <button
+                      className="chip"
+                      title={a.mode === 'approval' ? 'Runs only after you approve — click for auto' : 'Runs fully autonomously — click for approval'}
+                      onClick={() => setMode(a, a.mode === 'approval' ? 'auto' : 'approval')}
+                      style={{
+                        fontSize: 9.5, cursor: 'pointer',
+                        borderColor: a.mode === 'approval' ? 'rgba(251,191,36,.5)' : 'rgba(52,211,153,.35)',
+                        color: a.mode === 'approval' ? 'var(--amber)' : 'var(--lime)',
+                        background: a.mode === 'approval' ? 'rgba(251,191,36,.08)' : 'rgba(52,211,153,.06)'
+                      }}
+                    >
+                      {a.mode === 'approval' ? '⏳ APPROVAL' : '⚡ AUTO'}
+                    </button>
                     {!a.enabled && <span className="chip" style={{ fontSize: 9.5, opacity: .6 }}>paused</span>}
                   </div>
                   <p className="faint" style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>{a.instruction}</p>
@@ -305,6 +387,30 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
                     <IconTrash size={11} />
                   </button>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Activity feed — everything the brain wrote/changed, with source */}
+      <div className="card card-pad">
+        <h2>Recent activity</h2>
+        <p className="faint" style={{ fontSize: 12, marginTop: 4 }}>
+          Every memory write, append and delete — attributed to its source (sleep cycle, chat, automation, you…).
+        </p>
+        {activity.length === 0 ? (
+          <p className="faint" style={{ fontSize: 13, marginTop: 12 }}>No activity yet.</p>
+        ) : (
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 380, overflowY: 'auto' }}>
+            {activity.map((e, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderRadius: 8, fontSize: 12 }} className="insight-item">
+                <span style={{ width: 14, textAlign: 'center', flexShrink: 0 }}>
+                  {e.op === 'write' ? '✎' : e.op === 'append' ? '＋' : '🗑'}
+                </span>
+                <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.path}</span>
+                <span className="chip" style={{ fontSize: 9, flexShrink: 0, opacity: .85 }}>{e.source}</span>
+                <span className="faint mono" style={{ fontSize: 10, flexShrink: 0 }}>{new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             ))}
           </div>

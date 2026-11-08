@@ -51,7 +51,17 @@ export interface Automation {
   everyMinutes?: number        // for interval
   weekday?: number             // 0=Sun..6=Sat for weekly
   enabled: boolean
+  mode?: 'auto' | 'approval'  // 'approval' = scheduled runs queue for user OK
   lastRunAt?: string
+  createdAt: string
+}
+
+export interface PendingApproval {
+  id: string
+  automationId: string
+  name: string
+  kind: Automation['kind']
+  instruction: string
   createdAt: string
 }
 
@@ -75,6 +85,7 @@ export interface AppConfig {
   mcpServers: McpServerConfig[]
   agents: AgentPersona[]
   automations: Automation[]
+  pendingApprovals: PendingApproval[]
   auth: AuthConfig
   pro: ProConfig
   memoryDir?: string
@@ -141,7 +152,8 @@ function defaultConfig(): AppConfig {
       }
     ],
     auth: {},
-    pro: { active: false }
+    pro: { active: false },
+    pendingApprovals: []
   }
 }
 
@@ -170,6 +182,7 @@ export class Store {
         const existing = raw.automations ?? []
         const have = new Set(existing.map((a: Automation) => a.id))
         merged.automations = [...existing, ...defaults.filter(d => !have.has(d.id))]
+        merged.pendingApprovals = raw.pendingApprovals ?? []
         merged.auth = { ...defaultConfig().auth, ...raw.auth }
         merged.pro = { ...defaultConfig().pro, ...raw.pro }
         return merged
