@@ -39,7 +39,7 @@ export default function Agents({ agents, onChanged, onToast, onActivity }: {
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>EXPERT PERSONAS</div>
+          <div className="hud-tag" style={{ marginBottom: 6, color: 'var(--violet)' }}>EXPERT PERSONAS</div>
           <h1>Specialist agents</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
             Personas that chat with your second brain&apos;s full context — or convene them in a meeting.

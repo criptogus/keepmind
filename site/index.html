@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Second Brain — your memory, your repo, your AI</title>
 <meta name="description" content="Open-source local-first second brain for desktop. Markdown memory synced to your own GitHub repo, specialist AI agents, local LLM, sleep-mode learning. Free forever, MIT." />
+<meta property="og:title" content="Second Brain — your memory, your repo, your AI" />
+<meta property="og:description" content="Open-source local-first second brain for desktop. Markdown memory in YOUR GitHub repo, specialist AI agents, local LLM, sleep-mode learning." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://criptogus.github.io/second-brain-app/" />
+<meta property="og:image" content="https://criptogus.github.io/second-brain-app/icon.png" />
+<meta name="twitter:card" content="summary" />
 <link rel="icon" type="image/png" href="icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -37,6 +43,34 @@
   /* ambient synapse field */
   #synapses { position: fixed; inset: 0; z-index: 0; opacity: .5; pointer-events: none; }
   .wrap { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* hero ambient glows */
+  .hero::before, .hero::after {
+    content: ''; position: absolute; border-radius: 50%; filter: blur(110px);
+    pointer-events: none; z-index: -1;
+  }
+  .hero::before { width: 620px; height: 620px; background: rgba(34,211,238,.13); top: -200px; right: -160px; animation: orbA 16s ease-in-out infinite alternate; }
+  .hero::after { width: 520px; height: 520px; background: rgba(163,230,53,.09); bottom: -180px; left: -140px; animation: orbB 20s ease-in-out infinite alternate; }
+  @keyframes orbA { to { transform: translate(-50px, 40px) scale(1.08); } }
+  @keyframes orbB { to { transform: translate(46px, -34px) scale(1.1); } }
+
+  .card {
+    position: relative; padding: 26px 24px; border-radius: 18px;
+    background: var(--panel); border: 1px solid var(--line);
+    transition: transform .25s cubic-bezier(.22,1,.36,1), border-color .25s, box-shadow .3s;
+    overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; inset: 0 0 auto 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent); opacity: .6;
+    transition: opacity .3s;
+  }
+  .card:hover {
+    transform: translateY(-5px);
+    border-color: rgba(34,211,238,.4);
+    box-shadow: 0 18px 50px -18px rgba(34,211,238,.28), 0 4px 18px rgba(0,0,0,.4);
+  }
+  .card:hover::before { opacity: 1; }
 
   /* nav */
   nav {
@@ -71,7 +105,7 @@
   .btn--ghost:hover { color: var(--text); border-color: rgba(34,211,238,.4); }
 
   /* hero */
-  .hero { padding: 110px 0 80px; text-align: center; }
+  .hero { position: relative; padding: 110px 0 80px; text-align: center; }
   .hud-tag {
     display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
     text-transform: uppercase; color: var(--cyan); margin-bottom: 22px;
@@ -119,24 +153,15 @@
   .grid { display: grid; gap: 18px; margin-top: 46px; }
   .grid--3 { grid-template-columns: repeat(3, 1fr); }
   .grid--2 { grid-template-columns: repeat(2, 1fr); }
-  .card {
-    position: relative; padding: 26px 24px; border-radius: 18px;
-    background: var(--panel); border: 1px solid var(--line);
-    transition: transform .2s, border-color .2s, box-shadow .2s;
-    overflow: hidden;
-  }
-  .card::before {
-    content: ''; position: absolute; inset: 0 0 auto 0; height: 1px;
-    background: linear-gradient(90deg, transparent, var(--cyan), transparent); opacity: .6;
-  }
-  .card:hover { transform: translateY(-4px); border-color: rgba(34,211,238,.35); box-shadow: 0 12px 40px rgba(34,211,238,.08); }
+  .card h3 { font-size: 16.5px; margin-bottom: 8px; letter-spacing: .01em; }
   .card .ic {
     width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
     font-size: 19px; margin-bottom: 16px;
     background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.22);
     box-shadow: 0 0 16px rgba(34,211,238,.12);
+    transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s;
   }
-  .card h3 { font-size: 16.5px; margin-bottom: 8px; letter-spacing: .01em; }
+  .card:hover .ic { transform: rotate(-8deg) scale(1.08); box-shadow: 0 0 22px rgba(34,211,238,.3); }
   .card p { font-size: 13.5px; color: var(--muted); line-height: 1.6; }
   .card .tag { position: absolute; top: 20px; right: 20px; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--lime); }
 
@@ -145,7 +170,9 @@
   .tier {
     display: flex; align-items: center; gap: 18px; padding: 18px 22px; border-radius: 14px;
     border: 1px solid var(--line); background: var(--panel);
+    transition: transform .25s cubic-bezier(.22,1,.36,1), border-color .25s, box-shadow .3s;
   }
+  .tier:hover { transform: translateX(6px); border-color: rgba(34,211,238,.35); box-shadow: 0 10px 34px -14px rgba(34,211,238,.25); }
   .tier .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
   .tier b { font-family: var(--mono); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; min-width: 130px; }
   .tier span { font-size: 13.5px; color: var(--muted); }
@@ -158,7 +185,9 @@
   .agent-pill {
     display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 999px;
     border: 1px solid var(--line); background: var(--panel); font-family: var(--mono); font-size: 13px;
+    transition: transform .2s, border-color .2s, box-shadow .25s;
   }
+  .agent-pill:hover { transform: translateY(-3px); border-color: rgba(163,230,53,.4); box-shadow: 0 10px 30px -14px rgba(163,230,53,.3); }
   .agent-pill i { font-style: normal; font-size: 18px; }
 
   /* how */
@@ -184,6 +213,14 @@
   footer p { font-family: var(--mono); font-size: 12px; color: #5b6b7d; }
   footer a { color: var(--muted); text-decoration: none; }
   footer a:hover { color: var(--cyan); }
+  .footer__credit {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 26px 0 0; font-family: var(--mono); font-size: 12.5px; color: #5b6b7d;
+    letter-spacing: .06em;
+  }
+  .footer__credit a { color: var(--lime); border-bottom: 1px solid rgba(163,230,53,.35); padding-bottom: 1px; transition: color .2s, border-color .2s; }
+  .footer__credit a:hover { color: #d9f99d; border-color: var(--lime); }
+  .footer__credit .za-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 10px var(--lime); }
 
   @media (max-width: 860px) {
     .grid--3, .grid--2, .steps { grid-template-columns: 1fr; }
@@ -339,6 +376,10 @@
       · <a href="https://github.com/criptogus/second-brain-app/blob/main/CHANGELOG.md">changelog</a>
       · <a href="https://github.com/criptogus/second-brain-app/issues">issues</a>
     </p>
+  </div>
+  <div class="wrap footer__credit">
+    <span class="za-dot"></span>
+    Powered by <a href="https://zeroagency.ai" target="_blank" rel="noopener">ZeroAgency.ai</a>
   </div>
 </footer>
 

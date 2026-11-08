@@ -57,7 +57,7 @@ export default function Notes({ onActivity }: { onActivity?: () => void }) {
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>KNOWLEDGE BASE</div>
+          <div className="hud-tag hud-tag--lime" style={{ marginBottom: 6 }}>KNOWLEDGE BASE</div>
           <h1>Notes</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
             Markdown notes stored in <span className="mono" style={{ color: 'var(--cyan)' }}>memory/notes/</span> — synced to GitHub, readable by every connected AI.

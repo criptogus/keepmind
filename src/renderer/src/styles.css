@@ -635,3 +635,39 @@ button.chip { cursor: pointer; font-family: var(--mono); }
 .md-todo--done { color: var(--text-faint); text-decoration: line-through; }
 .md-pre { background: rgba(3,7,18,.9); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 8px 0; }
 .md-pre code { background: none; padding: 0; }
+
+/* ── Animated glow icons ────────────────── */
+@keyframes icoGlow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(34,211,238,.4)); }
+  50% { filter: drop-shadow(0 0 12px rgba(34,211,238,.95)); }
+}
+@keyframes icoGlowActive {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(34,211,238,1)); }
+  50% { filter: drop-shadow(0 0 18px rgba(34,211,238,1)); }
+}
+@keyframes emojiGlow {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(34,211,238,.35)); }
+  50% { filter: drop-shadow(0 0 10px rgba(34,211,238,.8)); }
+}
+.nav__item .ico { animation: icoGlow 3.2s ease-in-out infinite; }
+.nav__item.is-active .ico { animation-name: icoGlowActive; animation-duration: 2.2s; }
+.mobile-nav__item svg { animation: icoGlow 3.2s ease-in-out infinite; }
+.btn svg { animation: icoGlow 4s ease-in-out infinite; }
+.agent-btn:not(.is-active) .emoji { animation: emojiGlow 3.4s ease-in-out infinite; }
+
+/* ── Gradient view titles + accent text ──── */
+.view-head h1 {
+  background: linear-gradient(92deg, #a5f3fc 0%, #22d3ee 45%, #a3e635 105%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  filter: drop-shadow(0 0 16px rgba(34,211,238,.3));
+}
+.stat__num { color: var(--lime); text-shadow: 0 0 22px rgba(163,230,53,.35); }
+
+.tx-lime { color: var(--lime); }
+.tx-amber { color: var(--amber); }
+.tx-violet { color: var(--violet); }
+.tx-cyan { color: var(--cyan); }
+
+.hud-tag--lime { color: var(--lime); text-shadow: 0 0 10px rgba(163,230,53,.5); }
+.hud-tag--amber { color: var(--amber); text-shadow: 0 0 10px rgba(250,204,21,.5); }

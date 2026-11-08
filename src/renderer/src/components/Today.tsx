@@ -113,7 +113,7 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>DAILY COMMAND CENTER</div>
+          <div className="hud-tag hud-tag--lime" style={{ marginBottom: 6 }}>DAILY COMMAND CENTER</div>
           <h1>{greet}</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}

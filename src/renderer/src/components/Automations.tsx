@@ -128,7 +128,7 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>AUTOMATIONS · SLEEP CYCLES · SYNC</div>
+          <div className="hud-tag hud-tag--amber" style={{ marginBottom: 6 }}>AUTOMATIONS · SLEEP CYCLES · SYNC</div>
           <h1 style={{ textShadow: '0 0 24px rgba(163,230,53,.3)' }}>AUTOMATE</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
             Schedule the brain in plain language. It runs even while you sleep — and learns from every cycle.

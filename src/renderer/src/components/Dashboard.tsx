@@ -86,7 +86,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
           </button>
           <button
             className="btn"
-            style={{ borderColor: 'rgba(167,139,250,.4)', color: '#c4b5fd' }}
+            style={{ borderColor: 'rgba(250,204,21,.4)', color: '#fde047' }}
             onClick={sleepNow}
             disabled={sleeping}
             title="Nightly learning cycle — reviews the day, extracts facts/lessons/skills to long-term memory"

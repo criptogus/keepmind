@@ -39,7 +39,7 @@ export default function Tasks({ onActivity }: { onActivity?: () => void }) {
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>ACTION LAYER</div>
+          <div className="hud-tag hud-tag--lime" style={{ marginBottom: 6 }}>ACTION LAYER</div>
           <h1>Tasks</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
             {open.length} open · {done.length} done — stored in <span className="mono" style={{ color: 'var(--cyan)' }}>memory/tasks/</span>
