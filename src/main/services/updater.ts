@@ -1,4 +1,5 @@
 import { app, BrowserWindow, net } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { createWriteStream, existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
