@@ -55,7 +55,7 @@ const MODELS: Record<string, string[]> = {
   anthropic: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
   'claude-oauth': ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'o4-mini'],
-  codex: ['gpt-5.1-codex', 'gpt-5.1-codex-mini', 'codex-mini-latest'],
+  codex: ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-5.6-sol'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
   grok: ['grok-4', 'grok-3', 'grok-3-mini'],
   ollama: ['llama3.1', 'qwen2.5', 'mistral']
@@ -66,7 +66,7 @@ const MODELS: Record<string, string[]> = {
 // Fall back to the provider default when cfg.model isn't in the list.
 // Ollama/local are exempt — their model names are user-defined/free-form.
 function pickModel(provider: string, cfg: AiProviderConfig): string {
-  const list = MODELS[provider]
+  const list = provider === 'codex' ? codexModels() : MODELS[provider]
   if (cfg.model && list?.includes(cfg.model)) return cfg.model
   return list?.[0] ?? cfg.model ?? ''
 }
@@ -85,7 +85,7 @@ export function listProviders() {
   return Object.keys(MODELS).map(id => ({
     id,
     name: names[id]!,
-    models: MODELS[id]!,
+    models: id === 'codex' ? codexModels() : MODELS[id]!,
     needsKey: !['ollama', 'local', 'codex'].includes(id)
   }))
 }
@@ -197,7 +197,29 @@ async function callOllama(cfg: AiProviderConfig, messages: ChatMessage[], tools:
 // and calls the same backend the CLI uses. Refreshes the access token on 401.
 
 const CODEX_AUTH_FILE = join(homedir(), '.codex', 'auth.json')
+const CODEX_MODELS_CACHE = join(homedir(), '.codex', 'models_cache.json')
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann' // public Codex CLI client id
+
+// Models the signed-in ChatGPT account actually accepts — the Codex CLI
+// refreshes ~/.codex/models_cache.json from the backend, so reading it keeps
+// us in sync with account entitlements instead of hardcoding slugs that go
+// stale (e.g. 'gpt-5.1-codex' was retired for ChatGPT-account auth).
+let codexModelsMemo: { at: number; list: string[] } | null = null
+export function codexModels(): string[] {
+  if (codexModelsMemo && Date.now() - codexModelsMemo.at < 5 * 60_000) return codexModelsMemo.list
+  let list = MODELS.codex
+  try {
+    const raw = JSON.parse(readFileSync(CODEX_MODELS_CACHE, 'utf8'))
+    const slugs = (raw.models ?? [])
+      .filter((m: any) => m.supported_in_api && m.visibility === 'list')
+      .sort((a: any, b: any) => (a.priority ?? 99) - (b.priority ?? 99))
+      .map((m: any) => m.slug)
+      .filter(Boolean)
+    if (slugs.length) list = slugs
+  } catch { /* cache missing → fallback list */ }
+  codexModelsMemo = { at: Date.now(), list }
+  return list
+}
 
 interface CodexAuth {
   tokens?: { access_token?: string; refresh_token?: string; account_id?: string }
