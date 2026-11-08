@@ -15,6 +15,7 @@ function server() {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const parsed = new URL(url), parts = parsed.pathname.split('/contents/'), path = decodeURIComponent(parts[1] ?? '')
     if (parsed.pathname.includes('/git/trees/')) return Response.json({ tree: [...files].filter(([p]) => p.startsWith('memory/')).map(([path, f]) => ({ type: 'blob', path, sha: f.sha })) })
+    if (init?.method === 'DELETE') { files.delete(path); return new Response(null, { status: 204 }) }
     if (init?.method === 'PUT') {
       const body = JSON.parse(String(init.body)); files.set(path, { content: Buffer.from(body.content, 'base64').toString('utf8'), sha: String(++counter) }); writes.push(path)
       return Response.json({ content: { sha: String(counter) } })
@@ -32,7 +33,11 @@ it('encrypts uploads, stores only a public salt/header and decrypts pulls', asyn
   const store = { get: () => ({ github: cfg }) } as unknown as Store
   const sync = new GitSync(store, mem, dir); syncs.push(sync)
   await sync.syncNow()
-  const ciphertext = remote.files.get('memory/notes/private.md')!.content
+  const remotePath = [...remote.files.keys()].find(p => /^memory\/[a-f0-9]{64}\.enc$/.test(p))!
+  expect(remotePath).toMatch(/^memory\/[a-f0-9]{64}\.enc$/)
+  expect(remote.files.has('memory/notes/private.md')).toBe(false)
+  expect(remote.files.get('.keepmind/manifest.enc')!.content).not.toContain('notes/private.md')
+  const ciphertext = remote.files.get(remotePath)!.content
   expect(ciphertext).toMatch(/^KEEPMIND-ENCRYPTED:1\n/)
   expect(ciphertext).not.toContain('private fact')
   const header = remote.files.get('.keepmind/crypto.json')!.content
@@ -40,7 +45,7 @@ it('encrypts uploads, stores only a public salt/header and decrypts pulls', asyn
   expect(header).not.toContain('my private passphrase')
   mem.quietRemove('notes/private.md')
   await sync.syncNow()
-  expect(mem.read('notes/private.md')).toBe('private fact 🧠')
+  expect(mem.read('notes/private.md')).toContain('private fact 🧠')
   expect(remote.writes[0]).toBe('.keepmind/crypto.json')
 })
 it('refuses wrong passphrases, locked writes, and disabling encryption on an encrypted repository', async () => {
@@ -48,11 +53,12 @@ it('refuses wrong passphrases, locked writes, and disabling encryption on an enc
   await expect(github.pushFile(cfg, 'memory/a.md', 'secret', 'test')).rejects.toThrow(/locked/)
   expect(remote.writes).toEqual([])
   github.unlockSync('correct passphrase'); await github.pushFile(cfg, 'memory/a.md', 'secret', 'test')
-  const before = remote.files.get('memory/a.md')!.content
+  const remotePath = [...remote.files.keys()].find(p => p.startsWith('memory/'))!
+  const before = remote.files.get(remotePath)!.content
   github.unlockSync('wrong passphrase')
   await expect(github.fetchMemoryFile(cfg, 'a.md')).rejects.toThrow(/authentication failed/)
   await expect(github.pushFile(cfg, 'memory/a.md', 'overwrite', 'test')).rejects.toThrow(/authentication failed/)
-  expect(remote.files.get('memory/a.md')!.content).toBe(before)
+  expect(remote.files.get(remotePath)!.content).toBe(before)
   await expect(github.pushFile({ ...cfg, encryptionEnabled: false }, 'memory/a.md', 'plaintext', 'test')).rejects.toThrow(/repository is encrypted/)
 })
 it('surfaces sync failures and preserves local data on a GitHub tree error', async () => {
@@ -62,7 +68,7 @@ it('surfaces sync failures and preserves local data on a GitHub tree error', asy
   const sync = new GitSync({ get: () => ({ github: config() }) } as unknown as Store, mem, dir); syncs.push(sync)
   await expect(sync.syncNow()).rejects.toThrow(/503/)
   expect(sync.status().error).toContain('503')
-  expect(mem.read('notes/a.md')).toBe('keep this')
+  expect(mem.read('notes/a.md')).toContain('keep this')
 })
 it('migrates remote-only plaintext once, then refuses plaintext downgrades', async () => {
   const remote = server(), cfg = config(); github.unlockSync('migration passphrase')
@@ -71,9 +77,11 @@ it('migrates remote-only plaintext once, then refuses plaintext downgrades', asy
   const mem = new Memory(join(dir, 'memory'), null)
   const sync = new GitSync({ get: () => ({ github: cfg }) } as unknown as Store, mem, dir); syncs.push(sync)
   await sync.syncNow()
-  expect(mem.read('notes/legacy.md')).toBe('legacy private fact')
-  expect(remote.files.get('memory/notes/legacy.md')!.content).toMatch(/^KEEPMIND-ENCRYPTED:1/)
-  remote.files.set('memory/notes/legacy.md', { content: 'injected plaintext', sha: 'tampered' })
+  expect(mem.read('notes/legacy.md')).toContain('legacy private fact')
+  const remotePath = [...remote.files.keys()].find(p => p.startsWith('memory/'))!
+  expect(remote.files.has('memory/notes/legacy.md')).toBe(false)
+  expect(remote.files.get(remotePath)!.content).toMatch(/^KEEPMIND-ENCRYPTED:1/)
+  remote.files.set(remotePath, { content: 'injected plaintext', sha: 'tampered' })
   await expect(sync.syncNow()).rejects.toThrow(/downgrade/)
-  expect(mem.read('notes/legacy.md')).toBe('legacy private fact')
+  expect(mem.read('notes/legacy.md')).toContain('legacy private fact')
 })

@@ -27,3 +27,17 @@ it('serves MCP requests, suppresses notifications, and contains note access', ()
     expect(replies[5].result.isError).toBe(true)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+it('enforces client spaces and maximum class across reads and discovery', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'km-mcp-scope-'))
+  try {
+    mkdirSync(join(dir, 'notes'))
+    writeFileSync(join(dir, 'notes/allowed.md'), '---\nspace: personal\nclass: internal\n---\nallowed')
+    writeFileSync(join(dir, 'notes/other.md'), '---\nspace: company-x\nclass: internal\n---\nother')
+    writeFileSync(join(dir, 'notes/restricted.md'), '---\nspace: personal\nclass: sensitive\n---\nrestricted')
+    const handle = createMemoryServer(dir, { clientId: 'test', clients: { test: { spaces: ['personal'], maxClass: 'internal' } } })
+    const list = handle({ id: 1, method: 'resources/list' }).result.resources.map(r => r.name)
+    expect(list).toEqual(['notes/allowed.md'])
+    const denied = handle({ id: 2, method: 'resources/read', params: { uri: 'memory://notes/other.md' } })
+    expect(denied.error).toBeDefined()
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})

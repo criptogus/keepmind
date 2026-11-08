@@ -42,3 +42,26 @@ it('rolls back failed updates', async () => {
   expect(() => db.replace([chunk('duplicate', 'one'), chunk('duplicate', 'two')])).toThrow()
   expect(db.search('durable')[0].c.key).toBe('original')
 })
+it('encrypts restricted text/vectors and HMAC postings while enforcing search spaces', async () => {
+  const { SpaceKeys, InMemorySecretStore } = await import('../src/main/services/security/keys')
+  const { keys } = await SpaceKeys.setup('synthetic test', new InMemorySecretStore())
+  const dir = mkdtempSync(join(tmpdir(), 'km-sec-index-')); dirs.push(dir)
+  const file = join(dir, 'search.sqlite'), db = await HybridSearch.open(file, undefined, () => keys); databases.push(db)
+  db.replace([{ ...chunk('s', 'uniquesensitiveterm', [0.3, 0.7]), class: 'sensitive', space: 'company-x' }, chunk('p', 'ordinary')]); db.save()
+  const disk = readFileSync(file)
+  expect(disk.includes(Buffer.from('uniquesensitiveterm'))).toBe(false)
+  expect(db.search('uniquesensitiveterm')).toEqual([])
+  expect(db.search('uniquesensitiveterm', undefined, 6, { space: 'company-x' })[0].c.key).toBe('s')
+  expect(db.search('uniquesensitiveterm', undefined, 6, { space: 'personal', grants: ['company-x'] })[0].c.vec).toEqual([0.3, 0.7])
+})
+it('preserves other spaces on scoped refresh and searches encryptAll data after disabling the option', async () => {
+  const { SpaceKeys, InMemorySecretStore } = await import('../src/main/services/security/keys')
+  const { keys } = await SpaceKeys.setup('test', new InMemorySecretStore()); let encryptAll = true
+  const db = await HybridSearch.open(undefined, undefined, () => keys, () => encryptAll); databases.push(db)
+  db.replace([{ ...chunk('p', 'garden soil'), space: 'personal' }, { ...chunk('c', 'companyword'), space: 'company-x' }])
+  encryptAll = false
+  expect(db.search('garden')[0].c.key).toBe('p')
+  db.replace([{ ...chunk('new', 'fresh garden'), space: 'personal' }], { space: 'personal' })
+  expect(db.search('companyword', undefined, 6, { space: 'company-x' })[0].c.key).toBe('c')
+  expect(db.search('companyword')).toEqual([])
+})

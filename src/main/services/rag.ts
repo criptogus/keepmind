@@ -1,3 +1,4 @@
+import { policy } from './security/classification'
 import { createHash } from 'node:crypto'
 import { HybridSearch } from './search/hybrid'
 import { join } from 'node:path'
@@ -17,6 +18,8 @@ interface Chunk {
   offset: number
   text: string
   vec?: number[]
+  space?: string
+  class?: import('./security/classification').Classification
   stale?: boolean    // file declares valido_ate/expires in the past
 }
 
@@ -45,19 +48,21 @@ export class RagService {
   private embedding = false
 
   constructor(private localLlm: LocalLlm, memory: Memory, stateDir: string) {
-    this.searchDb = HybridSearch.open(join(stateDir, 'memory-search.sqlite'), join(stateDir, 'memory-embeddings.json'))
+    this.searchDb = HybridSearch.open(join(stateDir, 'memory-search.sqlite'), join(stateDir, 'memory-embeddings.json'), () => memory.keys, () => memory.encryptAll)
     this.memory = memory
-    void this.searchDb.then(db => { this.index = { modelId: db.modelId, chunks: db.chunks() } }).catch(error => console.warn('[rag] index load failed', error))
+    void this.searchDb.then(db => { this.index = { modelId: db.modelId, chunks: db.chunks({ space: memory.currentSpace, grants: memory.grants }) } }).catch(error => console.warn('[rag] index load failed', error))
   }
 
   private memory: Memory
   private laya: LayaService | null = null
 
+  database() { return this.searchDb }
+
   setLaya(l: LayaService) { this.laya = l }
 
   private async save() {
     const db = await this.searchDb
-    db.replace(this.index.chunks)
+    db.replace(this.index.chunks.filter(c => c.space === this.memory.currentSpace || this.memory.grants.includes(c.space ?? 'personal')),  { space: this.memory.currentSpace, grants: this.memory.grants })
     db.modelId = this.index.modelId
     db.save()
   }
@@ -76,24 +81,23 @@ export class RagService {
   // Vectors are kept per chunk-hash, so unchanged text never re-embeds.
   private async ensureChunks(): Promise<number> {
     await this.searchDb
+    if (this.memory.keys) this.memory.protectExisting()
     const byKey = new Map(this.index.chunks.map(c => [c.key, c]))
     const next: Chunk[] = []
     let truncated = false
-    for (const dir of INDEX_DIRS) {
-      const files = this.memory.list(dir)
-      for (const f of files) {
-        if (SKIP_FILES.has(f)) continue
-        const content = this.memory.read(`${dir}/${f}`) ?? ''
-        if (!content.trim()) continue
-        const stale = isStale(content)
-        for (const chunk of chunkText(content)) {
-          if (next.length >= MAX_CHUNKS) { truncated = true; break }
-          const file = `${dir}/${f}`
-          const key = createHash('sha256').update(`${file}:${chunk.offset}:${chunk.text}`).digest('hex')
-          const prev = byKey.get(key)
-          next.push({ key, file, offset: chunk.offset, text: chunk.text, vec: prev?.vec, stale })
-        }
-        if (truncated) break
+    const tier = (file: string) => file.replace(/^spaces\/[^/]+\//, '').split('/')[0]
+    const files = this.memory.allRelFiles().filter(file => INDEX_DIRS.includes(tier(file)))
+      .sort((a,b) => INDEX_DIRS.indexOf(tier(a)) - INDEX_DIRS.indexOf(tier(b)) || a.localeCompare(b))
+    for (const file of files) {
+      if (SKIP_FILES.has(file.split('/').pop()!)) continue
+      const content = this.memory.read(file) ?? ''
+      if (!content.trim()) continue
+      const stale = isStale(content)
+      for (const chunk of chunkText(content)) {
+        if (next.length >= MAX_CHUNKS) { truncated = true; break }
+        const key = createHash('sha256').update(`${file}:${chunk.offset}:${chunk.text}`).digest('hex')
+        const prev = byKey.get(key)
+        next.push({ key, file, offset: chunk.offset, text: chunk.text, vec: prev?.vec, stale, ...policy(content) })
       }
       if (truncated) break
     }
@@ -131,14 +135,15 @@ export class RagService {
   }
 
   // Full pipeline: refresh chunks then embed what's missing.
-  async reindex(): Promise<{ chunks: number; embedded: number }> {
+  reindex() { return this.memory.withScope(() => this.performReindex()) }
+  private async performReindex(): Promise<{ chunks: number; embedded: number }> {
     const chunks = await this.ensureChunks()
     const embedded = await this.embedPending()
     return { chunks, embedded }
   }
 
   // Semantic recall for a user message → formatted context block (or '').
-  async search(query: string): Promise<string> {
+  async search(query: string, space = this.memory.currentSpace, grants: string[] = this.memory.grants): Promise<string> {
     try {
       // lazy chunk refresh at most every 60s
       if (Date.now() - this.lastChunkScan > 60_000) {
@@ -149,7 +154,7 @@ export class RagService {
       const qv = this.localLlm.embedReady ? await this.localLlm.embed([query]).catch(() => null) : null
       const db = await this.searchDb
       const q = db.modelId === this.localLlm.embedModelId ? qv?.[0] : undefined
-      const scored = db.search(query, q, SEARCH_K * 2)
+      const scored = db.search(query, q, SEARCH_K * 2, { space, grants })
       // Laya rerank (the vault's "Jev" slot): a calibrated yes/no relevance
       // verdict per candidate, blended with the hybrid score. ~33ms each,
       // only runs when the ONNX decision engine is installed.
@@ -174,7 +179,7 @@ export class RagService {
       const good = scored.filter(x => x.s > 0)
       if (!good.length) return ''
       return good.map(x =>
-        `### ${x.c.file}${x.c.stale ? ' ⚠ stale' : ''} (score ${x.s.toFixed(2)})\n${x.c.text.slice(0, 900)}`
+        `### ${x.c.file}${x.c.stale ? ' ⚠ stale' : ''} (score ${x.s.toFixed(2)})\nclass: ${x.c.class ?? 'internal'}\nspace: ${x.c.space ?? 'personal'}\n${x.c.text.slice(0, 900)}`
       ).join('\n\n')
     } catch { return '' }
   }

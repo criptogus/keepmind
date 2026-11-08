@@ -11,6 +11,7 @@
 //
 // Inside a cloned second-brain repo the default `./memory` just works.
 
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { readdirSync, readFileSync, writeFileSync, appendFileSync, statSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
@@ -30,8 +31,28 @@ function configuredRoot() {
   return root
 }
 
-export function createMemoryServer(memoryDir) {
+export function createMemoryServer(memoryDir, options = {}) {
 const ROOT = resolve(memoryDir)
+const clientId = options.clientId ?? 'default'
+if (!/^[a-zA-Z0-9_-]{1,80}$/.test(clientId)) throw new Error('Invalid client id')
+const scope = options.clients?.[clientId] ?? (options.clients ? { spaces: [], maxClass: 'public' } : { spaces: ['personal'], maxClass: 'internal' })
+const levels = ['public', 'internal', 'sensitive', 'secret']
+const auditFile = options.auditFile ?? safe('ops/mcp-reads.jsonl')
+function authorize(content) {
+  if (content.startsWith('KEEPMIND-')) return false
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
+  const space = fm.match(/^space:\s*(\S+)/m)?.[1] ?? 'personal'
+  const declared = fm.match(/^class:\s*(\S+)/m)?.[1] ?? 'internal'
+  let rank = levels.indexOf(declared)
+  if (rank < 0) return false
+  if (/\b(?:sk-|ghp_|xox[a-z]-|AKIA)|-----BEGIN .*PRIVATE KEY-----|\beyJ[\w-]+\.[\w-]+\.[\w-]+/.test(content)) rank = 3
+  if (/\b[^\s@]+@[^\s@]+\.[^\s@]+|(?:\+\d{8,15}\b|\b\d{10,15}\b)|\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b|\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b|(?:\+\d{1,3}[ .-]?)?(?:\(\d{2,3}\)[ .-]?|\b\d{2,3}[ .-])\d{4,5}[ .-]?\d{4}\b/.test(content)) rank = Math.max(rank, 2)
+  return scope.spaces.includes(space) && rank <= levels.indexOf(scope.maxClass)
+}
+function audit(rel, allowed) {
+  mkdirSync(dirname(auditFile), { recursive: true })
+  appendFileSync(auditFile, JSON.stringify({ ts: new Date().toISOString(), client: clientId, resource: createHash('sha256').update(rel).digest('hex'), allowed }) + '\n', { mode: 0o600 })
+}
 
 function safe(rel) {
   const p = resolve(ROOT, String(rel ?? ''))
@@ -54,19 +75,19 @@ function* walk(dir, prefix = '') {
   }
 }
 
-const allFiles = () => [...walk(ROOT)]
+const allFiles = () => [...walk(ROOT)].filter(rel => readMem(rel) !== null)
 
 function readMem(rel) {
   const p = safe(rel)
-  return existsSync(p) ? readFileSync(p, 'utf8') : null
+  if (!existsSync(p)) return null
+  const content = readFileSync(p, 'utf8'), allowed = authorize(content)
+  audit(rel, allowed)
+  return allowed ? content : null
 }
 
 function writeMem(rel, content, append = false) {
-  const p = safe(rel)
-  mkdirSync(dirname(p), { recursive: true })
-  if (append) appendFileSync(p, content, 'utf8')
-  else writeFileSync(p, content, 'utf8')
-  return rel
+  safe(rel)
+  throw new Error('Standalone MCP writes require the unlocked native memory service')
 }
 
 // ── lexical search (BM25-ish, no deps) ──
@@ -395,7 +416,8 @@ return handle
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = configuredRoot()
-  const handle = createMemoryServer(root)
+  const config = process.env.KEEPMIND_MCP_SCOPES ? JSON.parse(readFileSync(process.env.KEEPMIND_MCP_SCOPES, 'utf8')) : undefined
+  const handle = createMemoryServer(root, { clients: config, clientId: process.env.KEEPMIND_MCP_CLIENT ?? 'default' })
   const rl = createInterface({ input: process.stdin, terminal: false })
   rl.on('line', line => {
     const trimmed = line.trim()
@@ -405,5 +427,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const res = handle(msg)
     if (res) process.stdout.write(JSON.stringify(res) + '\n')
   })
-  process.stderr.write(`[keepmind-mcp] serving memory at ${root}\n`)
+  process.stderr.write('[keepmind-mcp] serving scoped memory\n')
 }

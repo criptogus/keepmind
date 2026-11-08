@@ -1,3 +1,5 @@
+import { policy, restricted } from './security/classification'
+import { createHmac } from 'node:crypto'
 import { createCryptoHeader, deriveKey, encryptMemory, decryptMemory, isEncrypted, type CryptoHeader } from './sync-crypto'
 import type { GitHubConfig } from '../store'
 
@@ -133,9 +135,25 @@ export async function listTree(cfg: GitHubConfig, prefix = 'memory/'): Promise<R
   const { owner, repo, branch } = repoCoords(cfg)
   const tree = await apiGet(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`, cfg.accessToken)
   if (tree.truncated) throw new Error('GitHub tree is truncated; refusing incomplete sync')
-  return ((tree.tree ?? []) as any[])
+  const files = ((tree.tree ?? []) as any[])
     .filter(t => t.type === 'blob' && t.path?.startsWith(prefix))
     .map(t => ({ path: t.path.slice(prefix.length), sha: t.sha }))
+  if (!cfg.encryptionEnabled) {
+    if (await remoteHeader(cfg)) throw new Error('This repository is encrypted')
+    return files
+  }
+  if (!await remoteHeader(cfg)) return files // first migration enumerates legacy names
+  return withKey(cfg, false, async key => {
+    const manifest = await readManifest(cfg, key)
+    return files.map(f => {
+      if (/^[a-f0-9]{64}\.enc$/.test(f.path)) {
+        const rel = manifest[f.path]
+        if (!rel || remoteFilename(rel, key) !== f.path) throw new Error('Invalid encrypted manifest')
+        return { ...f, path: rel }
+      }
+      return f
+    })
+  })
 
 }
 
@@ -143,7 +161,8 @@ export async function listTree(cfg: GitHubConfig, prefix = 'memory/'): Promise<R
 export async function deleteMemoryFile(cfg: GitHubConfig, relPath: string) {
   if (!cfg.accessToken) throw new Error('GitHub not connected')
   const { owner, repo, branch } = repoCoords(cfg)
-  const apiPath = `/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(relPath)}`
+  const remote = cfg.encryptionEnabled ? await withKey(cfg, false, async key => remoteFilename(relPath, key)) : relPath
+  const apiPath = `/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(remote)}`
   let sha: string
   try {
     const existing = await apiGet(`${apiPath}?ref=${branch}`, cfg.accessToken)
@@ -152,6 +171,7 @@ export async function deleteMemoryFile(cfg: GitHubConfig, relPath: string) {
     return // already gone
   }
   await apiSend('DELETE', apiPath, cfg.accessToken, { message: 'sync: remove memory file', sha, branch })
+  // Retain manifest tombstones: they allow safe recovery if a concurrent delete is interrupted.
 }
 
 // Fetch a single file's content + blob sha (paths are relative to memory/).
@@ -159,7 +179,11 @@ export async function fetchMemoryFile(cfg: GitHubConfig, relPath: string, allowP
   if (!cfg.accessToken) return null
   try {
     const { owner, repo, branch } = repoCoords(cfg)
-    const data = await apiGet(`/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(relPath)}?ref=${branch}`, cfg.accessToken)
+    const remote = cfg.encryptionEnabled && await remoteHeader(cfg) ? await withKey(cfg, false, async key => {
+      const manifest = await readManifest(cfg, key), name = remoteFilename(relPath, key)
+      return manifest[name] === relPath ? name : relPath
+    }) : relPath
+    const data = await apiGet(`/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(remote)}?ref=${branch}`, cfg.accessToken)
     const content = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8')
     if (!isEncrypted(content) && cfg.encryptionEnabled && !allowPlaintext) {
       throw new Error('Encrypted sync received plaintext memory; refusing downgrade')
@@ -211,9 +235,24 @@ async function withKey<T>(cfg: GitHubConfig, create: boolean, fn: (key: Uint8Arr
 }
 async function uploadFile(cfg: GitHubConfig, path: string, content: string, message: string) {
   if (!path.startsWith('memory/')) return pushRawFile(cfg, path, content, message)
+  if (!cfg.encryptionEnabled && restricted(policy(content).class)) throw new Error('Restricted memory requires encrypted sync')
   const header = await remoteHeader(cfg)
   if (header && !cfg.encryptionEnabled) throw new Error('This repository is encrypted. Enable encrypted sync to upload memory.')
-  if (cfg.encryptionEnabled) return withKey(cfg, true, async key => pushRawFile(cfg, path, await encryptMemory(content, key), message))
+  if (cfg.encryptionEnabled) return withKey(cfg, true, async key => {
+    const rel = path.slice('memory/'.length), name = remoteFilename(rel, key)
+    const manifest = await readManifest(cfg, key)
+    // Publish mapping first so an interrupted upload never leaves an unresolvable blob.
+    manifest[name] = rel
+    await pushRawFile(cfg, MANIFEST_PATH, await encryptMemory(JSON.stringify(manifest), key), 'sync: update encrypted manifest')
+    await pushRawFile(cfg, `memory/${name}`, await encryptMemory(content, key), message)
+    // Remove the legacy path only after both encrypted writes succeeded.
+    const { owner, repo, branch } = repoCoords(cfg)
+    const oldPath = `/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(rel)}`
+    try {
+      const old = await apiGet(`${oldPath}?ref=${branch}`, cfg.accessToken!)
+      await apiSend('DELETE', oldPath, cfg.accessToken!, { message: 'sync: retire legacy filename', sha: old.sha, branch })
+    } catch (error) { if (!(error instanceof Error && /: 404$/.test(error.message))) throw error }
+  })
   return pushRawFile(cfg, path, content, message)
 }
 
@@ -227,4 +266,18 @@ export function pushFile(cfg: GitHubConfig, path: string, content: string, messa
 export async function verifySyncPassphrase(cfg: GitHubConfig): Promise<void> {
   if (!cfg.accessToken || !(cfg.repoOwner || cfg.repoUrl)) return
   if (await remoteHeader(cfg)) await withKey(cfg, false, async () => {})
+}
+
+const MANIFEST_PATH = '.keepmind/manifest.enc'
+export function remoteFilename(path: string, key: Uint8Array): string {
+  return createHmac('sha256', key).update('keepmind:remote-filename:v1:').update(path).digest('hex') + '.enc'
+}
+async function readManifest(cfg: GitHubConfig, key: Uint8Array): Promise<Record<string, string>> {
+  const { owner, repo, branch } = repoCoords(cfg)
+  try {
+    const data = await apiGet(`/repos/${owner}/${repo}/contents/${MANIFEST_PATH}?ref=${branch}`, cfg.accessToken!)
+    const result = JSON.parse(await decryptMemory(Buffer.from(data.content, 'base64').toString('utf8'), key))
+    if (!result || typeof result !== 'object' || Array.isArray(result) || Object.entries(result).some(([k, v]) => typeof v !== 'string' || remoteFilename(v, key) !== k)) throw new Error('Invalid encrypted manifest')
+    return result
+  } catch (error) { if (error instanceof Error && /: 404$/.test(error.message)) return {}; throw error }
 }
