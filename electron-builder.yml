@@ -4,7 +4,7 @@ icon: build/icon
 publish:
   provider: github
   owner: criptogus
-  repo: second-brain-app
+  repo: keepmind
 directories:
   output: dist
 files:

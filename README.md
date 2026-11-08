@@ -16,7 +16,7 @@ Runs on your desktop, a VPS, or a bot's own VM.
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![llama.cpp](https://img.shields.io/badge/Local%20LLM-llama.cpp-22d3ee)](https://github.com/ggml-org/llama.cpp)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-a78bfa)](https://modelcontextprotocol.io/)
-[![CI](https://github.com/criptogus/second-brain-app/actions/workflows/ci.yml/badge.svg)](https://github.com/criptogus/second-brain-app/actions/workflows/ci.yml)
+[![CI](https://github.com/criptogus/keepmind/actions/workflows/ci.yml/badge.svg)](https://github.com/criptogus/keepmind/actions/workflows/ci.yml)
 
 ![Platform](https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-supported-brightgreen)
 
@@ -89,8 +89,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 ## Quickstart
 
 ```bash
-git clone https://github.com/criptogus/second-brain-app.git
-cd second-brain-app
+git clone https://github.com/criptogus/keepmind.git
+cd keepmind
 npm install
 npm run dev        # development (electron-vite)
 npm run build      # production build
@@ -100,7 +100,7 @@ npm run dist       # installers via electron-builder → dist/
 Releases are built automatically by GitHub Actions on every `v*` tag —
 see [`.github/workflows/release.yml`](.github/workflows/release.yml).
 Download the latest build from
-[Releases](https://github.com/criptogus/second-brain-app/releases).
+[Releases](https://github.com/criptogus/keepmind/releases).
 
 First launch walks you through a 4-step wizard:
 
