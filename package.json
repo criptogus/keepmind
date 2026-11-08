@@ -1,11 +1,12 @@
 {
   "name": "keepmind",
   "version": "0.1.1",
-  "description": "KeepMind — open-source installable second brain. Connects your apps, remembers everything, learns while you sleep.",
+  "description": "KeepMind \u2014 open-source installable second brain. Connects your apps, remembers everything, learns while you sleep.",
   "license": "MIT",
   "main": "./out/main/index.js",
   "bin": {
-    "keepmind-mcp": "./tools/keepmind-mcp.mjs"
+    "keepmind-mcp": "./tools/keepmind-mcp.mjs",
+    "keepmind-cli": "./tools/keepmind-cli.mjs"
   },
   "scripts": {
     "dev": "electron-vite dev",
@@ -46,6 +47,7 @@
     "README.md",
     "NOTICE",
     "LICENSE",
-    "src/main/vendor/laya/LICENSE.laya"
+    "src/main/vendor/laya/LICENSE.laya",
+    "tools/keepmind-cli.mjs"
   ]
 }

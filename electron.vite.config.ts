@@ -10,6 +10,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          cli: resolve(__dirname, 'src/main/cli.ts'),
           'mcp/whatsapp-server': resolve(__dirname, 'src/main/mcp/whatsapp-server.ts')
         }
       }
