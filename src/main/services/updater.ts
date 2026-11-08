@@ -232,8 +232,9 @@ export async function checkForUpdates(): Promise<any> {
         return { packaged: true, continuous: upd.version }
       }
       send('up-to-date')
-      // fall through to electron-updater for signed latest releases
-      await autoUpdater.checkForUpdates().catch(() => {})
+      // electron-updater stays dormant: it needs a signed app + a "latest"
+      // release on macOS, and errors noisily without one. The continuous
+      // channel above is the update path until we ship signed builds.
       return { packaged: true, continuous: null }
     } catch (e: any) {
       send('error', { message: String(e?.message ?? e) })
