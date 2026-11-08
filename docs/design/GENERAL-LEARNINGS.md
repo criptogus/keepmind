@@ -1,191 +1,68 @@
-# General learnings — proposed design only
+# Private derived learnings
 
-Status: proposal for product review. Nothing in this document authorizes extraction,
-promotion, publication, cross-space access, or implementation. No promotion feature
-is implemented by this change. All examples below are fictional.
+Implemented local CLI, native app recall and owner-scoped MCP service. All examples and tests are fictional.
+No action here sends, exports or publishes anything; `check-public` is only advisory analysis of supplied text.
 
-## Recommendation and trust boundary
+## Owner decisions
 
-Introduce a `derived_learning` note in a dedicated `general-knowledge` space. It
-contains an abstract reusable principle, never a copied source passage. Treat this
-as a new disclosure decision, not as a declassification shortcut. Gustavo must
-explicitly approve **each** promotion and its exact text, audience and purpose.
-Batch approval, implicit consent, background promotion and automatic promotion
-are prohibited. Approval cannot waive lawful confidentiality duties, contractual
-restrictions, personal-data obligations or another party's rights. An unresolved
-restriction blocks the promotion even if Gustavo clicks approve.
+Derived learnings are **always private to the owner**, never shareable. There is no sharing option, public classification, receiving audience or publication action. The owner explicitly approved privacy and no expiry only. The implementation additionally requires explicit approval of each exact immutable draft; that approval flow is an assistant-proposed implementation safeguard, not an additional recorded owner decision. Suggesting, approving, checking and publishing are distinct actions. Only the first three exist here. MCP cannot approve, even with note-write authority or caller-supplied approval arguments.
 
-Extraction starts manually from selected accessible sources, or as a suggestion
-from a local model. Remote AI requires explicit, scoped, time-limited consent for
-the selected source spaces and provider before any source text leaves the device.
-Suggestion consent and promotion approval are separate. Imported instructions
-cannot supply either. Local model output receives the same review as manual text.
-Disable model tools/network access during extraction unless separately authorized.
+## Proposed implementation defaults (not owner approvals)
 
-## Sanitization and reidentification review
+The owner did not decide the lifecycle and independent-review questions. The coordinating assistant proposed these defaults, implemented here:
 
-Strip companies, people, personal identifiers, contact details, numbers, amounts,
-percentages, dates, locations, product names, counterparties, document titles,
-source links, direct quotations and distinctive wording. Replace concrete events
-with a general mechanism and state its limitations. Removal is not reliable
-anonymization: a rare sequence of events, board composition, industry combination,
-unusual transaction or memorable failure may identify the source without names.
-Assess uniqueness against what the intended audience already knows, including
-combinations of several published learnings. If meaningful abstraction still
-permits identification, withhold it. Automated detectors only assist review.
+- Suspend when the source is deleted/unavailable or the user marks it wrong. Ordinary source edits set `sourceChanged` without suspension.
+- A public-use check requires human review only when automatic analysis detects risk (including evidence unavailable). A clean check grants no publication authority and is not a guarantee of anonymity or lawful disclosure.
 
-Record abstraction level (`principle`, `pattern`, `procedure`) and derived
-classification (`internal` by default; `public` only after a separate public-use
-review). Derivation must never silently lower source classification. The current
-session high-water policy remains intact: a future trusted promotion service
-would need a narrow, audited approval boundary rather than changing that global
-floor. Unsupported claims must be labeled hypotheses with applicability limits.
+## Architecture and encrypted data model
 
-## Audience and purpose
+`DerivedLearnings` stores `derived-learnings.box` under the local state directory, outside Markdown memory, using the existing XChaCha20-Poly1305 space-key implementation. The entire registry is encrypted under `general-knowledge`; provenance is additionally encrypted under the source-space key. Keys remain wrapped by the existing passphrase/recovery infrastructure. No plaintext fallback exists, including when legacy notes permit plaintext. Random UUIDs identify learnings. The registry never enters the normal Markdown index, GitHub sync, embeddings, activity journal or note tools.
 
-An internal learning for another board is still a disclosure across compartments.
-Review the receiving board's authority, purpose, competitive overlap and duties;
-source-space access does not authorize this transfer. Prefer a neutral principle
-that carries no evidence about a particular organization. General-knowledge space
-membership alone must not authorize every possible downstream use.
+Each immutable learning has sanitized owner-reviewed body, purpose, applicability/uncertainty, abstraction (`principle`), pending/active/suspended state and revision-bound approval digest/time (no expiration). Source path, space and content-version digest are inside encrypted provenance. Private lifecycle flags record changed, wrong and deleted/unverifiable evidence. Public-facing projections use an explicit allowlist and omit all provenance and source flags. There is currently one source per learning; multi-source partitioning is intentionally unsupported.
 
-A public article requires a distinct approval for the final article/export and
-public audience, including surrounding text, combinations, citations and metadata.
-Prior internal approval does not authorize publication. Neither approval nor a
-sanitized label makes confidential material lawfully publishable. Do not include
-source attribution unless separately lawful and explicitly authorized.
+Suggestion is manual abstraction or a fixed deterministic procedural template when `--text` is omitted. Source text is never copied by automatic extraction; there is no model/provider/network dependency. This conservative baseline is not a semantic extraction engine. Draft text supplied by the owner still requires meaningful review for confidentiality, unsupported claims, applicability and re-identification before approval. The approval challenge binds body, purpose, limits and encrypted source version to one random learning ID. Edited source evidence prevents promotion of stale pending drafts. Approved bodies cannot be edited in place.
 
-## Proposed data model
+At retrieval the service checks the dependency locally, remembers deletion/unavailability as a sticky suspension, and excludes suspended/pending items from normal search. Restoration cannot automatically resurrect a suspended record. A changed source remains retrievable under the proposed default. No background rewriting or reapproval occurs. Registry corruption or locked keys fail closed. Dependency checks use a privileged local owner service; their results never expose evidence or source flags through ordinary search. Source details are an explicit action requiring current source-space authority. Missing and inaccessible provenance use the same generic error.
 
-Store the following separately, encrypted at rest with their respective space
-keys. Use random opaque IDs that reveal no source organization or path.
+## Access boundaries
 
-| Record | Fields and visibility |
-| --- | --- |
-| General note | random `id`, `type: derived_learning`, `space: general-knowledge`, sanitized body, abstraction level, derived class, applicability/uncertainty, status, approved audience/purpose, review deadline, revision |
-| Source provenance | source references and versions, encrypted excerpts if needed, source classes, contradictions, assessment and lineage; kept in source space, accessible only with current source authority |
-| Approval | exact body/revision digest, Gustavo identity, audience, purpose, lawful-disclosure review outcome, time, expiry; confidential assessment stored with provenance |
-| Dependency | opaque reverse dependency from source to derived revision, used by a privileged lifecycle service; never returned in general results |
-| Distribution receipt | derived revision, destination/cache/export category, consent/approval revision and revocation capability; no source metadata in recipient records |
+CLI is a trusted local owner interface using `--unlock-stdin`; selecting a space requires its configured key. General knowledge is available from any such owner scope, not a grant for other users. MCP requires trusted launcher configuration `owner: true`, at least one configured authorized space, `maxClass` at least internal, unlocked keys and explicit state directory. Default/shared/public clients have no derived-learning access. Client RPC arguments cannot set owner authority. The launcher must only grant owner to the user's private client, never a shared client. General MCP note tools cannot read or mutate the sealed registry. MCP exposes active list/search and public checking, without provenance or approval tools. Ordinary owner MCP search also includes active learning bodies. CLI ordinary search and `learnings search` include active learnings across the selected owner scope. Native app ordinary recall (`RagService.search`, used by chat) includes active private bodies in its existing heading/class/space/text format, including when no Markdown result matches. Native composition checks the current local session against the installation’s first account (user ID 1); signed-out and other accounts receive no owner capability. This identity callback is absent by default and cannot be supplied through search arguments or MCP RPC. Unlocked keys and configured current/granted spaces are still required. Pending/suspended records and provenance never enter recall; the sealed registry stays outside the index and embeddings.
 
-Do not put provenance IDs, source counts, hashes of source titles, paths, space
-identifiers, titles, excerpts, link targets or source-derived embeddings in the
-general note, general index, public export or MCP response. Even existence and
-counts can identify a source. Keep dependency lookup in a separately encrypted
-service registry requiring source authority; do not use guessable source hashes.
-For multiple sources, partition provenance by source authority so a user with
-access to one cannot discover the others. Fail closed if safe partitioning is
-unavailable. General notes must stand on their own without a hidden-source badge.
+The service decrypts selected source evidence only inside the local process; provenance is not returned with search snippets, metadata or checks. It does not change the existing Memory session classification floor. Source-space vocabulary checking examines only encrypted notes whose envelope belongs to the authorized source space; source identifiers, matched words, detector categories and counts are never returned. Corrupt/plaintext/uncheckable evidence fails closed. No real source content should be printed by operational scripts.
 
-## Search, MCP and provenance policy
+## CLI
 
-General search indexes only the approved sanitized revision, classification,
-abstract tags and approved audience. Use the general-space key for text, vectors
-and HMAC tokens. Pending/rejected/revoked revisions and private provenance cannot
-enter general search, autocomplete, snippets, recommendations, telemetry or caches.
-An indexer must not dereference source links while building the general index.
+All actions take `--dir <memory> --state <state> --space <owner-authorized-space> --unlock-stdin`:
 
-MCP requires both general-space scope/class authority and the approved purpose
-and audience. A client-supplied claim of purpose is insufficient; use launcher
-policy. General read/search/export returns no provenance fields, source IDs,
-titles or existence hints, even for clients that also have source access.
-A separate explicit provenance action verifies current access to every field
-returned and audits content-free access. Source authorization is checked again
-at read time; approval is never a permanent source-access grant. Denied provenance
-requests must not distinguish absent from inaccessible sources. General MCP
-writes cannot create approved promotions or approve as Gustavo.
+- `learnings suggest --source <relative-note> [--text <abstract-draft>] --purpose <private-purpose> --limits <uncertainty>` returns a pending draft and approval digest.
+- `learnings promote --id <uuid> --digest <exact-digest> --approve` explicitly approves that single draft. Omitting approval fails. This is a local owner capability, never an MCP tool.
+- `learnings list`; `learnings search --query <text>` (active only).
+- `learnings provenance --id <uuid>` requires source authority and intentionally exposes private source details only there.
+- `learnings mark-source-wrong --id <uuid>` requires source authority and suspends retrieval.
+- `learnings check-public --id <uuid> --text <final-candidate>` checks supplied surrounding text, never publishes.
 
-## UX proposal
+## Re-identification checks and limits
 
-1. Select source excerpts within authorized spaces and choose manual or AI-assisted
-   drafting. Show local processing or the exact remote consent scope.
-2. Review the abstract draft beside a source-only panel visible under source
-   authority. Highlight residual identifiers, concrete quantities, unique situations,
-   unsupported claims and confidentiality concerns. Require meaningful review;
-   detector success alone never enables approval.
-3. Select audience and purpose: internal reuse for a named authorized destination
-   or public publication. Display applicable restrictions and unresolved issues.
-4. Gustavo explicitly approves that single immutable revision. Editing any text,
-   destination, classification or purpose invalidates approval. No prechecked box,
-   approval by timeout, recurring approval or model-generated approval.
-5. Preview the exact recipient-visible record and exported artifact. Offer reject,
-   defer, revise and revoke actions. All approved notes remain encrypted at rest,
-   including public-class notes, unless a separate storage opt-in applies.
+Deterministic checks conservatively flag capitalized names, source vocabulary (including lower-case company/person names), numbers/amounts/dates, URLs/contact markers and distinctive-event vocabulary. Source-space evidence must be available; absent authority, deleted evidence, suspended learning, corruption, symlinks or plaintext evidence returns the same `review_required` result. A successful result is named `no_automatic_risk_detected`, never “safe to publish.” Both outcomes include `publicationAuthorized: false`.
 
-## Updates, contradictions and revocation
+Heuristics cannot prove anonymity, identify every rare situation, assess outside audience knowledge or infer lawful disclosure. Vocabulary overlap and capitalization intentionally overflag. The user must include all surrounding material in the candidate. Cumulative disclosure, independent human review workflow, revision editing, revocation tooling, distribution receipts, external exports and shared audiences are not implemented. None is authorized by this feature.
 
-Track the source revision at approval. A source change, contradictory evidence,
-deletion, changed access or confidentiality restriction marks affected learnings
-`review_required` and suspends retrieval and new exports until Gustavo reapproves
-an updated revision. Never silently rewrite an approved claim. Preserve encrypted
-revision history under original authority and explain uncertainty without exposing
-the source to general readers. A future policy may distinguish harmless edits,
-but the conservative recommendation is suspension until review.
+Tests use temporary fictional encrypted fixtures for approval boundaries, authority, redaction, lifecycle, at-rest encryption, containment and checker risks. State2 and source vaults are outside this review; no demonstration was rerun.
 
-Revocation immediately removes the learning from active search/MCP and invalidates
-local caches, embeddings, drafts, recommendations and managed exports. Maintain
-opaque tombstones so stale replicas cannot resurrect it. Stop further distribution
-if dependency evaluation fails. Revoke downstream derivatives recursively, with
-cycle detection and idempotent retry. Restore from backup must replay revocations
-before serving results. Backups remain encrypted and subject to retention rules.
+## Security review and validation limits
 
-Previously copied text, screenshots, downloaded exports, remote model retention
-and unmanaged third-party caches cannot be reliably recalled. Show this limit
-before export; prefer managed expiring views, destination receipts, minimal export
-scope and short cache lifetimes. Revocation must not claim to erase uncontrolled
-copies. Notify only through separately authorized communication workflows; this
-proposal sends nothing. Retain only the minimum audit metadata needed under the
-applicable retention policy.
+The deterministic local source-aware checker now gates suggestion and promotion independently for **body, purpose and applicability**. Risky drafts are rejected with a generic error before their text is returned or stored. Retrieval rechecks all three fields, including legacy drafts, and requires a revision-matching approval for cross-scope active results. This is conservative filtering, not proof of anonymization: obfuscation, paraphrase, outside knowledge and detector false negatives remain possible. It uses no cloud. The explicit source-details action intentionally reveals provenance only inside its authorized source scope.
 
-## Fictional generic examples
+Default list/search is active only. Explicit inactive listing is restricted to the source-authorized scope and still filters unsafe fields. Marking a source wrong suspends every stored revision linked to its exact source path and space, including pending ones. Authorization checks precede source lifecycle reads in ID-based actions; foreign pending records are not lifecycle-evaluated by listing. Cross-scope active availability necessarily reveals whether an approved learning is currently retrievable, but no reason or source flags are returned. Timing and filesystem contention are not constant-time or isolated per scope.
 
-These examples are invented, unrelated to any vault, and illustrate sanitized
-outputs rather than evidence of actual events. Each would still require its own
-review and Gustavo's explicit approval before use.
+Registry read-modify-write operations use an exclusive filesystem lock and unique exclusive temporary files with atomic rename. Contention fails closed rather than retrying or overwriting a stale snapshot. A crash can leave a lock requiring trusted operator recovery; there is no automatic stale-lock bypass, fsync durability guarantee, or hostile-local-process isolation. Initial CLI registry key provisioning is persisted while holding that lock; read-only CLI commands no longer rewrite stale key configurations. Other application writers of key configuration do not participate in this lock.
 
-- **Principle:** “Separate a proposal's author from its final reviewer when incentives
-  can affect judgment.” Internal procedural learning; omit any incident, identities
-  or meeting context. Public reuse requires a fresh disclosure review.
-- **Pattern:** “When handoffs lose context, a shared acceptance checklist can make
-  responsibilities clearer.” Hypothesis with limits: a checklist does not resolve
-  conflicting incentives. Reject if the surrounding situation remains recognizable.
-- **Procedure:** “Record competing explanations before choosing an intervention,
-  then revisit the assumptions after observing results.” General practice only;
-  no metrics, chronology, sector or source identifiers accompany it.
+Evidence paths and registry paths reject existing symlink components; evidence additionally requires lexical and real containment. Directory components are not pinned by file descriptors: malicious concurrent filesystem replacement (TOCTOU), hard links and an attacker who can write the owner state directory remain outside the trust boundary. No attempt is made to route around operating-system/tool blocks. Owner capability is trusted launcher configuration, not authentication inferred from RPC text; any code with the unlocked master keys can bypass service policy. Do not grant owner to shared clients.
 
-## Proposed acceptance tests (not implemented)
+MCP ordinary `search`/`sb_search` and `learning_search` are regression-tested against temporary fictional encrypted fixtures across owner spaces. Shared clients (including note writers), public-only clients, empty scopes and unknown scopes cannot elevate themselves using RPC arguments. Native ordinary app recall is covered by an automated service integration test for owner access across spaces, signed-out/nonowner denial, default capability denial, pending/suspended exclusion, redacted output and locked keys. This is **an automated service test, not an opened Electron app or manual UI test**. No window was opened; renderer behavior remains unvalidated.
 
-- Manual and local-model suggestions stay pending; each requires Gustavo's explicit
-  revision-bound approval. Other identities, batches, timeouts and imported commands
-  cannot promote. Remote extraction without matching consent never dispatches.
-- Sanitization catches names, PII, quantities, dates, links, titles and indirect
-  identifiers. Human review rejects rare recognizable situations and combinations
-  that pass identifier detectors. Confidentiality restrictions override approval.
-- Public article and internal board-use approvals cannot substitute for each other;
-  changed body, audience, classification, purpose or source version invalidates them.
-- Disk, WAL, vector, keyword, autocomplete, MCP, error, audit and export scans reveal
-  no provenance in general data. Source access loss hides provenance immediately;
-  partial multi-source access reveals only permitted fields without source counts.
-- Search and MCP deny missing space/class/audience authority and cannot approve via
-  write tools. Prompt injection cannot widen source selection, consent or approval.
-- Source contradiction/update, revocation and restore suspend every dependent revision
-  and invalidate managed caches/exports, including offline retry and stale replicas.
-  Failure to evaluate dependencies fails closed. Unmanaged copies are reported as
-  outside recall guarantees; no false erasure confirmation is shown.
+Earlier review evidence remains historical: a native CLI ordinary-search smoke over an empty temporary fixture returned `[]`; an encrypted-learning subprocess inside Vitest timed out after ten seconds with null status and no stderr. In this final pass an asynchronous subprocess probe used only the supported `--unlock-stdin` pipe with EOF and a fictional credential. It exited zero with no captured output. A trivial spawned Node writer also yielded no captured stdout/stderr, so the result does not diagnose a CLI deadlock or establish encrypted CLI success. The encrypted CLI end-to-end probe remains explicitly skipped in the suite and is an **open validation gap**. No secret-input workaround, passphrase environment/argv/log exposure, denied-tool bypass or sandbox bypass was used. No actual code deadlock was identified or claimed fixed.
 
-## Open product questions
+The earlier demo evidence in `scripts/demo-general-learnings.ts` predates this final hardening and was not rerun or overwritten. Only always-private and no-expiry were user approved; exact-draft approval, lifecycle and public-check rules remain proposed implementation defaults.
 
-- Is `general-knowledge` private to Gustavo, or shared? Which identities and launchers
-  can assert receiving audience/purpose, and who maintains those grants?
-- What evidence of lawful disclosure review is required, and which restrictions
-  categorically prohibit even abstract reuse?
-- Should every source edit suspend use, or can a reviewed mechanism distinguish
-  editorial changes without giving general readers source-change hints?
-- How will Gustavo authenticate each approval, and what expiry/review interval is
-  appropriate? How are emergency revocation and temporary unavailability handled?
-- Which export destinations support revocation receipts, and should public exports
-  be disabled until the limits and publication review are implemented?
-- Who can operate the encrypted dependency service across spaces, and how is that
-  authority separated from ordinary search/MCP clients and audited?
-- What independent reidentification review is needed before public use, and how
-  should cumulative disclosure across many learnings be evaluated?
+Final local validation after hardening: `npm test` passed **80 tests**, with **2 skipped** (**82 total**), across **13 passed test files and 1 skipped file (14 total)**. Derived-learning coverage is **15 passed, 1 skipped (16 total)**. Skips are the opt-in search-scale benchmark and the encrypted CLI subprocess validation gap described above. `npm run typecheck` (node and web), `npm run build`, and `git diff --check` passed. Earlier review totals were 78 passed/1 skipped (79 total); these are historical, not final totals. Sync-test messages use mocked fetch responses. No state2, real notes, source vault, secrets, network, demo rerun, commit, push, workflow or external send was used for this final pass.

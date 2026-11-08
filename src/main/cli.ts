@@ -1,3 +1,4 @@
+import { DerivedLearnings } from './services/derived-learnings'
 import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { suggestSpaces, applySpaceMap, approvedSpaceMap } from './services/security/space-map'
@@ -9,7 +10,7 @@ export async function runCli(args = process.argv.slice(2)) {
   const option = (name: string, fallback?: string) => { const i = args.indexOf(name); if (i < 0) return fallback; if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error('Missing option value'); return args[i + 1] }
   const command = args[0], root = resolve(command === 'index' ? args[1] ?? '.' : option('--dir', './memory')!)
   const space = option('--space', 'personal')!, state = resolve(option('--state', join(root, '.keepmind'))!)
-  if (!['index', 'search', 'status', 'refresh', 'spaces'].includes(command)) throw new Error('Usage: keepmind-cli index <dir> | search <query> [--space name] | spaces suggest|apply | status | refresh [--dir dir] [--state dir] [--unlock-stdin] [--allow-plaintext]')
+  if (!['index', 'search', 'status', 'refresh', 'spaces', 'learnings'].includes(command)) throw new Error('Usage: keepmind-cli index <dir> | search <query> [--space name] | spaces suggest|apply | status | refresh [--dir dir] [--state dir] [--unlock-stdin] [--allow-plaintext]')
   if (command === 'spaces') {
     if (args[1] === 'suggest') return suggestSpaces(root, state)
     if (args[1] !== 'apply') throw new Error('Usage: spaces suggest|apply')
@@ -30,6 +31,23 @@ export async function runCli(args = process.argv.slice(2)) {
     }
   }
   if (existsSync(configFile) && !memory.keys) throw new Error('Index locked: use --unlock-stdin')
+  if (command === 'learnings') {
+    if (!memory.keys) throw new Error('Encrypted owner session required')
+    const service = new DerivedLearnings(root, state, memory.keys, { owner: true, spaces: [space], approval: args.includes('--approve') }, memory.onKeysChanged ?? undefined)
+    try {
+      const id = option('--id', '')!
+      switch (args[1]) {
+        case 'suggest': return service.suggest(option('--source', '')!, option('--text', '')!, option('--purpose', '')!, option('--limits', '')!)
+        case 'promote': return service.promote(id, option('--digest', '')!)
+        case 'list': return service.list()
+        case 'search': return service.list(option('--query', '')!, false)
+        case 'mark-source-wrong': return service.markSourceWrong(id)
+        case 'provenance': return service.sourceDetails(id)
+        case 'check-public': return service.checkPublic(id, option('--text', '')!)
+        default: throw new Error('Unknown learning action')
+      }
+    } finally { memory.keys.lock() }
+  }
   const db = await HybridSearch.open(join(state, 'memory-search.sqlite'), undefined, () => memory.keys, () => memory.encryptAll)
   try {
     const scheduler = new RefreshScheduler(memory, db, state)
@@ -43,6 +61,6 @@ export async function runCli(args = process.argv.slice(2)) {
     if (command === 'index') return await scheduler.indexFiles()
     if (command === 'refresh') return await scheduler.refresh()
     if (!args[1] || args[1].startsWith('--')) throw new Error('Search query required')
-    return db.search(args[1], undefined, 10, { space }).map(h => ({ file: h.c.file, score: h.s, text: h.c.text }))
+    return [...db.search(args[1], undefined, 10, { space }).map(h => ({ file: h.c.file, score: h.s, text: h.c.text })), ...(memory.keys ? new DerivedLearnings(root, state, memory.keys, { owner: true, spaces: [space] }).list(args[1], false) : [])]
   } finally { db.close(); memory.keys?.lock() }
 }

@@ -108,7 +108,11 @@ app.whenReady().then(async () => {
   const autoScheduler = new AutomationScheduler(store, brain, (m) => pushMcpLog(`[auto] ${m}`))
   autoSchedulerGlobal = autoScheduler
   const auth = new AuthService(join(app.getPath('userData'), 'second-brain'))
-  const rag = new RagService(localLlm, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
+  const rag = new RagService(localLlm, brain.getMemory(), join(app.getPath('userData'), 'second-brain'), {
+    root: store.memoryDir,
+    // The first local account owns this installation; other accounts receive no owner capability.
+    isOwner: async () => (await auth.userByToken(store.get().auth.sessionToken))?.id === 1
+  })
   brain.setRag(rag)
   const refreshDir = join(app.getPath('userData'), 'second-brain')
   let refresh: RefreshScheduler | undefined

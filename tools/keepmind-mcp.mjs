@@ -39,6 +39,8 @@ const ROOT = resolve(memoryDir)
 const clientId = options.clientId ?? 'default'
 if (!/^[a-zA-Z0-9_-]{1,80}$/.test(clientId)) throw new Error('Invalid client id')
 const scope = options.clients?.[clientId] ?? (options.clients ? { spaces: [], maxClass: 'public' } : { spaces: ['personal'], maxClass: 'internal' })
+const learningService = options.keys && options.state && scope.owner === true && levelsAllowed(scope.maxClass) ? new (createRequire(import.meta.url)('../out/main/derived-learnings.js').DerivedLearnings)(ROOT, options.state, options.keys, { owner: true, spaces: scope.spaces }) : null
+function levelsAllowed(maximum) { return ['internal', 'sensitive', 'secret'].includes(maximum) }
 const encryptAll = options.allowPlaintext !== true
 const levels = ['public', 'internal', 'sensitive', 'secret']
 const auditFile = options.auditFile ?? safe('ops/mcp-reads.jsonl')
@@ -174,6 +176,7 @@ function terms(text) {
 function search(query, limit = 8) {
   const qTerms = [...new Set(terms(query))]
   if (!qTerms.length) return 'empty query'
+  const derived = learningService ? learningService.list(query, false).map(r => `## ${r.id}\n${r.body}`).join('\n\n') : ''
   const qSet = new Set(qTerms)
   const results = []
   for (const rel of allFiles()) {
@@ -199,10 +202,10 @@ function search(query, limit = 8) {
   }
   results.sort((a, b) => b.score - a.score)
   if (!results.length) {
-    return `no matches for "${query}"`
+    return derived || `no matches for "${query}"`
   }
-  return results.slice(0, limit).map(r =>
-    `## ${r.rel} (score ${r.score})\n${r.snippet}`).join('\n\n')
+  return [derived, results.slice(0, limit).map(r =>
+    `## ${r.rel} (score ${r.score})\n${r.snippet}`).join('\n\n')].filter(Boolean).join('\n\n')
 }
 
 // ── tasks (memory/tasks/*.md — "# title" + "> status: …" meta line) ──
@@ -313,6 +316,7 @@ function queryMem(a = {}) {
 // ── tools ──
 
 const TOOLS = [
+  ...['learning_list', 'learning_search', 'learning_check_public'].map(name => ({ name, description: 'Private owner learning access; never approves or publishes.', inputSchema: { type: 'object', properties: { query: { type: 'string' }, id: { type: 'string' }, text: { type: 'string' } } } })),
   { name: 'search', description: 'Keyword search over local Markdown memory.', inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['query'] } },
   { name: 'read_note', description: 'Read a note relative to the local memory directory.', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
   {
@@ -387,6 +391,12 @@ const TOOLS = [
 
 function callTool(name, a = {}) {
   switch (name) {
+    case 'learning_list':
+    case 'learning_search':
+    case 'learning_check_public': {
+      if (!learningService) throw new Error('Learning unavailable')
+      return JSON.stringify(name === 'learning_check_public' ? learningService.checkPublic(String(a.id ?? ''), String(a.text ?? '')) : learningService.list(name === 'learning_search' ? String(a.query ?? '') : undefined, false))
+    }
     case 'search':
     case 'sb_search': return search(String(a.query ?? ''), a.limit ?? 8)
     case 'read_note':
@@ -503,7 +513,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     // Encryption defaults independently of legacy config; plaintext requires launcher opt-in.
     process.once('exit', () => keys.lock())
   }
-  const handle = createMemoryServer(root, { keys, allowPlaintext: process.env.KEEPMIND_MCP_ALLOW_PLAINTEXT === 'true', clients: config, clientId: process.env.KEEPMIND_MCP_CLIENT ?? 'default' })
+  const handle = createMemoryServer(root, { keys, state: process.env.KEEPMIND_MCP_STATE, allowPlaintext: process.env.KEEPMIND_MCP_ALLOW_PLAINTEXT === 'true', clients: config, clientId: process.env.KEEPMIND_MCP_CLIENT ?? 'default' })
   const rl = createInterface({ input: process.stdin, terminal: false })
   rl.on('line', line => {
     const trimmed = line.trim()

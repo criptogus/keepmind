@@ -1,3 +1,4 @@
+import { DerivedLearnings } from './derived-learnings'
 import { policy } from './security/classification'
 import { createHash } from 'node:crypto'
 import { HybridSearch } from './search/hybrid'
@@ -49,7 +50,7 @@ export class RagService {
   private index: Index = { chunks: [] }
   private embedding = false
 
-  constructor(private localLlm: LocalLlm, memory: Memory, stateDir: string) {
+  constructor(private localLlm: LocalLlm, memory: Memory, stateDir: string, private ownerIdentity?: { root: string; isOwner: () => Promise<boolean> }) {
     this.stateDir = stateDir
     this.memory = memory
     void this.database().catch(() => {})
@@ -191,10 +192,18 @@ export class RagService {
         scored.splice(SEARCH_K)
       }
       const good = scored.filter(x => x.s > 0)
-      if (!good.length) return ''
-      return good.map(x =>
+      // Owner capability comes only from native composition, never query/scope arguments.
+      let derived: string[] = []
+      if (this.memory.keys && this.ownerIdentity && await this.ownerIdentity.isOwner()) {
+        try {
+          derived = new DerivedLearnings(this.ownerIdentity.root, this.stateDir, this.memory.keys, { owner: true, spaces: [space, ...grants] })
+            .list(query, false).slice(0, SEARCH_K).map(r =>
+              `### derived_learning:${r.id} (private)\nclass: internal\nspace: ${r.space}\n${r.body.slice(0, 900)}`)
+        } catch { /* Registry/key failures never expose private results. */ }
+      }
+      return [...good.map(x =>
         `### ${x.c.file}${x.c.stale ? ' ⚠ stale' : ''} (score ${x.s.toFixed(2)})\nclass: ${x.c.class ?? 'internal'}\nspace: ${x.c.space ?? 'personal'}\n${x.c.text.slice(0, 900)}`
-      ).join('\n\n')
+      ), ...derived].join('\n\n')
     } catch { return '' }
   }
 
