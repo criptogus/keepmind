@@ -71,6 +71,18 @@ const MCP_JSON = JSON.stringify({
   }
 }, null, 2) + '\n'
 
+// Cursor reads .cursor/mcp.json; Gemini CLI reads .gemini/settings.json —
+// same mcpServers shape, so agents in those tools connect with zero config.
+const CURSOR_MCP_JSON = MCP_JSON
+const GEMINI_SETTINGS = JSON.stringify({
+  mcpServers: {
+    keepmind: {
+      command: 'node',
+      args: ['tools/keepmind-mcp.mjs', '--dir', './memory']
+    }
+  }
+}, null, 2) + '\n'
+
 function mcpServerSource(): string {
   // tools/keepmind-mcp.mjs ships inside the app bundle (and the repo)
   const candidates = [
@@ -95,6 +107,8 @@ export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
     ['CLAUDE.md', '@AGENTS.md\n'],
     ['GEMINI.md', 'Read AGENTS.md — it documents this KeepMind memory repo, its layout under memory/, conventions, and the bundled MCP server (tools/keepmind-mcp.mjs).\n'],
     ['.mcp.json', MCP_JSON],
+    ['.cursor/mcp.json', CURSOR_MCP_JSON],
+    ['.gemini/settings.json', GEMINI_SETTINGS],
     ['tools/keepmind-mcp.mjs', mcpServerSource()]
   ]
 

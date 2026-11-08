@@ -34,7 +34,7 @@ replaceable runtime, the repo is the brain:
 - **🖥️ Runs anywhere** — desktop app (Electron) on macOS/Windows/Linux, headless on a VPS, or installed by an agent on its own VM. A GitHub repo is the only hard requirement — it's the durable memory backend every LLM workflow already speaks.
 - **🔌 Connectors (MCP)** — a generic MCP stdio client plus bundled servers: WhatsApp via QR (Baileys), Telegram bot, Postgres read-only, and *any* custom MCP server. LLMs call connector tools natively.
 - **🧠 KeepMind MCP server** — the repo ships its own zero-dependency MCP server (`tools/keepmind-mcp.mjs`, Node 18+). Claude Code, Codex, Gemini CLI, Grok or any MCP client connects with one command and gets `sb_search` / `sb_read` / `sb_write` / `sb_remember` / `sb_tasks` — structured memory access, not just raw files.
-- **📄 Agent-ready repo** — on connect, the app pushes `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json` and the MCP server into your repo. Codex/Claude/Grok discover and use the memory automatically — no prompt-pasting needed.
+- **📄 Agent-ready repo** — on connect, the app pushes `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json`, `.cursor/mcp.json`, `.gemini/settings.json` and the MCP server into your repo. Codex/Claude/Cursor/Gemini discover and use the memory automatically — see [`docs/CONNECT.md`](docs/CONNECT.md) for per-agent setup.
 - **🧹 Weekly librarian** — a scheduled hygiene pass (consolidate old logs, dedupe long-term memory, refresh entities) keeps the knowledge base clean on its own.
 - **🕸️ Entity layer** — recurring people/projects/topics get their own page in `memory/entities/` with `[[wikilinks]]` — a lightweight knowledge graph in plain Markdown.
 - **🔁 Continuous GitHub sync** — the repo is the source of truth: every local memory write pushes in seconds, remote changes (written by Claude, Codex, Grok, or a bot on a VPS…) pull down automatically, before every chat.
@@ -172,7 +172,11 @@ memory/
 External AIs (Claude, Codex, Grok, Gemini…) can plug into the same repo —
 the app generates a ready-to-paste prompt under **Brain → Plug in your AI**.
 
-### Connect Codex / Claude / Grok directly (MCP)
+### Connect Codex / Claude / Grok / Cursor / bots directly
+
+📖 **Full per-agent guide: [`docs/CONNECT.md`](docs/CONNECT.md)** — setup +
+ready-to-paste prompt for Claude (Code/Desktop), Codex, Cursor, Gemini CLI,
+Grok, Grokbot/bot VMs, and any custom agent (Hermes, Dots, Muse…).
 
 Every connected repo contains `tools/keepmind-mcp.mjs` — a zero-dependency
 MCP server over your `memory/` directory. Any MCP-capable agent gets
@@ -189,7 +193,8 @@ npx keepmind-mcp --dir /path/to/your/memory-clone
 
 Available tools: `sb_search` (search memory first), `sb_read`, `sb_write`,
 `sb_append`, `sb_remember` (durable fact/lesson/skill), `sb_recent`,
-`sb_list`, `sb_tree`, `sb_tasks` — plus `memory://` resources for browsing.
+`sb_list`, `sb_tree`, `sb_tasks`, `sb_query` (structured filters) — plus
+`memory://` resources for browsing.
 
 ## Tech stack
 
