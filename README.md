@@ -319,3 +319,9 @@ The vendored **laya-ts** runtime is licensed under Apache-2.0, separately from
 KeepMind's MIT license. See [NOTICE](NOTICE), the preserved
 [Apache-2.0 license](src/main/vendor/laya/LICENSE.laya), and
 [vendoring notes](src/main/vendor/laya/VENDORED.md) for source and local changes.
+
+### Memory security and native video capture
+
+KeepMind uses its own memory model with item classifications, isolated spaces, themes and encrypted local search. Configure memory encryption and save the one-time recovery key in Settings before ingesting restricted material. Sensitive/secret data requires unlocked keys; cloud use requires explicit consent and PII redaction.
+
+See [Security model](docs/SECURITY-MODEL.md) for key management, recovery, egress, sync and MCP scopes, and [Native ingestion and refresh](docs/INGESTION.md) for CLI commands, video tool configuration, theme routing and pipeline receipts.
