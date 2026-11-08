@@ -10,14 +10,14 @@ interface Props {
 const STEPS = ['Welcome', 'GitHub', 'AI', 'Connectors', 'Done']
 
 const PROVIDERS = [
-  { id: 'local', emoji: '🏠', name: 'Local (recommended)', desc: 'Runs on your PC, offline, private. Downloads ~2GB once.' },
-  { id: 'codex', emoji: '🟢', name: 'Codex / ChatGPT', desc: 'Uses your Codex CLI login (~/.codex). No key needed.' },
-  { id: 'claude-oauth', emoji: '🧠', name: 'Claude (sign-in)', desc: 'Claude Pro/Max — run `claude setup-token` and paste it.' },
-  { id: 'anthropic', emoji: '🔑', name: 'Claude API', desc: 'Anthropic API key. Pay-per-token.' },
-  { id: 'openai', emoji: '⚡', name: 'OpenAI', desc: 'OpenAI API key (GPT-4o, o-series).' },
-  { id: 'grok', emoji: '𝕏', name: 'Grok', desc: 'xAI API key from console.x.ai.' },
-  { id: 'gemini', emoji: '✨', name: 'Gemini', desc: 'Free API key from Google AI Studio.' },
-  { id: 'ollama', emoji: '🦙', name: 'Ollama', desc: 'If you already have Ollama installed with models.' }
+  { id: 'local', mark: '⌂', accent: '#22d3ee', name: 'Local (recommended)', desc: 'Runs on your PC, offline, private. Downloads ~2GB once.' },
+  { id: 'codex', mark: '◎', accent: '#4ade80', name: 'Codex / ChatGPT', desc: 'Uses your Codex CLI login (~/.codex). No key needed.' },
+  { id: 'claude-oauth', mark: '✳', accent: '#c4b5fd', name: 'Claude (sign-in)', desc: 'Claude Pro/Max — run `claude setup-token` and paste it.' },
+  { id: 'anthropic', mark: 'A', accent: '#fbbf24', name: 'Claude API', desc: 'Anthropic API key. Pay-per-token.' },
+  { id: 'openai', mark: 'O', accent: '#34d399', name: 'OpenAI', desc: 'OpenAI API key (GPT-4o, o-series).' },
+  { id: 'grok', mark: 'X', accent: '#e5e7eb', name: 'Grok', desc: 'xAI API key from console.x.ai.' },
+  { id: 'gemini', mark: 'G', accent: '#60a5fa', name: 'Gemini', desc: 'Free API key from Google AI Studio.' },
+  { id: 'ollama', mark: 'L', accent: '#fb923c', name: 'Ollama', desc: 'If you already have Ollama installed with models.' }
 ]
 
 export default function Wizard({ config, onDone, onToast }: Props) {
@@ -340,7 +340,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                   className={`provider-card ${provider === p.id ? 'is-selected' : ''}`}
                   onClick={() => setProvider(p.id)}
                 >
-                  <div className="p-emoji">{p.emoji}</div>
+                  <div className="p-mark" style={{ color: p.accent, borderColor: `${p.accent}55`, background: `${p.accent}14` }}>{p.mark}</div>
                   <div className="p-name">{p.name}</div>
                   <div className="p-desc">{p.desc}</div>
                 </button>
