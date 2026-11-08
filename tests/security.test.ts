@@ -93,7 +93,7 @@ it('encryptAll upgrades existing scoped items and indexing migrates restricted i
   const { SecuritySession } = await import('../src/main/services/security/session')
   const dir = mkdtempSync(join(tmpdir(), 'km-upgrade-'))
   try {
-    const memory = new Memory(join(dir, 'memory'), null), session = new SecuritySession(memory, join(dir, 'state'), new InMemorySecretStore())
+    const memory = new Memory(join(dir, 'memory'), null, { allowPlaintext: true }), session = new SecuritySession(memory, join(dir, 'state'), new InMemorySecretStore())
     memory.write('notes/public.md', '---\nclass: public\n---\nOpen documentation')
     await session.setup('test')
     writeFileSync(join(dir, 'memory/notes/import.md'), 'person@example.invalid')
@@ -108,7 +108,7 @@ it('encryptAll upgrades existing scoped items and indexing migrates restricted i
 it('keeps in-flight work in its original scope while the active space changes', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'km-async-space-'))
   try {
-    const memory = new Memory(dir, null)
+    const memory = new Memory(dir, null, { allowPlaintext: true })
     let resume!: () => void
     const paused = new Promise<void>(resolve => { resume = resolve })
     const task = memory.withScope(async () => { await paused; memory.write('notes/original.md', 'Original scoped result'); return memory.currentSpace })

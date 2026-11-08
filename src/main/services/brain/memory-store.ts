@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { appendFileSync,existsSync,mkdirSync,readdirSync,readFileSync,renameSync,statSync,unlinkSync,writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { appendFileSync,existsSync,mkdirSync,readdirSync,readFileSync,renameSync,statSync,realpathSync,unlinkSync,writeFileSync } from 'node:fs'
+import { join, dirname, sep, relative as relativePath } from 'node:path'
 import { resolveInside } from '../../safe-path'
 import { randomUUID } from 'node:crypto'
 import { policy, frontmatter, detections, restricted, allowedSpace, maxClass, type Classification } from '../security/classification'
@@ -37,10 +37,11 @@ export class Memory {
   set grants(value: string[]) { this.activeGrants = value }
   withScope<T>(fn: () => T): T { return this.scope.run({ space: this.currentSpace, grants: [...this.grants] }, fn) }
   keys?: SpaceKeys
-  encryptAll = false
+  encryptAll = true
   onKeysChanged: (() => void) | null = null
 
-  constructor(private dir: string, private gh: GitHubConfig | (() => GitHubConfig) | null) {
+  constructor(private dir: string, private gh: GitHubConfig | (() => GitHubConfig) | null, options: { allowPlaintext?: boolean } = {}) {
+    this.encryptAll = options.allowPlaintext !== true
     mkdirSync(this.dir, { recursive: true })
     this.journalFile = join(this.dir, 'ops', 'activity.jsonl')
     this.loadJournal()
@@ -58,15 +59,24 @@ export class Memory {
   // Containment guard: every memory path must resolve inside the memory
   // dir — blocks `..` traversal from LLM tool args, sync filenames, etc.
   private path(...parts: string[]) {
-    return resolveInside(this.dir, ...parts)
+    const p = resolveInside(this.dir, ...parts)
+    let ancestor = p
+    while (!existsSync(ancestor)) ancestor = dirname(ancestor)
+    const root = realpathSync(this.dir), target = realpathSync(ancestor)
+    if (target !== root && !target.startsWith(root + sep)) throw new Error('Symlink escapes memory root')
+    return p
   }
 
   write(relative: string, content: string) {
     const p = this.path(relative)
     mkdirSync(join(p, '..'), { recursive: true })
-    if (!this.migrating && existsSync(p) && this.read(relative) === null) throw new Error('Space access denied')
+    if (!this.migrating && existsSync(p)) {
+      const raw = readFileSync(p, 'utf8')
+      if (!raw.startsWith('KEEPMIND-ITEM:1\n') && this.encryptAll) throw new Error('Plaintext requires migration')
+      if (this.read(relative) === null) throw new Error('Space access denied')
+    }
     const item = policy(content, this.currentSpace)
-    item.class = maxClass(item.class, this.classificationFloor)
+    if (!this.migrating) item.class = maxClass(item.class, this.classificationFloor)
     if (!allowedSpace(item.space, this.currentSpace, this.grants)) throw new Error('Space access denied')
     const mustEncrypt = this.encryptAll || restricted(item.class)
     if (mustEncrypt && !this.keys) throw new Error('Memory locked: encryption keys required')
@@ -89,6 +99,60 @@ export class Memory {
       this.onWrite?.(relative)
       this.journalPush('write', relative)
     }
+  }
+
+  private attachmentPath(relative: string) {
+    const p = this.path(relative), normalized = relativePath(this.dir, p)
+    if (!normalized || normalized.endsWith('.md') || /^(?:ops|state|\.keepmind)(?:[\\/]|$)/.test(normalized)) throw new Error('Attachment path denied')
+    return p
+  }
+
+  // Binary payloads never pass through text classification or lossy UTF-8 conversion.
+  // Ownership is supplied by the importing caller, never inferred from binary data.
+  writeAttachment(relative: string, data: Uint8Array, space = this.currentSpace, classification: Classification = 'secret') {
+    const p = this.attachmentPath(relative)
+    if (!allowedSpace(space, this.currentSpace, this.grants)) throw new Error('Space access denied')
+    if (!this.keys) throw new Error('Memory locked')
+    if (existsSync(p) && this.readAttachment(relative) === null) throw new Error('Space access denied')
+    this.persistAttachment(relative, data, space, maxClass(classification, this.classificationFloor))
+  }
+
+  private persistAttachment(relative: string, data: Uint8Array, space: string, classification: Classification) {
+    if (!this.keys) throw new Error('Memory locked')
+    this.keys.createSpace(space); this.onKeysChanged?.()
+    const box = this.keys.encrypt(JSON.stringify({ space, class: classification, data: Buffer.from(data).toString('base64') }), space, `attachment:${relative}`)
+    const p = this.path(relative)
+    mkdirSync(dirname(p), { recursive: true })
+    writeFileSync(p + '.tmp', 'KEEPMIND-ATTACHMENT:1\n' + JSON.stringify({ space, box }), { mode: 0o600 })
+    renameSync(p + '.tmp', p)
+  }
+
+  readAttachment(relative: string): Buffer | null {
+    const p = this.path(relative)
+    if (!existsSync(p)) return null
+    const raw = readFileSync(p, 'utf8')
+    if (!raw.startsWith('KEEPMIND-ATTACHMENT:1\n')) throw new Error('Plaintext attachment requires migration')
+    const envelope = JSON.parse(raw.slice('KEEPMIND-ATTACHMENT:1\n'.length))
+    if (!allowedSpace(envelope.space, this.currentSpace, this.grants)) return null
+    if (!this.keys) throw new Error('Memory locked')
+    const payload = JSON.parse(this.keys.decrypt(envelope.box, envelope.space, `attachment:${relative}`))
+    if (payload.space !== envelope.space || !['public', 'internal', 'sensitive', 'secret'].includes(payload.class)) throw new Error('Invalid attachment policy')
+    this.classificationFloor = maxClass(this.classificationFloor, payload.class)
+    this.readSpaces.add(payload.space)
+    return Buffer.from(payload.data, 'base64')
+  }
+
+  // Explicit migration map: ambiguous ownership must be resolved or quarantined by
+  // the importer. An existing sealed attachment cannot be reassigned here.
+  protectAttachment(relative: string, space: string) {
+    if (!allowedSpace(space, this.currentSpace, this.grants)) throw new Error('Space access denied')
+    const bytes = readFileSync(this.attachmentPath(relative))
+    if (bytes.subarray(0, 22).toString().startsWith('KEEPMIND-ATTACHMENT:1\n')) {
+      if (this.readAttachment(relative) === null) throw new Error('Space access denied')
+      return false
+    }
+    this.persistAttachment(relative, bytes, space, 'secret')
+    return true
   }
 
   append(relative: string, content: string) {
@@ -161,15 +225,18 @@ export class Memory {
     if (!existsSync(p)) return null
     let text = readFileSync(p, 'utf8')
     const encrypted = text.startsWith('KEEPMIND-ITEM:1\n')
+    let encryptedSpace: string | undefined
     if (encrypted) {
       const item = JSON.parse(text.slice('KEEPMIND-ITEM:1\n'.length))
+      encryptedSpace = item.space
       if (!allowedSpace(item.space, this.currentSpace, this.grants)) return null
       if (!this.keys) throw new Error('Memory locked')
       text = this.keys.decrypt(item.box, item.space, relative)
     }
     const item = policy(text)
+    if (encrypted && encryptedSpace !== item.space) throw new Error('Space authentication mismatch')
     if (!allowedSpace(item.space, this.currentSpace, this.grants)) return null
-    if (restricted(item.class) && !encrypted) throw new Error('Unencrypted restricted memory requires migration')
+    if ((this.encryptAll || restricted(item.class)) && !encrypted) throw new Error('Unencrypted restricted memory requires migration')
     this.classificationFloor = maxClass(this.classificationFloor, item.class)
     this.readSpaces.add(item.space)
     return text
@@ -230,6 +297,7 @@ export class Memory {
     if (!existsSync(p)) return out
     for (const e of readdirSync(p, { withFileTypes: true })) {
       const rel = prefix ? `${prefix}/${e.name}` : e.name
+      if (e.isSymbolicLink()) continue
       if (e.isDirectory()) out.push(...this.allFiles(join(dir, e.name), rel, raw))
       else if (e.name.endsWith('.md') && (raw || this.read(rel) !== null)) out.push(rel)
     }

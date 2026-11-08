@@ -17,7 +17,7 @@ it('serves MCP requests, suppresses notifications, and contains note access', ()
       { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'read_note', arguments: { path: '../secret' } } },
       { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'read_note', arguments: { path: 'outside/passwd' } } }
     ]
-    const handle = createMemoryServer(dir)
+    const handle = createMemoryServer(dir, { allowPlaintext: true })
     const replies = requests.map(r => handle(r)).filter(Boolean)
     expect(replies).toHaveLength(6)
     expect(replies[1].result.tools.map((t: { name: string }) => t.name)).toContain('read_note')
@@ -34,7 +34,7 @@ it('enforces client spaces and maximum class across reads and discovery', () => 
     writeFileSync(join(dir, 'notes/allowed.md'), '---\nspace: personal\nclass: internal\n---\nallowed')
     writeFileSync(join(dir, 'notes/other.md'), '---\nspace: company-x\nclass: internal\n---\nother')
     writeFileSync(join(dir, 'notes/restricted.md'), '---\nspace: personal\nclass: sensitive\n---\nrestricted')
-    const handle = createMemoryServer(dir, { clientId: 'test', clients: { test: { spaces: ['personal'], maxClass: 'internal' } } })
+    const handle = createMemoryServer(dir, { allowPlaintext: true, clientId: 'test', clients: { test: { spaces: ['personal'], maxClass: 'internal' } } })
     const list = handle({ id: 1, method: 'resources/list' }).result.resources.map(r => r.name)
     expect(list).toEqual(['notes/allowed.md'])
     const denied = handle({ id: 2, method: 'resources/read', params: { uri: 'memory://notes/other.md' } })
@@ -47,7 +47,7 @@ it('requires explicit client write permission and audits every attempt without p
     mkdirSync(join(dir, 'notes'))
     writeFileSync(join(dir, 'notes/foreign.md'), '---\nspace: company-y\nclass: internal\n---\nforeign')
     writeFileSync(join(dir, 'notes/high.md'), '---\nspace: company-x\nclass: sensitive\n---\nrestricted')
-    const handle = createMemoryServer(dir, { clientId: 'writer', clients: { writer: { spaces: ['company-x'], defaultSpace: 'company-x', maxClass: 'internal', write: true } } })
+    const handle = createMemoryServer(dir, { allowPlaintext: true, clientId: 'writer', clients: { writer: { spaces: ['company-x'], defaultSpace: 'company-x', maxClass: 'internal', write: true } } })
     const call = (name, path, content) => handle({ id: 1, method: 'tools/call', params: { name, arguments: { path, content } } }).result
     expect(call('sb_write', 'notes/new.md', '# Synthetic note').isError).toBeUndefined()
     expect(readFileSync(join(dir, 'notes/new.md'), 'utf8')).toContain('space: company-x')
@@ -62,7 +62,7 @@ it('requires explicit client write permission and audits every attempt without p
       ['notes/duplicate.md', '---\nspace: company-x\nspace: company-y\n---\nblocked']
     ]) expect(call('sb_write', path, content).isError).toBe(true)
     expect(call('sb_append', 'notes/new.md', '\nsynthetic@example.invalid').isError).toBe(true)
-    const denied = createMemoryServer(dir, { clientId: 'reader', clients: { reader: { spaces: ['company-x'], maxClass: 'internal' } } })
+    const denied = createMemoryServer(dir, { allowPlaintext: true, clientId: 'reader', clients: { reader: { spaces: ['company-x'], maxClass: 'internal' } } })
     expect(denied({ id: 1, method: 'tools/call', params: { name: 'sb_write', arguments: { path: 'notes/denied.md', content: 'blocked' } } }).result.isError).toBe(true)
     const audit = readFileSync(join(dir, 'ops/mcp-reads.jsonl'), 'utf8')
     const rows = audit.trim().split('\n').map(line => JSON.parse(line))
@@ -82,7 +82,7 @@ it('requires explicit client write permission and audits every attempt without p
 it('routes new remember notes to the default space and refuses restricted plaintext even with a higher scope', () => {
   const dir = mkdtempSync(join(tmpdir(), 'km-mcp-default-'))
   try {
-    const handle = createMemoryServer(dir, { clients: { default: { spaces: ['company-x', 'personal'], defaultSpace: 'company-x', maxClass: 'secret', write: true } } })
+    const handle = createMemoryServer(dir, { allowPlaintext: true, clients: { default: { spaces: ['company-x', 'personal'], defaultSpace: 'company-x', maxClass: 'secret', write: true } } })
     const call = (content) => handle({ id: 1, method: 'tools/call', params: { name: 'sb_remember', arguments: { kind: 'note', content } } }).result
     expect(call('synthetic ordinary').isError).toBeUndefined()
     expect(readFileSync(join(dir, 'long-term/notes/synthetic-ordinary.md'), 'utf8')).toContain('space: company-x')

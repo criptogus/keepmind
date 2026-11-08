@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // keepmind-mcp — exposes a KeepMind memory directory over MCP (stdio).
 //
-// Zero dependencies, plain Node >= 18. Point it at any clone/copy of the
+// Plain Node >= 18. Encrypted access needs the full built KeepMind package.
+// Zero-dependency copies support only explicitly opted-in legacy plaintext.
+// Point it at an authorized clone/copy of the
 // memory repo and any MCP-capable agent (Claude, Codex, Grok, Gemini, custom
 // bots) gets structured read/write/search access to the brain.
 //
@@ -9,8 +11,9 @@
 //   node tools/keepmind-mcp.mjs --memory-dir /path/to/memory
 //   KEEPMIND_MEMORY_DIR=/path/to/memory npx keepmind-mcp
 //
-// Inside a cloned second-brain repo the default `./memory` just works.
+// Defaults to ./memory; encrypted reads require launcher-provided unlock and scopes.
 
+import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
@@ -36,6 +39,7 @@ const ROOT = resolve(memoryDir)
 const clientId = options.clientId ?? 'default'
 if (!/^[a-zA-Z0-9_-]{1,80}$/.test(clientId)) throw new Error('Invalid client id')
 const scope = options.clients?.[clientId] ?? (options.clients ? { spaces: [], maxClass: 'public' } : { spaces: ['personal'], maxClass: 'internal' })
+const encryptAll = options.allowPlaintext !== true
 const levels = ['public', 'internal', 'sensitive', 'secret']
 const auditFile = options.auditFile ?? safe('ops/mcp-reads.jsonl')
 function authorize(content, maximum = scope.maxClass) {
@@ -80,10 +84,29 @@ function* walk(dir, prefix = '') {
 
 const allFiles = () => [...walk(ROOT)].filter(rel => readMem(rel) !== null)
 
+function decodeMem(rel, raw) {
+  if (raw.startsWith('KEEPMIND-ITEM:1\n')) {
+    const envelope = JSON.parse(raw.slice('KEEPMIND-ITEM:1\n'.length))
+    // Scope is checked before any attempt to unwrap a space key.
+    if (!scope.spaces.includes(envelope.space)) return null
+    if (!options.keys) throw new Error('Memory locked')
+    const text = options.keys.decrypt(envelope.box, envelope.space, rel)
+    const innerSpace = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].match(/^space:\s*(\S+)/m)?.[1]
+    if (innerSpace !== envelope.space) throw new Error('Space authentication mismatch')
+    return text
+  }
+  if (encryptAll || raw.startsWith('KEEPMIND-')) return null
+  // Explicit legacy plaintext mode still refuses restricted plaintext.
+  return authorize(raw, 'internal') ? raw : null
+}
+
 function readMem(rel) {
   const p = safe(rel)
   if (!existsSync(p)) return null
-  const content = readFileSync(p, 'utf8'), allowed = authorize(content)
+  let content
+  try { content = decodeMem(rel, readFileSync(p, 'utf8')) }
+  catch { audit(rel, false); throw new Error('Encrypted memory unavailable') }
+  const allowed = content !== null && authorize(content)
   audit(rel, allowed)
   return allowed ? content : null
 }
@@ -95,8 +118,9 @@ function writeMem(rel, content, append = false) {
     // Configuration and audit trails cannot be overwritten through note tools.
     if (!rel.endsWith('.md') || resolve(p) === ROOT || /^(?:ops|state|\.keepmind)(?:[\\/]|$)/.test(relative(ROOT, p)) || p === resolve(auditFile)) throw new Error('Write path denied')
     if (scope.write !== true) throw new Error('Client write permission required')
-    const previous = existsSync(p) ? readFileSync(p, 'utf8') : null
-    if (previous !== null && !authorize(previous)) throw new Error('Existing note outside client scope')
+    const exists = existsSync(p)
+    const previous = exists ? decodeMem(rel, readFileSync(p, 'utf8')) : null
+    if (exists && (previous === null || !authorize(previous))) throw new Error('Existing note outside client scope')
     let next = append && previous !== null ? previous + content : content
     const fm = next.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
     if (!fm?.[1].match(/^space:/m)) {
@@ -110,11 +134,19 @@ function writeMem(rel, content, append = false) {
     const fields = next.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
     if (['space', 'class', 'class_override'].some(key => [...fields.matchAll(new RegExp(`^${key}:`, 'gm'))].length > 1)) throw new Error('Ambiguous note policy')
     if (!authorize(next)) throw new Error('New note outside client scope')
-    // Standalone MCP has no unlocked key service: restricted writes must use
-    // the native service so no sensitive plaintext is persisted.
+    // Encrypt every class by default; secret capture remains native-only.
     const classification = fields.match(/^class:\s*(\S+)/m)?.[1] ?? 'internal'
     const override = fields.match(/^class_override:\s*(\S+)/m)?.[1]
-    if (levels.indexOf(classification) >= 2 || levels.indexOf(override) >= 2 || !authorize(next, 'internal')) throw new Error('Restricted writes require unlocked native memory service')
+    const protectedWrite = encryptAll || levels.indexOf(classification) >= 2 || levels.indexOf(override) >= 2 || !authorize(next, 'internal')
+    if (protectedWrite) {
+      if (!options.keys) throw new Error('Encrypted writes require unlocked keys')
+      // Secret capture belongs to native keychain-backed Memory, never this process.
+      if (/\b(?:sk-|ghp_|xox[a-z]-|AKIA)|-----BEGIN .*PRIVATE KEY-----|\beyJ[\w-]+\.[\w-]+\.[\w-]+/.test(next)) throw new Error('Native secret capture required')
+      const space = fields.match(/^space:\s*(\S+)/m)?.[1]
+      // Do not create unpersisted keys: setup/configure spaces in the native app.
+      if (!options.keys.config.spaces[space]) throw new Error('Space key unavailable')
+      next = 'KEEPMIND-ITEM:1\n' + JSON.stringify({ space, box: options.keys.encrypt(next, space, rel) })
+    }
     mkdirSync(dirname(p), { recursive: true })
     // Audit authorization before mutation: an unavailable audit sink denies writes.
     audit(rel, true, 'write')
@@ -180,7 +212,8 @@ function listTasks(status) {
   if (!existsSync(dir)) return 'no tasks yet'
   const out = []
   for (const f of readdirSync(dir).filter(f => f.endsWith('.md'))) {
-    const c = readMem(`tasks/${f}`) ?? ''
+    const c = readMem(`tasks/${f}`)
+    if (c === null) continue
     const title = (c.split('\n').find(l => l.startsWith('# ')) ?? '# ').slice(2).trim()
     const meta = (c.split('\n').find(l => l.startsWith('> ')) ?? '').replace(/^>\s*/, '')
     const done = /status:\s*done/.test(meta)
@@ -216,7 +249,8 @@ function queryMem(a = {}) {
     if (!existsSync(dir)) return 'no tasks yet'
     const out = []
     for (const f of readdirSync(dir).filter(f => f.endsWith('.md'))) {
-      const c = readMem(`tasks/${f}`) ?? ''
+      const c = readMem(`tasks/${f}`)
+      if (c === null) continue
       const t = parseTaskMeta(c)
       if (a.status === 'open' && t.done) continue
       if (a.status === 'done' && !t.done) continue
@@ -445,13 +479,31 @@ function handle(msg) {
   return err(id, -32601, `method not found: ${method}`)
 }
 
-return handle
+return msg => {
+  try { return handle(msg) }
+  catch { return msg?.id === undefined ? null : err(msg.id, -32000, 'Memory unavailable') }
+}
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = configuredRoot()
   const config = process.env.KEEPMIND_MCP_SCOPES ? JSON.parse(readFileSync(process.env.KEEPMIND_MCP_SCOPES, 'utf8')) : undefined
-  const handle = createMemoryServer(root, { clients: config, clientId: process.env.KEEPMIND_MCP_CLIENT ?? 'default' })
+  let keys
+  if (process.env.KEEPMIND_MCP_UNLOCK_FD !== undefined) {
+    const fd = Number(process.env.KEEPMIND_MCP_UNLOCK_FD)
+    if (!Number.isInteger(fd) || fd < 3) throw new Error('Unlock requires a dedicated inherited descriptor')
+    const state = process.env.KEEPMIND_MCP_STATE
+    if (!state) throw new Error('Encryption state directory required')
+    const require = createRequire(import.meta.url)
+    const { SpaceKeys } = require('../out/main/mcp-keys.js')
+    const keyConfig = JSON.parse(readFileSync(join(state, 'security', 'memory-keys.json'), 'utf8'))
+    const secrets = { put() {}, get() { throw new Error('Keychain unavailable') }, remove() { throw new Error('Keychain unavailable') } }
+    try { keys = await SpaceKeys.unlock(keyConfig, secrets, { passphrase: readFileSync(fd, 'utf8').replace(/\r?\n$/, '') }) }
+    catch { process.stderr.write('KeepMind unlock failed\n'); process.exit(1) }
+    // Encryption defaults independently of legacy config; plaintext requires launcher opt-in.
+    process.once('exit', () => keys.lock())
+  }
+  const handle = createMemoryServer(root, { keys, allowPlaintext: process.env.KEEPMIND_MCP_ALLOW_PLAINTEXT === 'true', clients: config, clientId: process.env.KEEPMIND_MCP_CLIENT ?? 'default' })
   const rl = createInterface({ input: process.stdin, terminal: false })
   rl.on('line', line => {
     const trimmed = line.trim()

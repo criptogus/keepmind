@@ -46,6 +46,10 @@ export class VideoPipeline {
       if (url.protocol !== 'https:' || url.username || url.password || url.hash || [...url.searchParams.keys()].some(k => !['v', 't'].includes(k))) throw new Error('INVALID_SOURCE')
       if (!this.memory.keys) { stage = 'LOCKED'; throw new Error('LOCKED') }
       if (!this.cli.available('yt-dlp') || !this.cli.available('faster-whisper')) { stage = 'CLI_MISSING'; throw new Error('CLI_MISSING') }
+      // These external tools require on-disk media/transcript scratch. Until an
+      // encrypted scratch backend exists, default encryption must fail before
+      // capture rather than persist transient plaintext and delete it later.
+      if (this.memory.encryptAll) { stage = 'ENCRYPTED_SCRATCH_REQUIRED'; throw new Error(stage) }
       work = mkdtempSync(join(tmpdir(), 'keepmind-ingest-'))
       const metadata = JSON.parse(await this.cli.run('yt-dlp', ['--no-playlist', '--no-progress', '--no-simulate', '--dump-json', '-f', 'bestaudio', '-o', 'source.%(ext)s', '--', url.toString()], work))
       if (typeof metadata.id !== 'string' || !/^[\w-]{1,120}$/.test(metadata.id)) throw new Error('INVALID_ID')

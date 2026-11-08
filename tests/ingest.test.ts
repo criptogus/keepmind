@@ -20,10 +20,10 @@ it('only reports end-to-end success, and marks old receipts stale', () => {
     now += 1001; expect(status.snapshot()[0].state).toBe('stale')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
-it('ingests mocked social video through encrypted raw/draft, curated themes, and index receipt', async () => {
+it('ingests with explicit plaintext scratch opt-in through encrypted raw/draft, curated themes, and index receipt', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'km-ingest-')); let db: HybridSearch | undefined
   try {
-    const memory = new Memory(join(dir, 'memory'), null)
+    const memory = new Memory(join(dir, 'memory'), null, { allowPlaintext: true })
     memory.keys = (await SpaceKeys.setup('test', new InMemorySecretStore())).keys
     memory.write('themes/gardening.md', '# Gardening\nplants garden soil')
     const cli: CliRunner = { available: () => true, run: vi.fn(async (command, _args, cwd) => {
@@ -48,8 +48,8 @@ it('ingests mocked social video through encrypted raw/draft, curated themes, and
 it('incrementally indexes changed files, removes deleted files, and coalesces refreshes', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'km-refresh-')); let db: HybridSearch | undefined
   try {
-    const memory = new Memory(join(dir, 'memory'), null)
-    db = await HybridSearch.open(); const scheduler = new RefreshScheduler(memory, db, dir)
+    const memory = new Memory(join(dir, 'memory'), null, { allowPlaintext: true })
+    db = await HybridSearch.open(undefined, undefined, undefined, () => false); const scheduler = new RefreshScheduler(memory, db, dir)
     memory.write('notes/a.md', 'alpha'); memory.write('notes/b.md', 'beta')
     expect((await scheduler.refresh()).changed).toBe(2)
     const replace = vi.spyOn(db, 'replace')
@@ -75,5 +75,20 @@ it('retains failed queued jobs and records only fixed metadata in status', async
     expect(scheduler.status.snapshot()[0].error_code).toBe('CLI_MISSING')
     expect(readFileSync(join(dir, 'status/pipeline.json'), 'utf8')).not.toContain('video.example')
     expect(memory.read('ops/ingestion-queue-youtube.md')).toContain('synthetic')
+  } finally { db?.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
+it('blocks disk-based capture before tools run when default encryption requires protected scratch', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'km-protected-scratch-')); let db: HybridSearch | undefined
+  try {
+    const memory = new Memory(join(dir, 'memory'), null)
+    memory.keys = (await SpaceKeys.setup('synthetic', new InMemorySecretStore())).keys
+    db = await HybridSearch.open(undefined, undefined, () => memory.keys)
+    const run = vi.fn(async () => '')
+    const scheduler = new RefreshScheduler(memory, db, dir, 1000, { available: () => true, run })
+    await expect(scheduler.pipeline.ingest({ platform: 'youtube', url: 'https://video.example.invalid/watch?v=synthetic', space: 'personal' })).rejects.toThrow('ENCRYPTED_SCRATCH_REQUIRED')
+    expect(run).not.toHaveBeenCalled()
+    expect(scheduler.status.snapshot()[0].error_code).toBe('ENCRYPTED_SCRATCH_REQUIRED')
+    expect(memory.allRelFiles()).toEqual([])
   } finally { db?.close(); rmSync(dir, { recursive: true, force: true }) }
 })

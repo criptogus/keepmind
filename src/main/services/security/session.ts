@@ -20,7 +20,7 @@ export class SecuritySession {
   }
   private save() {
     if (!this.memory.keys) throw new Error('Memory locked')
-    writeFileSync(this.file + '.tmp', JSON.stringify({ ...this.memory.keys.config, encryptAll: this.memory.encryptAll }), { mode: 0o600 })
+    writeFileSync(this.file + '.tmp', JSON.stringify({ ...this.memory.keys.config, encryptAll: this.memory.encryptAll, allowPlaintext: !this.memory.encryptAll }), { mode: 0o600 })
     renameSync(this.file + '.tmp', this.file)
   }
   get status() { return { configured: existsSync(this.file), unlocked: !!this.memory.keys, space: this.memory.currentSpace, encryptAll: this.memory.encryptAll } }
@@ -31,9 +31,9 @@ export class SecuritySession {
     return { recoveryKey } // only this setup response ever exposes it
   }
   async unlock(credential?: { passphrase?: string; recoveryKey?: string }) {
-    const config = JSON.parse(readFileSync(this.file, 'utf8')) as KeyConfig & { encryptAll?: boolean }
+    const config = JSON.parse(readFileSync(this.file, 'utf8')) as KeyConfig & { encryptAll?: boolean; allowPlaintext?: boolean }
     this.memory.keys = await SpaceKeys.unlock(config, this.secrets, credential)
-    this.memory.encryptAll = !!config.encryptAll
+    this.memory.encryptAll = !(config.allowPlaintext === true && config.encryptAll === false)
   }
   lock() { this.memory.keys?.lock(); this.memory.keys = undefined }
   configure(space: string, grants: string[] = [], encryptAll = this.memory.encryptAll) {

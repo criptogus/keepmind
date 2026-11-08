@@ -36,6 +36,7 @@ export class RefreshScheduler {
     }
     const next: SearchChunk[] = [], live = new Set<string>()
     let changed = 0
+    const needsProtection = this.memory.encryptAll && previous.some(c => !c.encrypted)
     for (const file of files) {
       const text = this.memory.read(file); if (text === null) continue
       const p = policy(text), fileKey = `${p.space}:${file}`, hash = digest(text)
@@ -49,7 +50,7 @@ export class RefreshScheduler {
       }
     }
     const removed = previous.some(c => !live.has(`${c.space}:${c.file}`))
-    if (changed || removed) {
+    if (changed || removed || needsProtection) {
       this.db.replace(next, scope); this.db.save()
       // Only acknowledge hashes after the SQLite save succeeds.
       for (const file of files) { const text = this.memory.read(file); if (text !== null) this.hashes[`${policy(text).space}:${file}`] = digest(text) }

@@ -121,7 +121,7 @@ app.whenReady().then(async () => {
     refresh.start()
     return refresh
   }
-  if (!security.status.configured || security.status.unlocked) await startRefresh()
+  if (security.status.unlocked) await startRefresh()
   ipcMain.handle('pipeline:status', () => refresh?.status.snapshot() ?? { locked: true })
   ipcMain.handle('pipeline:refresh', async () => (await startRefresh()).refresh())
   ipcMain.handle('pipeline:enqueue', async (_e, job: { platform: string; url: string; space: string }) => {

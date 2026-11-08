@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 export type PipelineState = 'unknown' | 'stale' | 'ok' | 'error'
-export type ErrorCode = 'CLI_MISSING' | 'CAPTURE_FAILED' | 'TRANSCRIBE_FAILED' | 'DEPOSIT_FAILED' | 'INDEX_FAILED' | 'LOCKED' | null
+export type ErrorCode = 'CLI_MISSING' | 'CAPTURE_FAILED' | 'TRANSCRIBE_FAILED' | 'DEPOSIT_FAILED' | 'INDEX_FAILED' | 'LOCKED' | 'ENCRYPTED_SCRATCH_REQUIRED' | null
 export interface PipelineRow {
   platform: string; runner: string; schedule: string; timezone: string
   checked_at: string | null; last_attempt_at: string | null; last_capture_ok_at: string | null
@@ -24,7 +24,7 @@ export class PipelineStatus {
           if (value !== null && (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}$/.test(value) || !Number.isFinite(Date.parse(value)))) throw new Error('Invalid status date')
           row[key] = value
         }
-        if (!Number.isSafeInteger(input.backlog_count) || input.backlog_count < 0 || ![null, 'CLI_MISSING', 'CAPTURE_FAILED', 'TRANSCRIBE_FAILED', 'DEPOSIT_FAILED', 'INDEX_FAILED', 'LOCKED'].includes(input.error_code)) throw new Error('Invalid status receipt')
+        if (!Number.isSafeInteger(input.backlog_count) || input.backlog_count < 0 || ![null, 'CLI_MISSING', 'CAPTURE_FAILED', 'TRANSCRIBE_FAILED', 'DEPOSIT_FAILED', 'INDEX_FAILED', 'LOCKED', 'ENCRYPTED_SCRATCH_REQUIRED'].includes(input.error_code)) throw new Error('Invalid status receipt')
         row.backlog_count = input.backlog_count; row.error_code = input.error_code
       }
     }

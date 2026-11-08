@@ -37,7 +37,7 @@ function bands(vec: number[]): string[] {
 }
 export class HybridSearch {
   private encryptedDb = false
-  private constructor(private db: Database.Database, private file?: string, private keys?: () => SpaceKeys | undefined, private encryptAll: () => boolean = () => false) {}
+  private constructor(private db: Database.Database, private file?: string, private keys?: () => SpaceKeys | undefined, private encryptAll: () => boolean = () => true) {}
   private protect() {
     const keys = this.keys?.()
     if (this.encryptedDb) { if (!keys) throw new Error('Index locked'); keys.databaseKey() }

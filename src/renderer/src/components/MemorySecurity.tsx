@@ -7,7 +7,7 @@ export default function MemorySecurity() {
   const run = async (fn: () => Promise<unknown>) => { try { setError(''); await fn(); setPassphrase(''); setRecoveryInput(''); await refresh() } catch { setError('Memory security operation failed. Check your credentials and OS keychain.') } }
   return <div className="card card-pad">
     <h2>Memory encryption</h2>
-    <p>Restricted memories require unlocked encryption. {status?.unlocked ? 'Unlocked' : 'Locked'}.</p>
+    <p>All notes and attachments require unlocked encryption by default. {status?.unlocked ? 'Unlocked' : 'Locked'}.</p>
     {recovery ? <div role="alert"><p>Save this recovery key offline. It is displayed once. Losing your passphrase and recovery key means losing access to your data.</p><code style={{ overflowWrap: 'anywhere' }}>{recovery}</code><button className="btn" onClick={() => setRecovery('')}>I saved my recovery key</button></div> : <>
       <input type="password" aria-label="Memory passphrase" autoComplete="off" value={passphrase} onChange={e => setPassphrase(e.target.value)} placeholder="Memory passphrase" />
       {!status?.configured ? <button className="btn" disabled={!status || !passphrase} onClick={() => run(async () => { const r = await window.sb.securitySetup(passphrase); setRecovery(r.recoveryKey) })}>Set up encryption</button> : <>
@@ -22,7 +22,7 @@ export default function MemorySecurity() {
       <input aria-label="Explicit cross-space grants" value={grants} onChange={e => setGrants(e.target.value)} placeholder="Cross-space grants, comma separated" />
       <button className="btn" onClick={() => run(() => window.sb.securityConfigure(space, grants.split(',').map(s => s.trim()).filter(Boolean), status.encryptAll))}>Apply spaces</button>
       <button className="btn" onClick={() => run(async () => { const config = await window.sb.getConfig(); await window.sb.securityConsent(config.ai.provider) })}>Allow configured cloud model for this space for 15 minutes (PII redacted)</button>
-      <label><input type="checkbox" checked={status.encryptAll} onChange={e => run(() => window.sb.securityConfigure(space, grants.split(',').map(s => s.trim()).filter(Boolean), e.target.checked))} />Encrypt all memories in granted spaces</label>
+      <label><input type="checkbox" checked={status.encryptAll} onChange={e => run(() => window.sb.securityConfigure(space, grants.split(',').map(s => s.trim()).filter(Boolean), e.target.checked))} />Encrypt all notes (recommended). Disabling explicitly permits public/internal plaintext; attachments stay encrypted.</label>
     </>}
     {error && <p role="alert">{error}</p>}
   </div>

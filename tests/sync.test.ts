@@ -29,7 +29,7 @@ const config = (): GitHubConfig => ({ accessToken: 'token', repoOwner: 'owner', 
 it('encrypts uploads, stores only a public salt/header and decrypts pulls', async () => {
   const remote = server(), cfg = config(); github.unlockSync('my private passphrase')
   const dir = mkdtempSync(join(tmpdir(), 'km-sync-')); dirs.push(dir)
-  const mem = new Memory(join(dir, 'memory'), null); mem.write('notes/private.md', 'private fact 🧠')
+  const mem = new Memory(join(dir, 'memory'), null, { allowPlaintext: true }); mem.write('notes/private.md', 'private fact 🧠')
   const store = { get: () => ({ github: cfg }) } as unknown as Store
   const sync = new GitSync(store, mem, dir); syncs.push(sync)
   await sync.syncNow()
@@ -64,7 +64,7 @@ it('refuses wrong passphrases, locked writes, and disabling encryption on an enc
 it('surfaces sync failures and preserves local data on a GitHub tree error', async () => {
   server(); vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503 })))
   const dir = mkdtempSync(join(tmpdir(), 'km-sync-')); dirs.push(dir)
-  const mem = new Memory(join(dir, 'memory'), null); mem.write('notes/a.md', 'keep this')
+  const mem = new Memory(join(dir, 'memory'), null, { allowPlaintext: true }); mem.write('notes/a.md', 'keep this')
   const sync = new GitSync({ get: () => ({ github: config() }) } as unknown as Store, mem, dir); syncs.push(sync)
   await expect(sync.syncNow()).rejects.toThrow(/503/)
   expect(sync.status().error).toContain('503')
@@ -74,7 +74,7 @@ it('migrates remote-only plaintext once, then refuses plaintext downgrades', asy
   const remote = server(), cfg = config(); github.unlockSync('migration passphrase')
   remote.files.set('memory/notes/legacy.md', { content: 'legacy private fact', sha: 'legacy' })
   const dir = mkdtempSync(join(tmpdir(), 'km-sync-')); dirs.push(dir)
-  const mem = new Memory(join(dir, 'memory'), null)
+  const mem = new Memory(join(dir, 'memory'), null, { allowPlaintext: true })
   const sync = new GitSync({ get: () => ({ github: cfg }) } as unknown as Store, mem, dir); syncs.push(sync)
   await sync.syncNow()
   expect(mem.read('notes/legacy.md')).toContain('legacy private fact')

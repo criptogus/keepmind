@@ -57,7 +57,7 @@ export function suggestSpaces(root: string, state: string) {
   return [...counts].filter(([space]) => space.startsWith('board-') && counts.has(`company-${space.slice(6)}`))
     .sort(([a], [b]) => a.localeCompare(b)).map(([from, count]) => ({ from, to: `company-${from.slice(6)}`, counts: { source: count, target: counts.get(`company-${from.slice(6)}`)! } }))
 }
-export function applySpaceMap(root: string, state: string, keys?: SpaceKeys, encryptAll = false, persistKeys?: () => void) {
+export function applySpaceMap(root: string, state: string, keys?: SpaceKeys, encryptAll = true, persistKeys?: () => void) {
   const config = approvedSpaceMap(join(state, 'space-map.json'))
   const memory = new Memory(root, null); memory.keys = keys; memory.encryptAll = encryptAll; memory.onKeysChanged = persistKeys ?? null
   const pending: { file: string; source: string; target: string; text: string }[] = []

@@ -25,7 +25,7 @@ it.skipIf(process.env.KEEPMIND_SEARCH_SCALE !== '1')('measures 11k files / 35k c
       expect(new Set(hits.map(h => h.c.file)).size).toBe(hits.length)
     }
     const bytes = statSync(file).size
-    console.info(JSON.stringify({ chunks: chunks.length, notes: 11000, dimensions: 768, sealedFraction: 0.1, bytes, queryMs: elapsed }))
+    console.info(JSON.stringify({ chunks: chunks.length, notes: 11000, dimensions: 768, sealedFraction: 1, bytes, queryMs: elapsed }))
     expect(bytes).toBeLessThan(250_000_000)
     expect(Math.max(...elapsed)).toBeLessThan(600)
   } finally { db.close(); rmSync(root, { recursive: true, force: true }) }

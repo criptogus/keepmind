@@ -9,23 +9,23 @@ export async function runCli(args = process.argv.slice(2)) {
   const option = (name: string, fallback?: string) => { const i = args.indexOf(name); if (i < 0) return fallback; if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error('Missing option value'); return args[i + 1] }
   const command = args[0], root = resolve(command === 'index' ? args[1] ?? '.' : option('--dir', './memory')!)
   const space = option('--space', 'personal')!, state = resolve(option('--state', join(root, '.keepmind'))!)
-  if (!['index', 'search', 'status', 'refresh', 'spaces'].includes(command)) throw new Error('Usage: keepmind-cli index <dir> | search <query> [--space name] | spaces suggest|apply | status | refresh [--dir dir] [--state dir] [--unlock-stdin]')
+  if (!['index', 'search', 'status', 'refresh', 'spaces'].includes(command)) throw new Error('Usage: keepmind-cli index <dir> | search <query> [--space name] | spaces suggest|apply | status | refresh [--dir dir] [--state dir] [--unlock-stdin] [--allow-plaintext]')
   if (command === 'spaces') {
     if (args[1] === 'suggest') return suggestSpaces(root, state)
     if (args[1] !== 'apply') throw new Error('Usage: spaces suggest|apply')
     approvedSpaceMap(join(state, 'space-map.json'))
   }
-  const memory = new Memory(root, null); memory.currentSpace = space
+  const memory = new Memory(root, null, { allowPlaintext: args.includes('--allow-plaintext') }); memory.currentSpace = space
   const configFile = join(state, 'security', 'memory-keys.json')
   if (args.includes('--unlock-stdin')) {
     if (!existsSync(configFile)) throw new Error('Configure memory encryption in the native application first')
-    const config = JSON.parse(readFileSync(configFile, 'utf8')) as KeyConfig & { encryptAll?: boolean }
+    const config = JSON.parse(readFileSync(configFile, 'utf8')) as KeyConfig & { encryptAll?: boolean; allowPlaintext?: boolean }
     // Node cannot use Electron safeStorage. Unwrap using explicit stdin credential;
     // refuse secret capture, which requires the native OS keychain service.
     const store: SecretStore = { put: id => { if (!id.startsWith('master:')) throw new Error('Native keychain required for secret capture') }, get: () => { throw new Error('Native keychain required') }, remove: () => { throw new Error('Native keychain required') } }
-    memory.keys = await SpaceKeys.unlock(config, store, { passphrase: readFileSync(0, 'utf8').replace(/\r?\n$/, '') }); memory.encryptAll = !!config.encryptAll
+    memory.keys = await SpaceKeys.unlock(config, store, { passphrase: readFileSync(0, 'utf8').replace(/\r?\n$/, '') }); memory.encryptAll = !(config.allowPlaintext === true && config.encryptAll === false)
     memory.onKeysChanged = () => {
-      writeFileSync(configFile + '.tmp', JSON.stringify({ ...memory.keys!.config, encryptAll: memory.encryptAll }), { mode: 0o600 })
+      writeFileSync(configFile + '.tmp', JSON.stringify({ ...memory.keys!.config, encryptAll: memory.encryptAll, allowPlaintext: !memory.encryptAll }), { mode: 0o600 })
       renameSync(configFile + '.tmp', configFile)
     }
   }
