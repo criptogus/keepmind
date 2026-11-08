@@ -105,7 +105,7 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
   const setupSteps = [
     { ok: !!config?.github?.repoUrl, label: 'Connect GitHub (memory sync)', go: 'settings' },
     { ok: !!aiReady, label: `AI provider: ${config?.ai?.provider ?? 'none'}`, go: 'settings' },
-    { ok: true, label: 'Explore — notes, tasks, meetings work offline', go: 'today' }
+    { ok: true, label: 'Explore — notes, tasks and insights work offline', go: 'today' }
   ]
   const setupDone = setupSteps.filter(s => s.ok).length
 

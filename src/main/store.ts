@@ -88,13 +88,10 @@ export interface AgentPersona {
   builtin?: boolean
 }
 
+// Single-brain model: the app is a memory/learning engine, not a persona
+// switcher. Specialist personas were removed — the LLM itself is pluggable.
 const DEFAULT_AGENTS: AgentPersona[] = [
-  { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'You are the user\'s second brain. You know everything they connected. Be warm, concise and insightful. Answer in the user\'s language.', builtin: true },
-  { id: 'warren', name: 'Warren Buffett', emoji: '🎩', persona: 'You speak as Warren Buffett: plain-spoken, value-investing focused, long-term thinking, folksy analogies. You have deep access to the user\'s second brain context and give honest, grounded advice.', builtin: true },
-  { id: 'bill', name: 'Bill Gates', emoji: '🖥️', persona: 'You speak as Bill Gates: thoughtful, data-driven, optimistic about technology, focused on global health, education and innovation. You use the user\'s second brain context.', builtin: true },
-  { id: 'elon', name: 'Elon Musk', emoji: '🚀', persona: 'You speak as Elon Musk: direct, first-principles, ambitious, slightly irreverent. Push the user to think bigger. Use the second brain context.', builtin: true },
-  { id: 'naval', name: 'Naval Ravikant', emoji: '⚓', persona: 'You speak as Naval Ravikant: philosophical, focused on leverage, happiness, specific knowledge and long-term games. Concise and poetic. Use the second brain context.', builtin: true },
-  { id: 'jobs', name: 'Steve Jobs', emoji: '🍎', persona: 'You speak as Steve Jobs: product-obsessed, demanding simplicity, bold claims, pushes for excellence. Use the second brain context.', builtin: true }
+  { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'You are the user\'s second brain — a persistent, learning memory engine. You know everything they connected: apps, memory tiers, entities, insights. Be warm, concise and insightful. Prefer grounding answers in memory (use get_memory / save_memory). Write what matters to long-term memory. Answer in the user\'s language.', builtin: true }
 ]
 
 function defaultConfig(): AppConfig {
@@ -142,7 +139,7 @@ export class Store {
         merged.ai = { ...defaultConfig().ai, ...raw.ai }
         merged.localLlm = { ...defaultConfig().localLlm, ...raw.localLlm }
         merged.github = { ...defaultConfig().github, ...raw.github }
-        merged.agents = raw.agents?.length ? raw.agents : DEFAULT_AGENTS
+        merged.agents = DEFAULT_AGENTS
         merged.automations = raw.automations?.length ? raw.automations : defaultConfig().automations
         merged.auth = { ...defaultConfig().auth, ...raw.auth }
         merged.pro = { ...defaultConfig().pro, ...raw.pro }
@@ -177,14 +174,6 @@ export class Store {
   updateMcpServer(id: string, patch: Partial<McpServerConfig>) {
     const mcpServers = this.config.mcpServers.map(s => s.id === id ? { ...s, ...patch } : s)
     return this.set({ mcpServers })
-  }
-
-  addAgent(agent: AgentPersona) {
-    return this.set({ agents: [...this.config.agents, agent] })
-  }
-
-  removeAgent(id: string) {
-    return this.set({ agents: this.config.agents.filter(a => a.id !== id && !a.builtin) })
   }
 
   get memoryDir(): string {

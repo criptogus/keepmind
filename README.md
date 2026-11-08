@@ -47,8 +47,7 @@ replaceable runtime, the repo is the brain:
 - **📅 Today command center** — daily intentions, open tasks and quick notes on one screen. The app opens here every morning.
 - **📝 Notes** — Markdown notes in `memory/notes/`, synced and readable by every connected AI.
 - **✅ Tasks** — lightweight to-dos with due dates and priorities in `memory/tasks/`.
-- **🗣️ Agent meetings** — convene your specialists (Warren, Elon, your custom agents…) in a roundtable: they debate your topic live, the moderator extracts consensus and action items straight into Tasks.
-- **🎭 Specialist agents** — chat with Warren Buffett, Bill Gates, Elon Musk, Naval Ravikant, Steve Jobs — or build your own personas. They answer with your full second-brain context.
+- **💬 One learning brain** — a single chat interface grounded in your full memory: semantic recall, entity graph, tiered context. No persona switching — the LLM is the pluggable part.
 - **✨ Neural UI** — a procedural synapse visualization (cyan/lime/amber on black) that literally *fires* when things happen in the app.
 - **📋 Insights & daily summaries** — the brain analyzes your memory and surfaces what matters, automatically once a day.
 - **🤖 Plug in your other AIs** — one copy-paste prompt teaches Claude, Codex, Grok or Gemini to read/write memory in your repo (emails sent, PDFs made, decisions — everything remembered).
@@ -58,7 +57,7 @@ replaceable runtime, the repo is the brain:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     RENDERER (React)                     │
-│  BrainCore canvas · Chat · Dashboard · Agents · Wizard   │
+│  BrainCore canvas · Chat · Dashboard · Wizard          │
 └──────────────────────────┬──────────────────────────────┘
                            │ contextBridge (preload)
 ┌──────────────────────────▼──────────────────────────────┐
@@ -165,9 +164,9 @@ memory/
 ├── notes/                    # user notes (Markdown)
 ├── tasks/                    # to-dos with due dates & priorities
 ├── daily/                    # daily intentions/goals
-├── meetings/                 # specialist roundtable transcripts
 ├── entities/                 # knowledge graph: one page per entity + index
-└── agents/                   # per-agent notes
+├── meetings/                 # legacy: old roundtable transcripts
+└── agents/                   # legacy: old per-agent notes
 ```
 
 External AIs (Claude, Codex, Grok, Gemini…) can plug into the same repo —

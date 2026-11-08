@@ -1,65 +1,52 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconSend } from './icons'
 import { mdToHtml } from '../lib/markdown'
-import { AGENT_ACCENTS } from '../lib/accents'
 
-interface Msg { role: 'user' | 'assistant'; content: string; agent?: string; streaming?: boolean }
+interface Msg { role: 'user' | 'assistant'; content: string; streaming?: boolean }
 
-interface Agent { id: string; name: string; emoji: string; persona: string; builtin?: boolean }
-
-const storeKey = (agentId: string) => `sb-chat:${agentId}`
-const loadHistory = (agentId: string): Msg[] => {
+const STORE_KEY = 'sb-chat:brain'
+const loadHistory = (): Msg[] => {
   try {
-    const raw = localStorage.getItem(storeKey(agentId))
+    const raw = localStorage.getItem(STORE_KEY)
     if (!raw) return []
     const list = JSON.parse(raw) as Msg[]
     return list.filter(m => m && typeof m.content === 'string' && !m.streaming).slice(-50)
   } catch { return [] }
 }
 
-export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivity?: () => void }) {
-  const [activeAgent, setActiveAgent] = useState(agents[0]?.id ?? 'brain')
-  const [messages, setMessages] = useState<Record<string, Msg[]>>({})
+export default function Chat({ onActivity }: { onActivity?: () => void }) {
+  const [messages, setMessages] = useState<Msg[]>(loadHistory)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const unsubRef = useRef<(() => void) | null>(null)
 
-  const agent = agents.find(a => a.id === activeAgent) ?? agents[0]
-  const msgs = messages[activeAgent] ?? []
-
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [msgs])
-
-  // Hydrate per-agent history from localStorage on first visit
-  useEffect(() => {
-    setMessages(prev => prev[activeAgent] ? prev : { ...prev, [activeAgent]: loadHistory(activeAgent) })
-  }, [activeAgent])
+  }, [messages])
 
   // Persist finished conversations (skip while a reply is still streaming)
   useEffect(() => {
-    const list = messages[activeAgent]
-    if (!list?.length || list.some(m => m.streaming)) return
-    try { localStorage.setItem(storeKey(activeAgent), JSON.stringify(list.slice(-50))) } catch { /* quota */ }
-  }, [messages, activeAgent])
+    if (!messages.length || messages.some(m => m.streaming)) return
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(messages.slice(-50))) } catch { /* quota */ }
+  }, [messages])
 
   useEffect(() => {
     unsubRef.current?.()
     unsubRef.current = window.sb.onBrainDelta((t) => {
       setMessages(prev => {
-        const list = [...(prev[activeAgent] ?? [])]
+        const list = [...prev]
         const last = list[list.length - 1]
         if (last?.role === 'assistant' && last.streaming) {
           list[list.length - 1] = { ...last, content: last.content + t }
         }
-        return { ...prev, [activeAgent]: list }
+        return list
       })
       onActivity?.()
     })
     return () => unsubRef.current?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAgent])
+  }, [])
 
   const send = async () => {
     const text = input.trim()
@@ -69,23 +56,23 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
     onActivity?.()
 
     const userMsg: Msg = { role: 'user', content: text }
-    const placeholder: Msg = { role: 'assistant', content: '', agent: agent?.name, streaming: true }
-    setMessages(prev => ({ ...prev, [activeAgent]: [...(prev[activeAgent] ?? []), userMsg, placeholder] }))
+    const placeholder: Msg = { role: 'assistant', content: '', streaming: true }
+    setMessages(prev => [...prev, userMsg, placeholder])
 
     try {
-      await window.sb.brainChat(activeAgent, text)
+      await window.sb.brainChat('brain', text)
     } catch (e: any) {
       setMessages(prev => {
-        const list = [...(prev[activeAgent] ?? [])]
+        const list = [...prev]
         list[list.length - 1] = { role: 'assistant', content: `⚠️ ${e?.message ?? e}`, streaming: false }
-        return { ...prev, [activeAgent]: list }
+        return list
       })
     } finally {
       setMessages(prev => {
-        const list = [...(prev[activeAgent] ?? [])]
+        const list = [...prev]
         const last = list[list.length - 1]
         if (last?.streaming) list[list.length - 1] = { ...last, streaming: false }
-        return { ...prev, [activeAgent]: list }
+        return list
       })
       setBusy(false)
     }
@@ -97,65 +84,32 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
 
   return (
     <div className="chat-wrap">
-      <aside className="agent-rail">
-        {agents.map(a => {
-          const accent = AGENT_ACCENTS[a.id] ?? '#22d3ee'
-          const isActive = a.id === activeAgent
-          return (
-            <button
-              key={a.id}
-              className={`agent-btn ${isActive ? 'is-active' : ''}`}
-              onClick={() => setActiveAgent(a.id)}
-              style={isActive ? {
-                borderColor: `${accent}55`,
-                color: '#fff',
-                background: `linear-gradient(90deg, ${accent}30, ${accent}0d)`,
-                boxShadow: `0 0 16px ${accent}30, inset 0 0 12px ${accent}14`,
-                textShadow: `0 0 10px ${accent}aa`
-              } : undefined}
-            >
-              <span className="emoji">{a.emoji}</span>
-              <span className="label">{a.name}</span>
-            </button>
-          )
-        })}
-      </aside>
-
       <div className="chat-main">
         <div className="chat-header">
-          <div className="msg__avatar" style={{
-            width: 38, height: 38, fontSize: 19,
-            color: AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee',
-            borderColor: `${AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee'}88`,
-            boxShadow: `0 0 16px ${AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee'}40`
-          }}><span className="feat-emoji">{agent?.emoji}</span></div>
+          <div className="msg__avatar"><span className="feat-emoji">🧠</span></div>
           <div>
-            <h3>{agent?.name ?? 'Second Brain'}</h3>
+            <h3>Second Brain</h3>
             <div className="faint" style={{ fontSize: 12 }}>
-              {agent?.builtin ? 'Built-in specialist' : 'Custom agent'} · with your second brain context
+              your memory · semantic recall · sleep-cycle learning
             </div>
           </div>
         </div>
 
         <div className="chat-messages">
-          {msgs.length === 0 && (
+          {messages.length === 0 && (
             <div className="empty">
-              <div className="e-emoji"><span className="feat-emoji" style={{ fontSize: 'inherit' }}>{agent?.emoji}</span></div>
-              <h3>Talk to {agent?.name}</h3>
+              <div className="e-emoji"><span className="feat-emoji" style={{ fontSize: 'inherit' }}>🧠</span></div>
+              <h3>Talk to your second brain</h3>
               <p>
-                {agent?.id === 'brain'
-                  ? 'Ask anything — I know everything you connected: apps, memory, insights.'
-                  : `You're chatting with a ${agent?.name} persona. It answers with your full second brain context.`}
+                Ask anything — I know everything you connected: apps, memory, insights.
+                I learn while you sleep and get sharper every night.
               </p>
             </div>
           )}
-          {msgs.map((m, i) => {
-            const msgAgent = agents.find(a => a.name === m.agent)
-            const msgAccent = AGENT_ACCENTS[msgAgent?.id ?? activeAgent] ?? '#22d3ee'
-            return (
+          {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role === 'user' ? 'msg--user' : ''}`}>
-              <div className="msg__avatar" style={m.role === 'assistant' ? { color: msgAccent } : undefined}>
-                <span className="feat-emoji" style={{ fontSize: 'inherit' }}>{m.role === 'user' ? '🧑' : (msgAgent?.emoji ?? agent?.emoji ?? '🧠')}</span>
+              <div className="msg__avatar">
+                <span className="feat-emoji" style={{ fontSize: 'inherit' }}>{m.role === 'user' ? '🧑' : '🧠'}</span>
               </div>
               <div>
                 <div className="msg__bubble msg__body">
@@ -166,15 +120,13 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
                   )}
                 </div>
                 <div className="msg__meta" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {m.agent && <span>{m.agent}</span>}
                   {m.role === 'assistant' && m.content && (
                     <button className="msg__copy" onClick={() => copyMsg(m.content)} title="Copy">⧉</button>
                   )}
                 </div>
               </div>
             </div>
-            )
-          })}
+          ))}
           <div ref={bottomRef} />
         </div>
 
@@ -185,7 +137,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
             }}
-            placeholder={`Message ${agent?.name ?? 'Second Brain'}… (Enter to send)`}
+            placeholder="Message your second brain… (Enter to send)"
             rows={1}
           />
           <button className="btn btn--primary" onClick={send} disabled={busy || !input.trim()} style={{ borderRadius: 999, padding: '0 18px', height: 42 }}>

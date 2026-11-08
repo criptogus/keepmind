@@ -6,7 +6,7 @@
 <title>Second Brain — open-source memory for any LLM</title>
 <meta name="description" content="Open-source second brain that connects to ANY LLM — local llama.cpp, Claude, Codex, GPT, Gemini, Grok, Ollama. Your knowledge lives as Markdown in your own GitHub repo, independent of any model. Runs on your machine, a VPS, or a bot's VM. MIT." />
 <meta property="og:title" content="Second Brain — open-source memory for any LLM" />
-<meta property="og:description" content="Connect any LLM to persistent memory stored as Markdown in YOUR GitHub repo. LLM-agnostic, local-first, MCP connectors, specialist agents. Runs on desktop, VPS or a bot VM." />
+<meta property="og:description" content="Connect any LLM to persistent memory stored as Markdown in YOUR GitHub repo. LLM-agnostic, local-first, MCP connectors, sleep-cycle learning, entity graph. Runs on desktop, VPS or a bot VM." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://criptogus.github.io/second-brain-app/" />
 <meta property="og:image" content="https://criptogus.github.io/second-brain-app/icon.png" />
@@ -256,7 +256,7 @@
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#memory">Memory</a>
-      <a href="#agents">Agents</a>
+      <a href="#models">Models</a>
       <a href="#install">Install</a>
       <a href="https://github.com/criptogus/second-brain-app">GitHub</a>
     </div>
@@ -296,8 +296,9 @@
     <h2>Everything a second brain<br/>should <em>actually do.</em></h2>
     <div class="grid grid--3">
       <div class="card"><div class="ic">🧠</div><h3>Tiered memory</h3><p>Short, medium and long-term memory — like a real brain. Nightly "sleep" cycles review the day and distill facts, lessons and skills.</p></div>
-      <div class="card"><div class="ic">🤖</div><h3>Specialist agents</h3><p>Chat with Buffett, Gates, Musk, Naval and Jobs personas — or build your own. They answer with your full memory context.</p></div>
-      <div class="card"><div class="ic">🗣️</div><h3>Agent meetings</h3><p>Convene a roundtable on any topic. They debate live, reach consensus, and action items land straight in your task list.</p></div>
+      <div class="card"><div class="ic">🌙</div><h3>Sleep-cycle learning</h3><p>Every night the brain reviews the day — what works, what to fix, what to stop, what to start — and distills durable facts, lessons and skills into long-term memory.</p></div>
+      <div class="card"><div class="ic">🕸️</div><h3>Entity knowledge graph</h3><p>Recurring people, projects and topics get their own linked page in <code>memory/entities/</code> — a lightweight graph in plain Markdown that compounds over time.</p></div>
+      <div class="card"><div class="ic">🧹</div><h3>Weekly librarian</h3><p>A scheduled hygiene pass consolidates old logs, dedupes long-term memory and refreshes the entity graph — the base stays clean on its own.</p></div>
       <div class="card"><div class="ic">📅</div><h3>Today command center</h3><p>Daily intentions, tasks with due dates, quick notes — one screen that opens every morning.</p></div>
       <div class="card"><div class="ic">⚡</div><h3>Natural automations</h3><p>"Every day at 8am summarize my WhatsApp" becomes a scheduled cron. Daily, interval or weekly — pause, resume, run now.</p></div>
       <div class="card"><div class="ic">🧮</div><h3>Local semantic search</h3><p>Optional RAG embeddings (BGE/Nomic via llama.cpp) give the brain meaning-based recall — fully offline.</p></div>
@@ -315,7 +316,7 @@
   <div class="wrap">
     <div class="sec-tag">// your data, your repo</div>
     <h2>The repo is the brain.<br/><em>LLMs are just runtimes.</em></h2>
-    <p class="sec-sub">Every note, insight, task and meeting is a plain Markdown file in a private repo only you control — synced both ways, before every chat. That's what makes Second Brain LLM-independent: Claude writes today, Grok answers tomorrow, a local model runs offline next week. Same memory, any engine. A GitHub repo is the one thing every LLM workflow already has.</p>
+    <p class="sec-sub">Every note, insight, task and entity is a plain Markdown file in a private repo only you control — synced both ways, before every chat. That's what makes Second Brain LLM-independent: Claude writes today, Grok answers tomorrow, a local model runs offline next week. Same memory, any engine. A GitHub repo is the one thing every LLM workflow already has.</p>
     <div class="tiers">
       <div class="tier tier--short"><i class="dot"></i><b>short-term</b><span>daily raw logs — working memory, last ~10 days in context</span></div>
       <div class="tier tier--med"><i class="dot"></i><b>medium-term</b><span>weekly consolidations — patterns emerge</span></div>
@@ -324,18 +325,19 @@
   </div>
 </section>
 
-<section id="agents">
+<section id="models">
   <div class="wrap">
     <div class="sec-tag">// any model, any agent</div>
     <h2>Not locked to one AI.<br/><em>Not locked to one machine.</em></h2>
-    <p class="sec-sub">Point Second Brain at whatever LLM you have — a frontier API, your Codex login, a free Gemini key, or a GGUF running on a VPS. External agents can also drive the same repo directly via MCP, so a bot on its own VM gets the same persistent memory you do.</p>
+    <p class="sec-sub">Point Second Brain at whatever LLM you have — a frontier API, your Codex login, a free Gemini key, or a GGUF running on a VPS. External agents can also drive the same repo directly via the bundled MCP server, so a bot on its own VM gets the same persistent memory you do.</p>
     <div class="agents-row">
-      <div class="agent-pill"><i>🎩</i> Warren Buffett</div>
-      <div class="agent-pill"><i>🖥️</i> Bill Gates</div>
-      <div class="agent-pill"><i>🚀</i> Elon Musk</div>
-      <div class="agent-pill"><i>⚓</i> Naval Ravikant</div>
-      <div class="agent-pill"><i>🍎</i> Steve Jobs</div>
-      <div class="agent-pill"><i>🧠</i> + your own personas</div>
+      <div class="agent-pill"><i>🏠</i> Local llama.cpp</div>
+      <div class="agent-pill"><i>🟢</i> Codex / ChatGPT</div>
+      <div class="agent-pill"><i>🧠</i> Claude</div>
+      <div class="agent-pill"><i>⚡</i> OpenAI</div>
+      <div class="agent-pill"><i>✨</i> Gemini</div>
+      <div class="agent-pill"><i>𝕏</i> Grok</div>
+      <div class="agent-pill"><i>🦙</i> Ollama</div>
     </div>
     <div class="grid grid--2" style="max-width:860px;margin-left:auto;margin-right:auto">
       <div class="card"><h3>Every major LLM</h3><p>Bundled local llama.cpp (fully offline) · Codex/ChatGPT sign-in · Claude Pro/Max · OpenAI · Gemini · Grok · Ollama — plus any MCP-compatible agent.</p></div>

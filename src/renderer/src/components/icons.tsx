@@ -25,17 +25,6 @@ export function IconChat({ size = 18 }: { size?: number }) {
   )
 }
 
-export function IconAgents({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
-      <circle cx="9" cy="8" r="3.2" />
-      <path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6" />
-      <circle cx="17" cy="9.5" r="2.4" />
-      <path d="M15.8 14.4c2.6.2 4.4 1.7 5 4.1" />
-    </svg>
-  )
-}
-
 export function IconPlug({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
@@ -166,17 +155,6 @@ export function IconTasks({ size = 18 }: { size?: number }) {
     <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
       <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
       <path d="M8 12.5l2.5 2.5L16 9.5" />
-    </svg>
-  )
-}
-
-export function IconMeeting({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
-      <rect x="3" y="6" width="12" height="12" rx="2.5" />
-      <path d="M8 21h8M12 18v3" />
-      <circle cx="18.5" cy="10" r="2.2" />
-      <path d="M15.5 15.5c.5-1.6 1.6-2.5 3-2.5s2.5.9 3 2.5" />
     </svg>
   )
 }

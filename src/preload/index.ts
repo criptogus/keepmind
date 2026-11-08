@@ -8,8 +8,6 @@ const api = {
   updateLocalLlm: (patch: any) => ipcRenderer.invoke('config:updateLocalLlm', patch),
   updateGithub: (patch: any) => ipcRenderer.invoke('config:updateGithub', patch),
   updateMcp: (id: string, patch: any) => ipcRenderer.invoke('config:updateMcp', id, patch),
-  addAgent: (agent: any) => ipcRenderer.invoke('config:addAgent', agent),
-  removeAgent: (id: string) => ipcRenderer.invoke('config:removeAgent', id),
 
   // ai
   aiProviders: () => ipcRenderer.invoke('ai:providers'),
@@ -104,16 +102,6 @@ const api = {
   goalsToggle: (date: string, index: number) => ipcRenderer.invoke('goals:toggle', date, index),
   goalsRemove: (date: string, index: number) => ipcRenderer.invoke('goals:remove', date, index),
   goalsSuggest: () => ipcRenderer.invoke('goals:suggest'),
-
-  // meetings
-  meetingStart: (opts: { topic: string; participantIds: string[]; agenda?: string }) => ipcRenderer.invoke('meeting:start', opts),
-  meetingList: () => ipcRenderer.invoke('meeting:list'),
-  meetingGet: (path: string) => ipcRenderer.invoke('meeting:get', path),
-  onMeetingEvent: (cb: (e: any) => void) => {
-    const handler = (_e: any, ev: any) => cb(ev)
-    ipcRenderer.on('meeting:event', handler)
-    return () => { ipcRenderer.removeListener('meeting:event', handler) }
-  },
 
   // updater
   updaterStatus: () => ipcRenderer.invoke('updater:status'),

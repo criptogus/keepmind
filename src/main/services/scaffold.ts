@@ -32,7 +32,7 @@ long-term memory: read before answering, write what matters.
 | \`notes/\` | user notes (Markdown) |
 | \`tasks/\` | to-dos — \`# Title\` + \`> status: open · priority: … · due: …\` meta line |
 | \`daily/\` | daily intentions/goals |
-| \`meetings/\` | specialist roundtable transcripts |
+| \`meetings/\` | legacy roundtable transcripts |
 | \`entities/\` | one page per person/project/topic, linked with \`[[Name]]\` |
 
 ## MCP server (recommended)

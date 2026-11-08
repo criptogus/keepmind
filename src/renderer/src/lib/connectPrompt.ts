@@ -13,7 +13,10 @@ The repo keeps memory in tiers under \`memory/\`:
 - \`medium-term/YYYY-Www.md\` — weekly consolidations (written by the app's sleep cycle; don't touch)
 - \`long-term/\` — durable facts, lessons and skills (app-managed; read freely, append only if clearly durable)
 - \`insights/\`, \`summaries/\`, \`sleep/\` — generated reports (read-only for you)
-- \`agents/\` — per-agent notes
+- \`notes/\`, \`tasks/\`, \`daily/\` — user notes, to-dos and daily goals
+- \`entities/\` — knowledge graph: one page per person/project/topic with [[wikilinks]]
+- \`tools/second-brain-mcp.mjs\` — zero-dep MCP server; if you support MCP, prefer it over raw file edits:
+  \`node tools/second-brain-mcp.mjs --dir ./memory\` exposes sb_search / sb_read / sb_write / sb_remember / sb_tasks
 
 ## Setup (do once)
 - Clone the repo locally, or access it via the GitHub API / \`gh\` CLI / GitHub MCP if you have one.

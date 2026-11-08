@@ -212,16 +212,16 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             <h2>What Second Brain does</h2>
             <p className="sub">
               It connects your apps (GitHub, WhatsApp, Telegram, databases), stores memories in
-              <strong> your own GitHub repo</strong>, and talks to you through specialist agents —
-              Warren Buffett, Bill Gates, Elon Musk and more — powered by an AI that can run
-              <strong> locally on your machine</strong>.
+              <strong> your own GitHub repo</strong>, and learns while you sleep — nightly cycles
+              distill facts, lessons and skills — powered by any AI you plug in, local or cloud.
             </p>
             <div className="grid grid-2" style={{ marginBottom: 8 }}>
               {[
                 ['💾', 'Own memory', 'Everything lives in a private repo that is yours — portable, versioned.'],
                 ['🔌', 'Connectors', 'WhatsApp (QR), Telegram, Postgres and any MCP server.'],
                 ['🧠', 'Local AI', 'Bundled open-source model — works fully offline.'],
-                ['🎭', 'Agents', 'Chat with personas that think using your context.']
+                ['🌙', 'Sleep learning', 'Nightly cycles review the day and distill durable memory.'],
+                ['🕸️', 'Entity graph', 'Recurring people and projects become linked knowledge pages.']
               ].map(([e, t, d]) => (
                 <div key={t} className="card card-pad" style={{ padding: '16px 18px' }}>
                   <div className="feat-emoji" style={{ fontSize: 22, marginBottom: 8 }}>{e}</div>
@@ -519,7 +519,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             <BrainMarkLarge />
             <h2 style={{ fontSize: 22 }}>Your second brain is ready</h2>
             <p className="sub" style={{ margin: '10px auto 26px', maxWidth: 460 }}>
-              Start chatting — ask &quot;what do you know about me?&quot; or call Warren Buffett.
+              Start chatting — ask &quot;what do you know about me?&quot; Your brain learns every night.
               Everything that happens is remembered in your repository.
             </p>
             <button className="btn btn--primary btn--lg" style={{ width: '100%', maxWidth: 320 }} onClick={onDone}>

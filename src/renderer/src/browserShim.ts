@@ -13,10 +13,7 @@ const demoConfig = {
     { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
   ],
   agents: [
-    { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'You are the user\'s second brain.', builtin: true },
-    { id: 'warren', name: 'Warren Buffett', emoji: '🎩', persona: 'Speak like Warren Buffett: direct, value, long-term.', builtin: true },
-    { id: 'bill', name: 'Bill Gates', emoji: '🖥️', persona: 'Speak like Bill Gates: technology, data, optimism.', builtin: true },
-    { id: 'elon', name: 'Elon Musk', emoji: '🚀', persona: 'Speak like Elon Musk: first principles, ambition.', builtin: true }
+    { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'You are the user\'s second brain.', builtin: true }
   ],
   automations: [
     { id: 'auto_demo1', name: 'Morning briefing', instruction: 'every day at 8am summarize yesterday\'s activity', kind: 'summary', schedule: 'daily', time: '08:00', enabled: true, createdAt: '2026-11-01T00:00:00Z', lastRunAt: '2026-11-05T08:00:00Z' }
@@ -33,9 +30,8 @@ const demoMemory = [
 ]
 
 let deltaCb: ((t: string) => void) | null = null
-let meetingCb: ((e: any) => void) | null = null
 
-// ── Demo state for planner features (notes / tasks / goals / meetings) ──
+// ── Demo state for planner features (notes / tasks / goals) ──
 const todayStr = () => new Date().toISOString().slice(0, 10)
 const demoNotes: any[] = [
   { id: 'reading-list', title: 'Reading list', body: '- The Almanack of Naval Ravikant\n- Thinking in Systems\n- Deep Work', updated: '2026-11-05T10:00:00Z' },
@@ -51,10 +47,6 @@ const demoGoals: any[] = [
   { text: 'Call mom', done: true },
   { text: 'Review tomorrow\'s calendar', done: false }
 ]
-const demoMeetings: any[] = [
-  { id: '2026-11-04-launch-timing', path: 'meetings/2026-11-04-launch-timing.md', title: 'Should we launch before Q4?', date: '2026-11-04', participants: 'Warren Buffett, Elon Musk, Second Brain' }
-]
-
 const demo = {
   getConfig: async () => demoConfig,
   setConfig: noop,
@@ -62,8 +54,6 @@ const demo = {
   updateLocalLlm: noop,
   updateGithub: noop,
   updateMcp: noop,
-  addAgent: noop,
-  removeAgent: noop,
 
   aiProviders: async () => [
     { id: 'local', name: 'Local (built-in, offline)', models: ['qwen2.5-3b', 'smollm2-1.7b', 'llama3.2-3b', 'qwen2.5-7b'], needsKey: false },
@@ -114,13 +104,7 @@ const demo = {
 
   brainChat: async (agentId: string, message: string) => {
     // emit fake streaming
-    const replies: Record<string, string> = {
-      brain: `🧠 **Second Brain (demo)**\n\nGot your message: "${message}"\n\nIn the real app, I would query your memory, the MCP connectors, and reply with full context.`,
-      warren: `🎩 **Warren Buffett**\n\n"Price is what you pay, value is what you get."\n\nOn "${message}": I'd think durable competitive advantage and cash flow. The short-term market is a voting machine — your second brain helps me see the long term.`,
-      bill: `🖥️ **Bill Gates**\n\nGreat question about "${message}". I'd approach it with data first — measure what matters, then move fast on the highest-leverage thing. Technology should amplify human potential.`,
-      elon: `🚀 **Elon Musk**\n\n"${message}" — let's break this to first principles. What's the actual physics/economics of it? Most people optimize the wrong variable. Think bigger, delete the step entirely if you can.`,
-    }
-    const text = replies[agentId] ?? replies.brain
+    const text = `🧠 **Second Brain (demo)**\n\nGot your message: "${message}"\n\nIn the real app, I would query your memory, the MCP connectors, and reply with full context.`
     // simulate streaming deltas
     for (const w of text.split(/(\s+)/)) {
       deltaCb?.(w)
@@ -198,27 +182,6 @@ const demo = {
   goalsToggle: async (date: string, index: number) => { demoGoals[index].done = !demoGoals[index].done; return { date, items: demoGoals } },
   goalsRemove: async (date: string, index: number) => { demoGoals.splice(index, 1); return { date, items: demoGoals } },
   goalsSuggest: async () => ['Ship the proposal draft', '30-min walk outside', 'Review open tasks'],
-
-  meetingStart: async (opts: any) => {
-    const demoMsgs = [
-      { agentId: 'warren', text: 'Before we decide, let\'s check the math. Do we have durable demand, or are we betting on a trend? My gut says wait for one more proof point.' },
-      { agentId: 'elon', text: 'Waiting is how you die. If the bottleneck is engineering speed, hire three more people and cut scope. Launch ugly, learn fast.' },
-      { agentId: 'warren', text: 'Elon, "ugly" and "fast" killed more companies than cash did. But you\'re right that speed matters — let\'s find the minimum lovable version.' },
-      { agentId: 'elon', text: 'Exactly. Delete features until it hurts, then ship that. We can iterate in public.' }
-    ]
-    for (const m of demoMsgs) {
-      const agent = demoConfig.agents.find((a: any) => a.id === m.agentId) ?? demoConfig.agents[0]
-      meetingCb?.({ kind: 'speaker', agentId: m.agentId, name: agent.name, emoji: agent.emoji, round: 1 })
-      for (const w of m.text.split(/(\s+)/)) { meetingCb?.({ kind: 'text', agentId: m.agentId, text: w }); await new Promise(r => setTimeout(r, 12)) }
-    }
-    const path = `meetings/${todayStr()}-demo.md`
-    demoMeetings.unshift({ id: 'demo-new', path, title: opts.topic, date: todayStr(), participants: opts.participantIds.join(', ') })
-    meetingCb?.({ kind: 'done', id: 'demo-new', path })
-    return { id: 'demo-new', path, tasksCreated: 2 }
-  },
-  meetingList: async () => demoMeetings,
-  meetingGet: async () => '# Meeting — Should we launch before Q4?\n\n_2026-11-04 · participants: Warren Buffett, Elon Musk, Second Brain_\n\n## Transcript\n\n**Warren Buffett:** The short-term market is a voting machine. Do we have durable demand?\n\n**Elon Musk:** Waiting is how you die. Ship ugly, learn fast.\n\n## Moderator summary\n\n===TASKS===\n- Define MVP scope | due: 2026-11-05 | priority: high\n',
-  onMeetingEvent: (cb: (e: any) => void) => { meetingCb = cb; return () => { meetingCb = null } },
 
   updaterStatus: async () => ({ version: '0.1.0', packaged: false }),
   updaterCheck: async () => ({ packaged: false }),

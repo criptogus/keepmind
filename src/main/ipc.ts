@@ -33,8 +33,6 @@ export function registerIpc(
   ipcMain.handle('config:updateLocalLlm', (_e, patch: any) => store.updateLocalLlm(patch))
   ipcMain.handle('config:updateGithub', (_e, patch: any) => store.updateGithub(patch))
   ipcMain.handle('config:updateMcp', (_e, id: string, patch: any) => store.updateMcpServer(id, patch))
-  ipcMain.handle('config:addAgent', (_e, agent: any) => store.addAgent(agent))
-  ipcMain.handle('config:removeAgent', (_e, id: string) => store.removeAgent(id))
 
   // ── AI providers ──
   ipcMain.handle('ai:providers', () => llm.listProviders())
@@ -312,25 +310,6 @@ export function registerIpc(
   ipcMain.handle('goals:toggle', (_e, date: string, index: number) => planner?.toggleGoal(date, index))
   ipcMain.handle('goals:remove', (_e, date: string, index: number) => planner?.removeGoal(date, index))
   ipcMain.handle('goals:suggest', async () => planner ? planner.suggestGoals() : [])
-
-  // ── Meetings: multi-agent roundtable ──
-  ipcMain.handle('meeting:start', async (e, opts: { topic: string; participantIds: string[]; agenda?: string }) => {
-    try {
-      const result = await brain.runMeeting(opts, (ev) => {
-        e.sender.send('meeting:event', ev)
-      })
-      // Persist extracted action items as tasks
-      for (const t of result.tasks) {
-        planner?.addTask(t.title, { due: t.due, priority: (t.priority as any) ?? 'normal', notes: t.notes ?? 'From meeting' })
-      }
-      return { ...result, tasksCreated: result.tasks.length }
-    } catch (err: any) {
-      e.sender.send('meeting:event', { kind: 'error', message: String(err?.message ?? err) })
-      throw err
-    }
-  })
-  ipcMain.handle('meeting:list', () => brain.listMeetings())
-  ipcMain.handle('meeting:get', (_e, path: string) => brain.getMemory().read(path.replace(/^memory\//, '')) ?? null)
 
   // ── Auto-updater ──
   ipcMain.handle('updater:status', () => updaterStatus())

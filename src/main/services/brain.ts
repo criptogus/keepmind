@@ -549,79 +549,6 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     return report
   }
 
-  // ── Meetings: multi-agent roundtable that produces a transcript + action items ──
-
-  async runMeeting(
-    opts: { topic: string; participantIds: string[]; agenda?: string },
-    onEvent?: (e: MeetingEvent) => void
-  ): Promise<{ id: string; path: string; tasks: MeetingTask[] }> {
-    await this.gitSync?.pullIfDue().catch(() => {})
-    const cfg = this.store.get()
-    const emit = (e: MeetingEvent) => { try { onEvent?.(e) } catch { /* renderer gone */ } }
-
-    const participants = cfg.agents.filter(a => opts.participantIds.includes(a.id))
-    if (!participants.length) throw new Error('Pick at least one specialist for the meeting')
-    const moderator = cfg.agents.find(a => a.id === 'brain') ?? participants[0]
-
-    const id = `${new Date().toISOString().slice(0, 10)}-${slug(opts.topic)}`
-    const rel = `meetings/${id}.md`
-    emit({ kind: 'start', id, topic: opts.topic })
-
-    const transcript: string[] = []
-    const ROUNDS = 2
-    for (let round = 1; round <= ROUNDS; round++) {
-      for (const agent of participants) {
-        emit({ kind: 'speaker', agentId: agent.id, name: agent.name, emoji: agent.emoji, round })
-        const soFar = transcript.slice(-12).join('\n')
-        const res = await chat(cfg.ai as AiProviderConfig, [
-          {
-            role: 'system',
-            content: `${this.buildSystemContext(agent)}\n\n## Meeting rules\nYou are in a roundtable meeting. Speak as your persona, 80-140 words max, concrete and opinionated. Reference what others said when relevant. End with your clear position or recommendation. ${round === ROUNDS ? 'This is the final round — push toward a decision.' : ''}`
-          },
-          {
-            role: 'user',
-            content: `MEETING TOPIC: ${opts.topic}\n${opts.agenda ? `AGENDA:\n${opts.agenda}\n` : ''}\nTRANSCRIPT SO FAR:\n${soFar || '(opening round — go first)'}\n\nYour turn, ${agent.name}:`
-          }
-        ], [], this.localLlm?.endpoint)
-        const text = res.text.trim()
-        transcript.push(`**${agent.name}:** ${text}`)
-        emit({ kind: 'text', agentId: agent.id, text })
-      }
-    }
-
-    // Moderator closing: consensus + extractable action items
-    emit({ kind: 'speaker', agentId: moderator.id, name: moderator.name, emoji: moderator.emoji, round: ROUNDS + 1 })
-    const closing = await chat(cfg.ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: `${this.buildSystemContext(moderator)}\n\n## Closing moderator\nSummarize the meeting: key agreements, open disagreements, and concrete next steps. Then output EXACTLY this section:\n\n===TASKS===\n- task title | due: YYYY-MM-DD | priority: high|normal|low\n(one per line, max 5, only genuinely actionable items — omit the section content and write "(none)" if there are none)`
-      },
-      { role: 'user', content: `TOPIC: ${opts.topic}\n\nTRANSCRIPT:\n${transcript.join('\n\n').slice(-14000)}` }
-    ], [], this.localLlm?.endpoint)
-    emit({ kind: 'text', agentId: moderator.id, text: closing.text })
-
-    const day = new Date().toISOString().slice(0, 10)
-    const file = `# Meeting — ${opts.topic}\n\n_${day} · participants: ${participants.map(p => p.name).join(', ')}_\n\n## Transcript\n\n${transcript.join('\n\n')}\n\n## Moderator summary\n\n${closing.text}\n`
-    this.memory.write(rel, file)
-
-    const dayLog = new Date().toLocaleTimeString()
-    this.memory.append(`short-term/${day}.md`, `\n\n## ${dayLog} — Meeting: ${opts.topic}\n\nParticipants: ${participants.map(p => p.name).join(', ')}\n\nSaved to meetings/${id}.md\n`)
-
-    // Parse ===TASKS=== action items for the caller to persist
-    const tasks = parseMeetingTasks(closing.text)
-    emit({ kind: 'done', id, path: rel })
-    return { id, path: rel, tasks }
-  }
-
-  listMeetings(): { id: string; path: string; title: string; date: string; participants: string }[] {
-    return this.memory.list('meetings').sort().reverse().map(f => {
-      const content = this.memory.read(`meetings/${f}`) ?? ''
-      const title = content.match(/^# Meeting — (.+)$/m)?.[1] ?? f.replace(/\.md$/, '')
-      const participants = content.match(/participants: (.+)$/m)?.[1] ?? ''
-      return { id: f.replace(/\.md$/, ''), path: `meetings/${f}`, title, date: f.slice(0, 10), participants }
-    })
-  }
-
   listSleepReports(): { date: string; content: string }[] {
     return this.memory.list('sleep').sort().reverse().map(f => ({
       date: f.replace('.md', ''),
@@ -651,46 +578,6 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
       content: this.memory.read(`summaries/${f}`) ?? ''
     }))
   }
-}
-
-export interface MeetingEvent {
-  kind: 'start' | 'speaker' | 'text' | 'done' | 'error'
-  id?: string
-  topic?: string
-  agentId?: string
-  name?: string
-  emoji?: string
-  round?: number
-  text?: string
-  path?: string
-  message?: string
-}
-
-export interface MeetingTask {
-  title: string
-  due?: string
-  priority?: 'low' | 'normal' | 'high'
-  notes?: string
-}
-
-function parseMeetingTasks(text: string): MeetingTask[] {
-  const m = text.match(/===TASKS===([\s\S]*?)(?:===|$)/)
-  if (!m) return []
-  return m[1].split('\n')
-    .map(l => l.replace(/^[-*]\s*/, '').trim())
-    .filter(l => l && !/^\(none\)$/i.test(l))
-    .slice(0, 5)
-    .map(l => {
-      const [title, ...rest] = l.split('|').map(s => s.trim())
-      const meta: Record<string, string> = {}
-      for (const part of rest) {
-        const [k, v] = part.split(':').map(s => s.trim())
-        if (k && v) meta[k.toLowerCase()] = v
-      }
-      const priority = ['low', 'normal', 'high'].includes(meta.priority ?? '') ? meta.priority as MeetingTask['priority'] : undefined
-      return { title, due: meta.due, priority, notes: `From meeting` }
-    })
-    .filter(t => t.title)
 }
 
 function slug(s: string): string {

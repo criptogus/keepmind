@@ -525,7 +525,7 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
   .grid-3 { grid-template-columns: 1fr 1fr; }
 }
 
-/* ── Planner: today / notes / tasks / meetings ── */
+/* ── Planner: today / notes / tasks ── */
 
 /* bare inputs inside cards get the field look */
 .card input:not([type='checkbox']):not([type='radio']),
@@ -603,15 +603,6 @@ button.chip { cursor: pointer; font-family: var(--mono); }
 }
 .note-row:hover { background: rgba(34,211,238,.05); }
 .note-row__title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* meeting transcript */
-.meeting-msg { padding: 10px 0; border-bottom: 1px solid rgba(148,163,184,.07); }
-.meeting-msg:last-child { border-bottom: none; }
-.meeting-msg__who { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--violet); }
-.meeting-msg p { margin: 5px 0 0; font-size: 13px; line-height: 1.65; color: var(--text-dim); }
-.meeting-view { font-size: 13px; line-height: 1.7; max-height: 60vh; overflow-y: auto; }
-.meeting-view h1 { font-size: 18px; } .meeting-view h2 { font-size: 15px; margin-top: 16px; } .meeting-view h3 { font-size: 13.5px; }
-.meeting-view p { margin: 8px 0; }
 
 /* modal */
 .modal-backdrop {
