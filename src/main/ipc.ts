@@ -14,6 +14,104 @@ import type { Planner } from './services/planner'
 import * as llm from './services/llm'
 import * as github from './services/github'
 import { checkForUpdates, installUpdate, updaterStatus } from './services/updater'
+import { isPlainObject, stripForbiddenKeys } from './safe-path'
+import type { McpServerConfig } from './store'
+
+// ── IPC input validation ──
+// Renderer is sandboxed, but a compromised renderer (XSS, malicious
+// synced content) could still invoke these handlers. Validate shape and
+// whitelist keys so patches can't smuggle arbitrary config or prototype
+// pollution. Custom MCP commands remain user-authorized by design.
+
+const AI_PROVIDERS = new Set(['local', 'anthropic', 'claude-oauth', 'openai', 'codex', 'gemini', 'grok', 'ollama'])
+const MCP_KINDS = new Set(['whatsapp', 'telegram', 'postgres', 'custom'])
+const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone'])
+const MCP_PATCH_KEYS = new Set(['id', 'name', 'kind', 'enabled', 'command', 'args', 'env', 'sessionDir'])
+const AUTOMATION_PATCH_KEYS = new Set(['name', 'instruction', 'kind', 'schedule', 'time', 'everyMinutes', 'weekday', 'enabled', 'mode'])
+const AUTOMATION_KINDS = new Set(['brain', 'sleep', 'summary', 'librarian', 'evolve', 'enrich', 'review', 'security', 'skills', 'triage'])
+const AUTOMATION_SCHEDULES = new Set(['daily', 'interval', 'weekly'])
+
+function bad(field: string): never {
+  throw new Error(`invalid IPC payload: ${field}`)
+}
+
+function optStr(v: any, field: string, max = 8192): void {
+  if (v !== undefined && (typeof v !== 'string' || v.length > max)) bad(field)
+}
+
+function reqStr(v: any, field: string, max = 8192): void {
+  if (typeof v !== 'string' || !v.length || v.length > max) bad(field)
+}
+
+function validateMcpServerShape(s: any, partial: boolean): void {
+  if (!isPlainObject(s)) bad('mcp server')
+  if (partial) {
+    for (const k of Object.keys(s)) if (!MCP_PATCH_KEYS.has(k)) bad(`mcp.${k}`)
+  }
+  if (!partial || s.id !== undefined) reqStr(s.id, 'mcp.id', 128)
+  if (!partial || s.name !== undefined) reqStr(s.name, 'mcp.name', 256)
+  if (!partial || s.kind !== undefined) {
+    if (!MCP_KINDS.has(s.kind)) bad('mcp.kind')
+  }
+  if (s.enabled !== undefined && typeof s.enabled !== 'boolean') bad('mcp.enabled')
+  optStr(s.command, 'mcp.command')
+  optStr(s.sessionDir, 'mcp.sessionDir', 1024)
+  if (s.args !== undefined) {
+    if (!Array.isArray(s.args) || s.args.length > 64 || s.args.some((a: any) => typeof a !== 'string' || a.length > 2048)) bad('mcp.args')
+  }
+  if (s.env !== undefined) {
+    if (!isPlainObject(s.env)) bad('mcp.env')
+    const entries = Object.entries(s.env)
+    if (entries.length > 64) bad('mcp.env size')
+    for (const [k, v] of entries) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || typeof v !== 'string' || v.length > 8192) bad('mcp.env entry')
+    }
+  }
+}
+
+function validateAiPatch(p: any): void {
+  if (!isPlainObject(p)) bad('ai patch')
+  for (const k of Object.keys(p)) if (!['provider', 'apiKey', 'model', 'baseUrl'].includes(k)) bad(`ai.${k}`)
+  if (p.provider !== undefined && !AI_PROVIDERS.has(p.provider)) bad('ai.provider')
+  optStr(p.apiKey, 'ai.apiKey', 512)
+  optStr(p.model, 'ai.model', 256)
+  optStr(p.baseUrl, 'ai.baseUrl', 512)
+}
+
+function validateGithubPatch(p: any): void {
+  if (!isPlainObject(p)) bad('github patch')
+  for (const k of Object.keys(p)) {
+    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch'].includes(k)) bad(`github.${k}`)
+  }
+  for (const k of Object.keys(p)) optStr(p[k], `github.${k}`, 2048)
+}
+
+function validateLocalLlmPatch(p: any): void {
+  if (!isPlainObject(p)) bad('localLlm patch')
+  for (const k of Object.keys(p)) {
+    if (!['modelId', 'modelPath', 'embedModelId'].includes(k)) {
+      if (k === 'port') {
+        if (typeof p.port !== 'number' || !Number.isInteger(p.port) || p.port < 1 || p.port > 65535) bad('localLlm.port')
+      } else if (k === 'downloadedBytes' || k === 'totalBytes') {
+        if (typeof p[k] !== 'number' || !Number.isFinite(p[k]) || p[k] < 0) bad(`localLlm.${k}`)
+      } else bad(`localLlm.${k}`)
+    } else optStr(p[k], `localLlm.${k}`, 1024)
+  }
+}
+
+function validateAutomationPatch(p: any): void {
+  if (!isPlainObject(p)) bad('automation patch')
+  for (const k of Object.keys(p)) if (!AUTOMATION_PATCH_KEYS.has(k)) bad(`automation.${k}`)
+  optStr(p.name, 'automation.name', 256)
+  optStr(p.instruction, 'automation.instruction', 8192)
+  if (p.kind !== undefined && !AUTOMATION_KINDS.has(p.kind)) bad('automation.kind')
+  if (p.schedule !== undefined && !AUTOMATION_SCHEDULES.has(p.schedule)) bad('automation.schedule')
+  optStr(p.time, 'automation.time', 16)
+  if (p.everyMinutes !== undefined && (typeof p.everyMinutes !== 'number' || p.everyMinutes < 1 || p.everyMinutes > 10080)) bad('automation.everyMinutes')
+  if (p.weekday !== undefined && (typeof p.weekday !== 'number' || p.weekday < 0 || p.weekday > 6)) bad('automation.weekday')
+  if (p.enabled !== undefined && typeof p.enabled !== 'boolean') bad('automation.enabled')
+  if (p.mode !== undefined && p.mode !== 'auto' && p.mode !== 'approval') bad('automation.mode')
+}
 
 export function registerIpc(
   store: Store,
@@ -29,11 +127,24 @@ export function registerIpc(
 ) {
   // ── Config ──
   ipcMain.handle('config:get', () => store.get())
-  ipcMain.handle('config:set', (_e, patch: any) => store.set(patch))
-  ipcMain.handle('config:updateAi', (_e, patch: any) => store.updateAi(patch))
-  ipcMain.handle('config:updateLocalLlm', (_e, patch: any) => store.updateLocalLlm(patch))
-  ipcMain.handle('config:updateGithub', (_e, patch: any) => store.updateGithub(patch))
-  ipcMain.handle('config:updateMcp', (_e, id: string, patch: any) => store.updateMcpServer(id, patch))
+  ipcMain.handle('config:set', (_e, patch: any) => {
+    if (!isPlainObject(patch)) bad('config patch')
+    for (const k of Object.keys(patch)) if (!CONFIG_SET_KEYS.has(k)) bad(`config.${k}`)
+    if (patch.onboardingDone !== undefined && typeof patch.onboardingDone !== 'boolean') bad('onboardingDone')
+    if (patch.mcpServers !== undefined) {
+      if (!Array.isArray(patch.mcpServers) || patch.mcpServers.length > 32) bad('mcpServers')
+      for (const s of patch.mcpServers) validateMcpServerShape(s, false)
+    }
+    return store.set(stripForbiddenKeys(patch))
+  })
+  ipcMain.handle('config:updateAi', (_e, patch: any) => { validateAiPatch(patch); return store.updateAi(stripForbiddenKeys(patch)) })
+  ipcMain.handle('config:updateLocalLlm', (_e, patch: any) => { validateLocalLlmPatch(patch); return store.updateLocalLlm(stripForbiddenKeys(patch)) })
+  ipcMain.handle('config:updateGithub', (_e, patch: any) => { validateGithubPatch(patch); return store.updateGithub(stripForbiddenKeys(patch)) })
+  ipcMain.handle('config:updateMcp', (_e, id: string, patch: any) => {
+    reqStr(id, 'mcp id', 128)
+    validateMcpServerShape(patch, true)
+    return store.updateMcpServer(id, stripForbiddenKeys(patch))
+  })
 
   // ── AI providers ──
   ipcMain.handle('ai:providers', () => llm.listProviders())
@@ -186,6 +297,8 @@ export function registerIpc(
     return auto
   })
   ipcMain.handle('automation:update', (_e, id: string, patch: Partial<Automation>) => {
+    reqStr(id, 'automation id', 128)
+    validateAutomationPatch(patch)
     store.set({
       automations: store.get().automations.map(a => a.id === id ? { ...a, ...patch } : a)
     })
