@@ -214,7 +214,7 @@ export default function Settings({ onToast, onActivity }: Props) {
         <div className="card card-pad">
           <h2 style={{ marginBottom: 14 }}>Memory & sync</h2>
           <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 14 }}>
-            Your second brain stores everything as Markdown in your private GitHub repo.
+            Your KeepMind stores everything as Markdown in your private GitHub repo.
             Push now to back up the current memory state.
           </p>
           <div className="faint mono" style={{ fontSize: 11.5, marginBottom: 14, wordBreak: 'break-all' }}>
@@ -253,7 +253,7 @@ function AboutCard() {
     <div className="card card-pad">
       <h2 style={{ marginBottom: 14 }}>About</h2>
       <div className="faint" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-        <p><strong style={{ color: 'var(--text)' }}>Second Brain</strong>{version ? ` v${version}` : ''} — open source, MIT.</p>
+        <p><strong style={{ color: 'var(--text)' }}>KeepMind</strong>{version ? ` v${version}` : ''} — open source, MIT.</p>
         <p style={{ marginTop: 8 }}>
           Local-first AI memory. Your data lives in <em>your</em> GitHub repo.
           The LLM can run fully offline on your machine.
@@ -352,7 +352,7 @@ function ProCard({ onToast }: { onToast: Props['onToast'] }) {
   return (
     <div className="card card-pad" style={{ borderColor: pro?.active ? 'rgba(163,230,53,.35)' : undefined }}>
       <h2 style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-        Second Brain Pro {pro?.active && <span className="chip" style={{ borderColor: 'rgba(163,230,53,.4)', color: 'var(--lime)' }}>active</span>}
+        KeepMind Pro {pro?.active && <span className="chip" style={{ borderColor: 'rgba(163,230,53,.4)', color: 'var(--lime)' }}>active</span>}
       </h2>
       <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
         <strong style={{ color: 'var(--text)' }}>$19/month</strong> — supports development and unlocks
@@ -552,7 +552,7 @@ function CodexStatus() {
       <div>
         <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
           No Codex login found. Install the <strong>Codex CLI</strong> and run{' '}
-          <code className="mono">codex login</code> — Second Brain reuses that session. No API key needed.
+          <code className="mono">codex login</code> — KeepMind reuses that session. No API key needed.
         </p>
         <button className="btn btn--ghost" style={{ marginTop: 10 }} onClick={() => window.sb.aiCodexStatus?.().then(setS)}>
           ↻ RE-CHECK

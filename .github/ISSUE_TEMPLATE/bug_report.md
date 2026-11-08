@@ -18,4 +18,4 @@ What you expected to happen.
 - OS / version:
 - App version:
 - AI provider in use:
-- Second Brain logs (Help → logs, or `~/Library/Application Support/second-brain/logs`):
+- KeepMind logs (Help → logs, or `~/Library/Application Support/second-brain/logs`):

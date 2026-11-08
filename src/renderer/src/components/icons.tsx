@@ -159,7 +159,7 @@ export function IconTasks({ size = 18 }: { size?: number }) {
   )
 }
 
-// Pulsing brain logo — two hemispheres + fold curves + expanding pulse ring.
+// KeepMind logo — circuit-K inside a hex chip: neural beams + synapse nodes.
 export function BrainMark({ size = 34 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" className="brain-mark">
@@ -177,18 +177,26 @@ export function BrainMark({ size = 34 }: { size?: number }) {
         </linearGradient>
       </defs>
       {/* pulse rings */}
-      <circle className="bm-pulse" cx="24" cy="24" r="15" fill="none" stroke="#22d3ee" strokeWidth="1" />
-      <circle className="bm-pulse bm-pulse--2" cx="24" cy="24" r="15" fill="none" stroke="#38bdf8" strokeWidth="0.8" />
-      {/* hemispheres */}
-      <g filter="url(#bm-glow)" stroke="url(#bm-grad)" strokeWidth="1.8" fill="rgba(34,211,238,0.08)" strokeLinecap="round">
-        <path d="M24 10c-5.5 0-9.5 3.8-9.5 9 0 2.6 1.2 4.8 2.8 6.4-1.8.8-3 2.4-3 4.4 0 2.8 2.4 5 5.7 5h8c3.3 0 5.7-2.2 5.7-5 0-2-1.2-3.6-3-4.4 1.6-1.6 2.8-3.8 2.8-6.4 0-5.2-4-9-9.5-9Z" />
-        <path d="M24 10v20" strokeWidth="1.4" />
-        {/* folds */}
-        <path d="M17 17c2-1.4 4-2 7-2M17.5 24c2.2-1.2 4.5-1.6 6.5-1.6M17.5 30.5c2.4-.8 4.8-1 6.8-.8" strokeWidth="1.2" />
-        <path d="M31 17c-2-1.4-4-2-7-2M30.5 24c-2.2-1.2-4.5-1.6-6.5-1.6M30.5 30.5c-2.4-.8-4.8-1-6.8-.8" strokeWidth="1.2" />
+      <circle className="bm-pulse" cx="24" cy="24" r="19" fill="none" stroke="#22d3ee" strokeWidth="1" />
+      <circle className="bm-pulse bm-pulse--2" cx="24" cy="24" r="19" fill="none" stroke="#38bdf8" strokeWidth="0.8" />
+      {/* hex chip */}
+      <path d="M24 5.5 L39 14.5 V33.5 L24 42.5 L9 33.5 V14.5 Z" fill="rgba(34,211,238,0.06)" stroke="url(#bm-grad)" strokeWidth="1.8" filter="url(#bm-glow)" />
+      {/* neural K */}
+      <g strokeLinecap="round" filter="url(#bm-glow)">
+        <path d="M20 14.5 V33.5" stroke="url(#bm-grad)" strokeWidth="2.6" />
+        <path d="M20 24 L30.5 15" stroke="#7dd3fc" strokeWidth="2.4" />
+        <path d="M20 24 L30.5 33" stroke="#7dd3fc" strokeWidth="2.4" />
+        <path d="M20 24 L30.5 15" stroke="#a3e635" strokeWidth="0.9" />
+        <path d="M20 24 L30.5 33" stroke="#a3e635" strokeWidth="0.9" />
+        <path d="M13.5 14.5 H17 M13.5 33.5 H17 M35.5 15 H32 M35.5 33 H32" stroke="#38bdf8" strokeWidth="1.1" opacity="0.7" />
       </g>
-      {/* core node */}
-      <circle cx="24" cy="24" r="2.6" fill="#a5f3fc" className="bm-core" />
+      {/* synapse nodes */}
+      <circle cx="20" cy="24" r="2.8" fill="#a5f3fc" className="bm-core" />
+      <circle cx="20" cy="24" r="1.1" fill="#fff" />
+      <circle cx="20" cy="14.5" r="1.7" fill="#67e8f9" />
+      <circle cx="20" cy="33.5" r="1.7" fill="#67e8f9" />
+      <circle cx="30.5" cy="15" r="2.1" fill="#a3e635" />
+      <circle cx="30.5" cy="33" r="2.1" fill="#a3e635" />
     </svg>
   )
 }

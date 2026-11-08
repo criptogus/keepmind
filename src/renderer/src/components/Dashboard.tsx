@@ -114,7 +114,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
         <div className="orbit-chip orbit-chip--lime" style={{ top: '48%', left: '3%', animationDelay: '3.4s' }}>
           {config?.github?.repoUrl ? 'github linked' : 'github offline'}
         </div>
-        <div className="brain-label">synaptic cortex · second brain</div>
+        <div className="brain-label">synaptic cortex · keepmind</div>
       </div>
 
       {/* Connect your AI */}
@@ -209,7 +209,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
             </div>
           ) : (
             <p className="faint" style={{ fontSize: 13, marginTop: 14, lineHeight: 1.6 }}>
-              No summaries yet. The daily summary consolidates what happened in your second brain.
+              No summaries yet. The daily summary consolidates what happened in your KeepMind.
             </p>
           )}
         </div>

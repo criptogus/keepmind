@@ -75,7 +75,7 @@ app.whenReady().then(() => {
   registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner)
   initUpdater()
   if (!HEADLESS) createWindow()
-  else console.log('[second-brain] headless mode — services only, no window')
+  else console.log('[keepmind] headless mode — services only, no window')
 
   // Continuous GitHub sync — push local writes, pull remote memory
   gitSync.start()

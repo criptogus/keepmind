@@ -5,7 +5,7 @@ interface Automation {
   id: string
   name: string
   instruction: string
-  kind: 'brain' | 'sleep' | 'summary' | 'librarian'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string
   everyMinutes?: number
@@ -29,8 +29,20 @@ const KIND_LABEL: Record<string, string> = {
   brain: 'brain task',
   sleep: 'sleep cycle',
   summary: 'summary',
-  librarian: 'librarian'
+  librarian: 'librarian',
+  evolve: 'evolution',
+  enrich: 'enrichment'
 }
+
+// Ready-made self-learning crons — one click installs them.
+const TEMPLATES: { emoji: string; name: string; desc: string; input: any }[] = [
+  { emoji: '🌙', name: 'Nightly sleep', desc: '23:00 — reviews the day, answers the 5 learning questions, distills facts/lessons/skills.', input: { name: 'Nightly sleep cycle', kind: 'sleep', schedule: 'daily', time: '23:00', instruction: 'Nightly learning cycle: review the day and distill durable memory.' } },
+  { emoji: '📊', name: 'Morning summary', desc: '08:00 — recaps yesterday and briefs the day ahead.', input: { name: 'Morning summary', kind: 'summary', schedule: 'daily', time: '08:00', instruction: 'Daily summary of yesterday and briefing for today.' } },
+  { emoji: '🧹', name: 'Weekly librarian', desc: 'Mon 09:00 — consolidates old logs, dedupes long-term memory, refreshes entities.', input: { name: 'Weekly librarian', kind: 'librarian', schedule: 'weekly', weekday: 1, time: '09:00', instruction: 'Weekly vault hygiene: consolidate old logs, dedupe long-term memory, refresh entity pages.' } },
+  { emoji: '🧬', name: 'Weekly evolution', desc: 'Sun 18:00 — the brain reviews its own reports and proposes upgrades to itself.', input: { name: 'Weekly evolution', kind: 'evolve', schedule: 'weekly', weekday: 0, time: '18:00', instruction: 'Meta-learning: review sleep reports and insights, propose improvements to the memory system itself.' } },
+  { emoji: '✨', name: 'Nightly enrichment', desc: '02:30 — adds summaries, tags and [[wikilinks]] to recent notes.', input: { name: 'Nightly note enrichment', kind: 'enrich', schedule: 'daily', time: '02:30', instruction: 'Enrich recent notes with summaries, topic tags and entity wikilinks.' } },
+  { emoji: '🧠', name: 'Inbox triage', desc: 'Every 6h — sorts raw inbox captures into notes, tasks or memory.', input: { name: 'Inbox triage', kind: 'brain', schedule: 'interval', everyMinutes: 360, instruction: 'Triage the inbox: move valuable items into notes/tasks/long-term memory, discard noise, and report what you did.' } }
+]
 
 function scheduleLabel(a: Automation): string {
   if (a.schedule === 'interval') {
@@ -76,6 +88,16 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
     }, 350)
     return () => { if (parseTimer.current) clearTimeout(parseTimer.current) }
   }, [text])
+
+  const addTemplate = async (t: (typeof TEMPLATES)[number]) => {
+    setBusy(`tpl-${t.name}`)
+    try {
+      await window.sb.automationCreate(t.input)
+      onToast?.(`"${t.name}" scheduled ✓`, 'success')
+      await refresh()
+    } catch (e: any) { onToast?.(e?.message ?? String(e), 'error') }
+    finally { setBusy(null) }
+  }
 
   const create = async () => {
     if (!text.trim()) return
@@ -210,6 +232,34 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
               last github pull {new Date(sync.lastPull).toLocaleTimeString()} · {sync.pending} pending push{sync.pending === 1 ? '' : 'es'}
             </p>
           )}
+        </div>
+      </div>
+
+      {/* Learning templates */}
+      <div className="card card-pad" style={{ marginBottom: 20 }}>
+        <h2>Self-learning templates</h2>
+        <p className="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.6 }}>
+          One click installs a proven learning cron — sleep cycles, summaries, hygiene, evolution.
+        </p>
+        <div className="grid grid-3" style={{ marginTop: 14 }}>
+          {TEMPLATES.map(t => {
+            const installed = autos.some(a => a.name === t.input.name)
+            return (
+              <div key={t.name} className="card card-pad" style={{ padding: '14px 16px', opacity: installed ? .55 : 1 }}>
+                <div style={{ fontSize: 18, marginBottom: 6 }}>{t.emoji}</div>
+                <strong style={{ fontSize: 13 }}>{t.name}</strong>
+                <p className="faint" style={{ fontSize: 11.5, marginTop: 4, lineHeight: 1.5, minHeight: 34 }}>{t.desc}</p>
+                <button
+                  className="btn btn--ghost"
+                  style={{ marginTop: 8, padding: '5px 12px', fontSize: 10, width: '100%' }}
+                  disabled={installed || busy === `tpl-${t.name}`}
+                  onClick={() => addTemplate(t)}
+                >
+                  {installed ? 'INSTALLED ✓' : busy === `tpl-${t.name}` ? 'ADDING…' : '+ ADD'}
+                </button>
+              </div>
+            )
+          })}
         </div>
       </div>
 

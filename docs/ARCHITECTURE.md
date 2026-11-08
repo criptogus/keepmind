@@ -1,6 +1,6 @@
 # Architecture
 
-Second Brain is an Electron app split into three processes plus spawned helpers.
+KeepMind is an Electron app split into three processes plus spawned helpers.
 
 ## Processes
 

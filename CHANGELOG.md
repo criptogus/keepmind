@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Second Brain are documented here.
+All notable changes to KeepMind are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.1.1] — 2026-11

@@ -78,7 +78,7 @@ export default function Connectors({ onActivity, onToast }: Props) {
 
   const meta: Record<string, { emoji: string; desc: string; hint: string }> = {
     whatsapp: { emoji: '🟢', desc: 'WhatsApp via QR code (WhatsApp Web style, unofficial)', hint: 'Scan the QR with WhatsApp → Linked devices' },
-    telegram: { emoji: '✈️', desc: 'Telegram bot — chat with your second brain anywhere', hint: 'Bot token from @BotFather' },
+    telegram: { emoji: '✈️', desc: 'Telegram bot — chat with your KeepMind anywhere', hint: 'Bot token from @BotFather' },
     postgres: { emoji: '🐘', desc: 'Postgres database in read-only mode', hint: 'postgres://user:pass@host:5432/db' }
   }
 
@@ -89,7 +89,7 @@ export default function Connectors({ onActivity, onToast }: Props) {
           <div className="hud-tag" style={{ marginBottom: 6 }}>MCP CONNECTORS</div>
           <h1>Connectors</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Apps and data sources feeding your second brain via MCP.
+            Apps and data sources feeding your KeepMind via MCP.
           </p>
         </div>
         <button className="btn" onClick={() => setShowCustom(s => !s)}>

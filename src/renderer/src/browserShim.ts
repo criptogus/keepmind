@@ -6,14 +6,14 @@ const demoConfig = {
   onboardingDone: true,
   ai: { provider: 'local', model: 'qwen2.5-3b' },
   localLlm: { modelId: 'qwen2.5-3b' },
-  github: { repoUrl: 'https://github.com/voce/second-brain', login: 'voce' },
+  github: { repoUrl: 'https://github.com/voce/keepmind', login: 'voce' },
   mcpServers: [
     { id: 'whatsapp', name: 'WhatsApp', kind: 'whatsapp', enabled: true },
     { id: 'telegram', name: 'Telegram', kind: 'telegram', enabled: false },
     { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
   ],
   agents: [
-    { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'You are the user\'s second brain.', builtin: true }
+    { id: 'brain', name: 'KeepMind', emoji: '🧠', persona: 'You are the user\'s second brain.', builtin: true }
   ],
   automations: [
     { id: 'auto_demo1', name: 'Morning briefing', instruction: 'every day at 8am summarize yesterday\'s activity', kind: 'summary', schedule: 'daily', time: '08:00', enabled: true, createdAt: '2026-11-01T00:00:00Z', lastRunAt: '2026-11-05T08:00:00Z' }
@@ -66,7 +66,7 @@ const demo = {
 
   ghStartDeviceFlow: async () => ({ device_code: 'demo', user_code: 'DEMO-1234', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 }),
   ghPollDeviceFlow: async () => null,
-  ghCreateRepo: async () => ({ full_name: 'voce/second-brain', html_url: 'https://github.com/voce/second-brain', clone_url: '', default_branch: 'main' }),
+  ghCreateRepo: async () => ({ full_name: 'voce/second-brain', html_url: 'https://github.com/voce/keepmind', clone_url: '', default_branch: 'main' }),
   ghPushMemory: async () => ({ pushed: 12 }),
 
   localLlmStatus: async () => ({
@@ -104,7 +104,7 @@ const demo = {
 
   brainChat: async (agentId: string, message: string) => {
     // emit fake streaming
-    const text = `🧠 **Second Brain (demo)**\n\nGot your message: "${message}"\n\nIn the real app, I would query your memory, the MCP connectors, and reply with full context.`
+    const text = `🧠 **KeepMind (demo)**\n\nGot your message: "${message}"\n\nIn the real app, I would query your memory, the MCP connectors, and reply with full context.`
     // simulate streaming deltas
     for (const w of text.split(/(\s+)/)) {
       deltaCb?.(w)

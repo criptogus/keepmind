@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Second Brain — open-source memory for any LLM</title>
+<title>KeepMind — open-source memory for any LLM</title>
 <meta name="description" content="Open-source second brain that connects to ANY LLM — local llama.cpp, Claude, Codex, GPT, Gemini, Grok, Ollama. Your knowledge lives as Markdown in your own GitHub repo, independent of any model. Runs on your machine, a VPS, or a bot's VM. MIT." />
-<meta property="og:title" content="Second Brain — open-source memory for any LLM" />
+<meta property="og:title" content="KeepMind — open-source memory for any LLM" />
 <meta property="og:description" content="Connect any LLM to persistent memory stored as Markdown in YOUR GitHub repo. LLM-agnostic, local-first, MCP connectors, sleep-cycle learning, entity graph. Runs on desktop, VPS or a bot VM." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://criptogus.github.io/second-brain-app/" />
@@ -246,12 +246,16 @@
           <filter id="g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
           <linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a3e635"/></linearGradient>
         </defs>
-        <circle cx="24" cy="24" r="20" stroke="url(#cg)" stroke-width="1.6" opacity=".9" filter="url(#g)"/>
-        <path d="M15 17c4-3.4 14-3.4 18 0M15 31c4 3.4 14 3.4 18 0M15 17v14M33 17v14" stroke="url(#cg)" stroke-width="1.8" stroke-linecap="round" filter="url(#g)"/>
-        <circle cx="24" cy="24" r="4.6" fill="#22d3ee" filter="url(#g)"/>
-        <circle cx="8" cy="12" r="2.4" fill="#a3e635"/><circle cx="40" cy="36" r="2.4" fill="#a78bfa"/><circle cx="40" cy="12" r="2" fill="#facc15"/>
+        <path d="M24 5.5 L39 14.5 V33.5 L24 42.5 L9 33.5 V14.5 Z" stroke="url(#cg)" stroke-width="1.8" fill="rgba(34,211,238,.06)" filter="url(#g)"/>
+        <path d="M20 14.5 V33.5" stroke="url(#cg)" stroke-width="2.4" stroke-linecap="round" filter="url(#g)"/>
+        <path d="M20 24 L30.5 15 M20 24 L30.5 33" stroke="#7dd3fc" stroke-width="2.2" stroke-linecap="round" filter="url(#g)"/>
+        <path d="M20 24 L30.5 15 M20 24 L30.5 33" stroke="#a3e635" stroke-width=".8" stroke-linecap="round"/>
+        <path d="M13.5 14.5 H17 M13.5 33.5 H17 M35.5 15 H32 M35.5 33 H32" stroke="#38bdf8" stroke-width="1" opacity=".7"/>
+        <circle cx="20" cy="24" r="2.8" fill="#a5f3fc" filter="url(#g)"/>
+        <circle cx="30.5" cy="15" r="2.1" fill="#a3e635"/><circle cx="30.5" cy="33" r="2.1" fill="#a3e635"/>
+        <circle cx="20" cy="14.5" r="1.6" fill="#67e8f9"/><circle cx="20" cy="33.5" r="1.6" fill="#67e8f9"/>
       </svg>
-      <b>second<em>brain</em></b>
+      <b>keep<em>mind</em></b>
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -269,7 +273,7 @@
     <span class="hud-tag">◈ open source · llm-agnostic · mit</span>
     <h1>Your knowledge.<br/><span class="glow-cyan">Any LLM.</span> <span class="glow-lime">Your repo.</span></h1>
     <p class="sub">
-      Second Brain is a persistent memory layer that plugs into <strong>any</strong> LLM —
+      KeepMind is a persistent memory layer that plugs into <strong>any</strong> LLM —
       local llama.cpp, Claude, Codex, GPT, Gemini, Grok, Ollama — through MCP connectors.
       Everything it learns is plain Markdown in a private GitHub repo <em>you</em> own:
       swap models anytime, your knowledge stays. Runs on your machine, a VPS, or a bot's VM.
@@ -316,7 +320,7 @@
   <div class="wrap">
     <div class="sec-tag">// your data, your repo</div>
     <h2>The repo is the brain.<br/><em>LLMs are just runtimes.</em></h2>
-    <p class="sec-sub">Every note, insight, task and entity is a plain Markdown file in a private repo only you control — synced both ways, before every chat. That's what makes Second Brain LLM-independent: Claude writes today, Grok answers tomorrow, a local model runs offline next week. Same memory, any engine. A GitHub repo is the one thing every LLM workflow already has.</p>
+    <p class="sec-sub">Every note, insight, task and entity is a plain Markdown file in a private repo only you control — synced both ways, before every chat. That's what makes KeepMind LLM-independent: Claude writes today, Grok answers tomorrow, a local model runs offline next week. Same memory, any engine. A GitHub repo is the one thing every LLM workflow already has.</p>
     <div class="tiers">
       <div class="tier tier--short"><i class="dot"></i><b>short-term</b><span>daily raw logs — working memory, last ~10 days in context</span></div>
       <div class="tier tier--med"><i class="dot"></i><b>medium-term</b><span>weekly consolidations — patterns emerge</span></div>
@@ -329,7 +333,7 @@
   <div class="wrap">
     <div class="sec-tag">// any model, any agent</div>
     <h2>Not locked to one AI.<br/><em>Not locked to one machine.</em></h2>
-    <p class="sec-sub">Point Second Brain at whatever LLM you have — a frontier API, your Codex login, a free Gemini key, or a GGUF running on a VPS. External agents can also drive the same repo directly via the bundled MCP server, so a bot on its own VM gets the same persistent memory you do.</p>
+    <p class="sec-sub">Point KeepMind at whatever LLM you have — a frontier API, your Codex login, a free Gemini key, or a GGUF running on a VPS. External agents can also drive the same repo directly via the bundled MCP server, so a bot on its own VM gets the same persistent memory you do.</p>
     <div class="agents-row">
       <div class="agent-pill"><i>🏠</i> Local llama.cpp</div>
       <div class="agent-pill"><i>🟢</i> Codex / ChatGPT</div>
@@ -341,7 +345,7 @@
     </div>
     <div class="grid grid--2" style="max-width:860px;margin-left:auto;margin-right:auto">
       <div class="card"><h3>Every major LLM</h3><p>Bundled local llama.cpp (fully offline) · Codex/ChatGPT sign-in · Claude Pro/Max · OpenAI · Gemini · Grok · Ollama — plus any MCP-compatible agent.</p></div>
-      <div class="card"><h3>Give any AI your memory</h3><p>One prompt teaches Claude, Codex, Grok or Gemini to read and write memory in your repo — emails sent, PDFs made, decisions remembered. Or let an agent install Second Brain on its own VM via MCP.</p></div>
+      <div class="card"><h3>Give any AI your memory</h3><p>One prompt teaches Claude, Codex, Grok or Gemini to read and write memory in your repo — emails sent, PDFs made, decisions remembered. Or let an agent install KeepMind on its own VM via MCP.</p></div>
     </div>
   </div>
 </section>
@@ -376,7 +380,7 @@
 
 <footer>
   <div class="wrap">
-    <p>© 2026 Second Brain — MIT License</p>
+    <p>© 2026 KeepMind — MIT License</p>
     <p>
       <a href="https://github.com/criptogus/second-brain-app">github.com/criptogus/second-brain-app</a>
       · <a href="https://github.com/criptogus/second-brain-app/blob/main/CHANGELOG.md">changelog</a>

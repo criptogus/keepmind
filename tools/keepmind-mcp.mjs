@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// second-brain-mcp — exposes a Second Brain memory directory over MCP (stdio).
+// keepmind-mcp — exposes a KeepMind memory directory over MCP (stdio).
 //
 // Zero dependencies, plain Node >= 18. Point it at any clone/copy of the
 // memory repo and any MCP-capable agent (Claude, Codex, Grok, Gemini, custom
 // bots) gets structured read/write/search access to the brain.
 //
 // Usage:
-//   node tools/second-brain-mcp.mjs --dir /path/to/memory
-//   SECOND_BRAIN_DIR=/path/to/memory npx second-brain-mcp
+//   node tools/keepmind-mcp.mjs --dir /path/to/memory
+//   SECOND_BRAIN_DIR=/path/to/memory npx keepmind-mcp
 //
 // Inside a cloned second-brain repo the default `./memory` just works.
 
@@ -270,4 +270,4 @@ rl.on('line', line => {
   if (res) process.stdout.write(JSON.stringify(res) + '\n')
 })
 
-process.stderr.write(`[second-brain-mcp] serving memory at ${ROOT}\n`)
+process.stderr.write(`[keepmind-mcp] serving memory at ${ROOT}\n`)

@@ -162,7 +162,7 @@ export class GitSync {
           this.dirty.delete(rel)
           continue
         }
-        await github.pushFile(gh, `memory/${rel}`, content, 'sync: second-brain update')
+        await github.pushFile(gh, `memory/${rel}`, content, 'sync: keepmind update')
         this.dirty.delete(rel)
         this.lastPushAt = Date.now()
       }

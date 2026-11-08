@@ -433,6 +433,10 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
       else await this.memory.syncToGitHub(`sleep cycle ${day}`)
     } catch { /* offline ok */ }
 
+    // 6) Re-embed: the night just wrote facts/lessons/entities — make them
+    //    semantically searchable immediately instead of waiting for lazy scan
+    void this.rag?.reindex().catch(() => {})
+
     return { report: res.text, consolidated }
   }
 
@@ -547,6 +551,119 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     ].join('\n')
     this.memory.write(`insights/librarian-${day}.md`, report)
     return report
+  }
+
+  // ── Evolve: meta-learning cycle ──
+  // Reviews the brain's OWN outputs (sleep reports, insights, librarian runs)
+  // and asks the LLM how the memory system itself should improve: which
+  // questions to ask at night, which files to consolidate, which entities
+  // need pages, which automations to add/remove. Writes an evolution report
+  // and appends durable proposals to long-term/evolution.md.
+
+  async evolve(): Promise<string> {
+    const day = new Date().toISOString().slice(0, 10)
+    const stats = this.memoryTierStats()
+
+    // Gather the brain's recent self-reports as evidence
+    const corpusParts: string[] = [`Memory stats: ${JSON.stringify(stats)}`]
+    for (const r of this.memory.list('sleep').sort().slice(-5)) {
+      const c = this.memory.read(`sleep/${r}`)
+      if (c) corpusParts.push(`### sleep/${r}\n${c.slice(0, 3000)}`)
+    }
+    for (const f of this.memory.list('insights').sort().slice(-5)) {
+      const c = this.memory.read(`insights/${f}`)
+      if (c) corpusParts.push(`### insights/${f}\n${c.slice(0, 2000)}`)
+    }
+    const prior = this.memory.read('long-term/evolution.md')
+    if (prior) corpusParts.push(`### prior evolution proposals\n${prior.slice(-4000)}`)
+    const corpus = corpusParts.join('\n\n').slice(-24000)
+
+    const res = await chat(this.store.get().ai as AiProviderConfig, [
+      {
+        role: 'system',
+        content: `You are the self-improvement loop of a personal knowledge system called KeepMind. You do NOT review the user's day — you review the SYSTEM itself. From the sleep reports, insights and stats below, propose concrete upgrades to how the brain learns:
+
+1. **Sleep questions** — are the 5 nightly questions surfacing the right signal? What's missing?
+2. **Memory structure** — which tiers/files are bloated, empty, or need splitting?
+3. **Entities** — which recurring themes lack a page? Which pages are stale?
+4. **Automations** — which routines should run more/less often, or new ones to add?
+5. **Retrieval** — what keeps getting re-asked that memory fails to surface?
+
+Rules: ground every proposal in evidence from the reports. Be concrete and skeptical — kill weak proposals. Write in the user's language, markdown, max ~500 words.`
+      },
+      { role: 'user', content: corpus }
+    ], [], this.localLlm?.endpoint)
+
+    const report = `# Evolution — ${day}\n\n_Generated ${new Date().toISOString()} · stats: ${JSON.stringify(stats)}_\n\n${res.text}\n`
+    this.memory.write(`insights/evolution-${day}.md`, report)
+    this.memory.append('long-term/evolution.md', `\n\n## ${day}\n\n${res.text}\n`)
+
+    try {
+      if (this.gitSync) await this.gitSync.syncNow()
+      else await this.memory.syncToGitHub(`evolution ${day}`)
+    } catch { /* offline ok */ }
+    void this.rag?.reindex().catch(() => {})
+    return res.text
+  }
+
+  // ── Enrich: note intelligence pass ──
+  // Picks recent notes missing metadata and asks the LLM to enrich them:
+  // one-line summary, topic tags, and [[wikilinks]] to known entities.
+  // Appends an "Enrichment" block — never rewrites user content.
+
+  async enrich(): Promise<{ enriched: number; report: string }> {
+    const day = new Date().toISOString().slice(0, 10)
+    const notes = this.memory.list('notes').sort().slice(-30)
+    const entityIndex = this.memory.read('entities/index.md') ?? ''
+    const entityNames = [...entityIndex.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map(m => m[1].trim()).slice(0, 80)
+
+    let enriched = 0
+    const lines: string[] = []
+    for (const f of notes) {
+      const rel = `notes/${f}`
+      const content = this.memory.read(rel) ?? ''
+      if (!content.trim() || content.includes('## Enrichment')) continue
+      if (enriched >= 8) break // bound LLM calls per run
+
+      try {
+        const res = await chat(this.store.get().ai as AiProviderConfig, [
+          {
+            role: 'system',
+            content: `You enrich personal notes in a knowledge base. Given a note, output EXACTLY this block and nothing else:
+
+## Enrichment
+- **Summary:** <one sentence, max 25 words>
+- **Topics:** <3-6 comma-separated tags>
+- **Links:** <[[Entity]] wikilinks — ONLY from this list: ${entityNames.join(', ') || '(none yet)'}>
+
+If a field has nothing useful, write "—". Write in the user's language.`
+          },
+          { role: 'user', content: content.slice(0, 6000) }
+        ], [], this.localLlm?.endpoint)
+
+        const block = res.text.trim()
+        if (block.includes('Summary')) {
+          this.memory.append(rel, `\n\n${block.startsWith('##') ? block : `## Enrichment\n${block}`}\n`)
+          enriched++
+          lines.push(`- \`${f}\` — enriched`)
+        }
+      } catch { /* skip note on failure */ }
+    }
+
+    const report = [
+      `# Note enrichment — ${day}`,
+      '',
+      `Enriched ${enriched} note(s).`,
+      ...lines,
+      ''
+    ].join('\n')
+    this.memory.write(`insights/enrich-${day}.md`, report)
+
+    try {
+      if (this.gitSync) await this.gitSync.syncNow()
+    } catch { /* offline ok */ }
+    void this.rag?.reindex().catch(() => {})
+    return { enriched, report }
   }
 
   listSleepReports(): { date: string; content: string }[] {

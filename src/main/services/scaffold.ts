@@ -11,12 +11,12 @@ import * as github from './github'
 //   CLAUDE.md              — @AGENTS.md import for Claude Code
 //   GEMINI.md              — pointer for Gemini CLI
 //   .mcp.json              — registers the bundled memory MCP server
-//   tools/second-brain-mcp.mjs — zero-dep MCP server shipped IN the repo,
+//   tools/keepmind-mcp.mjs — zero-dep MCP server shipped IN the repo,
 //                            so `git clone` + `node tools/...` is all a bot needs
 
-const AGENTS_MD = `# Second Brain — agent guide
+const AGENTS_MD = `# KeepMind — agent guide
 
-This repository is a **Second Brain memory store**. Everything under \`memory/\`
+This repository is a **KeepMind memory store**. Everything under \`memory/\`
 is durable knowledge written and read by AI agents. Treat it as the user's
 long-term memory: read before answering, write what matters.
 
@@ -40,7 +40,7 @@ long-term memory: read before answering, write what matters.
 This repo ships its own memory server — zero dependencies, Node 18+:
 
 \`\`\`bash
-node tools/second-brain-mcp.mjs --dir ./memory
+node tools/keepmind-mcp.mjs --dir ./memory
 \`\`\`
 
 Tools: \`sb_search\` (search memory first!), \`sb_read\`, \`sb_write\`,
@@ -61,24 +61,24 @@ OpenCode or any MCP client can spawn the same command.
 
 const MCP_JSON = JSON.stringify({
   mcpServers: {
-    'second-brain': {
+    'keepmind': {
       command: 'node',
-      args: ['tools/second-brain-mcp.mjs', '--dir', './memory']
+      args: ['tools/keepmind-mcp.mjs', '--dir', './memory']
     }
   }
 }, null, 2) + '\n'
 
 function mcpServerSource(): string {
-  // tools/second-brain-mcp.mjs ships inside the app bundle (and the repo)
+  // tools/keepmind-mcp.mjs ships inside the app bundle (and the repo)
   const candidates = [
-    join(__dirname, '../../tools/second-brain-mcp.mjs'),
-    join(__dirname, '../../../tools/second-brain-mcp.mjs'),
-    join(process.cwd(), 'tools/second-brain-mcp.mjs')
+    join(__dirname, '../../tools/keepmind-mcp.mjs'),
+    join(__dirname, '../../../tools/keepmind-mcp.mjs'),
+    join(process.cwd(), 'tools/keepmind-mcp.mjs')
   ]
   for (const p of candidates) {
     try { return readFileSync(p, 'utf8') } catch { /* try next */ }
   }
-  throw new Error('second-brain-mcp.mjs not found')
+  throw new Error('keepmind-mcp.mjs not found')
 }
 
 export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
@@ -90,9 +90,9 @@ export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
   const files: Array<[string, string]> = [
     ['AGENTS.md', AGENTS_MD],
     ['CLAUDE.md', '@AGENTS.md\n'],
-    ['GEMINI.md', 'Read AGENTS.md — it documents this Second Brain memory repo, its layout under memory/, conventions, and the bundled MCP server (tools/second-brain-mcp.mjs).\n'],
+    ['GEMINI.md', 'Read AGENTS.md — it documents this KeepMind memory repo, its layout under memory/, conventions, and the bundled MCP server (tools/keepmind-mcp.mjs).\n'],
     ['.mcp.json', MCP_JSON],
-    ['tools/second-brain-mcp.mjs', mcpServerSource()]
+    ['tools/keepmind-mcp.mjs', mcpServerSource()]
   ]
 
   const pushed: string[] = []

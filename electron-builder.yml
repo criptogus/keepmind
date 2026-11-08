@@ -1,5 +1,5 @@
-appId: com.secondbrain.app
-productName: Second Brain
+appId: com.keepmind.app
+productName: KeepMind
 icon: build/icon
 publish:
   provider: github

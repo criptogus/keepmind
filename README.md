@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="build/icon.png" width="120" alt="Second Brain logo" />
+<img src="build/icon.png" width="120" alt="KeepMind logo" />
 
-# 🧠 Second Brain
+# 🧠 KeepMind
 
 **An open-source, LLM-agnostic second brain.**
 Plug *any* LLM — local llama.cpp, Claude, Codex, GPT, Gemini, Grok, Ollama —
@@ -26,14 +26,14 @@ Runs on your desktop, a VPS, or a bot's own VM.
 
 ## What it does
 
-Second Brain is a persistent memory layer that works with **any LLM** — the model is a
+KeepMind is a persistent memory layer that works with **any LLM** — the model is a
 replaceable runtime, the repo is the brain:
 
 - **🔀 LLM-agnostic** — bundled [llama.cpp](https://github.com/ggml-org/llama.cpp) local model (fully offline), **Codex/ChatGPT sign-in**, **Claude Pro/Max** via `claude setup-token`, plus API keys for Anthropic, OpenAI, Gemini, Grok (xAI) and Ollama. Change providers whenever you want.
 - **📦 Knowledge outlives models** — every conversation, insight and summary is Markdown in a **private GitHub repo created for you** via OAuth device flow. Not weights in a provider's silo — files you own, versioned and portable. Any AI that can read a repo can use it.
 - **🖥️ Runs anywhere** — desktop app (Electron) on macOS/Windows/Linux, headless on a VPS, or installed by an agent on its own VM. A GitHub repo is the only hard requirement — it's the durable memory backend every LLM workflow already speaks.
 - **🔌 Connectors (MCP)** — a generic MCP stdio client plus bundled servers: WhatsApp via QR (Baileys), Telegram bot, Postgres read-only, and *any* custom MCP server. LLMs call connector tools natively.
-- **🧠 Second Brain MCP server** — the repo ships its own zero-dependency MCP server (`tools/second-brain-mcp.mjs`, Node 18+). Claude Code, Codex, Gemini CLI, Grok or any MCP client connects with one command and gets `sb_search` / `sb_read` / `sb_write` / `sb_remember` / `sb_tasks` — structured memory access, not just raw files.
+- **🧠 KeepMind MCP server** — the repo ships its own zero-dependency MCP server (`tools/keepmind-mcp.mjs`, Node 18+). Claude Code, Codex, Gemini CLI, Grok or any MCP client connects with one command and gets `sb_search` / `sb_read` / `sb_write` / `sb_remember` / `sb_tasks` — structured memory access, not just raw files.
 - **📄 Agent-ready repo** — on connect, the app pushes `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json` and the MCP server into your repo. Codex/Claude/Grok discover and use the memory automatically — no prompt-pasting needed.
 - **🧹 Weekly librarian** — a scheduled hygiene pass (consolidate old logs, dedupe long-term memory, refresh entities) keeps the knowledge base clean on its own.
 - **🕸️ Entity layer** — recurring people/projects/topics get their own page in `memory/entities/` with `[[wikilinks]]` — a lightweight knowledge graph in plain Markdown.
@@ -110,7 +110,7 @@ First launch walks you through a 4-step wizard:
 
 ## Run on a VPS or a bot's VM
 
-Second Brain is a great fit for always-on memory: an agent (Grok, Claude, your own
+KeepMind is a great fit for always-on memory: an agent (Grok, Claude, your own
 bot) can install it on a VM and every chat — human or AI — shares the same
 GitHub-backed memory.
 
@@ -127,7 +127,7 @@ npm run start:headless        # = xvfb-run + SECOND_BRAIN_HEADLESS=1
 
 # or the packaged build:
 xvfb-run -a env SECOND_BRAIN_HEADLESS=1 ./dist/linux-unpacked/second-brain
-xvfb-run -a env SECOND_BRAIN_HEADLESS=1 "./dist/Second Brain-0.1.1.AppImage"
+xvfb-run -a env SECOND_BRAIN_HEADLESS=1 "./dist/KeepMind-0.1.1.AppImage"
 ```
 
 `SECOND_BRAIN_HEADLESS=1` (or `--headless`) skips window creation entirely —
@@ -137,7 +137,7 @@ cleanly (stops MCP servers, sync and schedulers), so it works under systemd:
 ```ini
 # /etc/systemd/system/second-brain.service
 [Unit]
-Description=Second Brain (headless)
+Description=KeepMind (headless)
 After=network-online.target
 
 [Service]
@@ -174,17 +174,17 @@ the app generates a ready-to-paste prompt under **Brain → Plug in your AI**.
 
 ### Connect Codex / Claude / Grok directly (MCP)
 
-Every connected repo contains `tools/second-brain-mcp.mjs` — a zero-dependency
+Every connected repo contains `tools/keepmind-mcp.mjs` — a zero-dependency
 MCP server over your `memory/` directory. Any MCP-capable agent gets
 structured memory tools:
 
 ```bash
 # Claude Code — already wired via the .mcp.json the app pushes
 # Codex CLI / Gemini CLI / any MCP client:
-node tools/second-brain-mcp.mjs --dir ./memory
+node tools/keepmind-mcp.mjs --dir ./memory
 
 # or from this repo / npm:
-npx second-brain-mcp --dir /path/to/your/memory-clone
+npx keepmind-mcp --dir /path/to/your/memory-clone
 ```
 
 Available tools: `sb_search` (search memory first), `sb_read`, `sb_write`,
@@ -227,4 +227,4 @@ PRs welcome! Please open an issue first for big changes. See [CONTRIBUTING.md](C
 
 ## License
 
-[MIT](LICENSE) © Second Brain contributors
+[MIT](LICENSE) © KeepMind contributors

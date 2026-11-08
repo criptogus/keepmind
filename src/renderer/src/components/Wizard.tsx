@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { BrainMark } from './icons'
 
 interface Props {
   config: any
@@ -62,7 +63,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
         if (res) {
           clearInterval(pollRef.current)
           setGhLogin(res.login ?? 'you')
-          setRepoName(`second-brain-${res.login ?? 'me'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'))
+          setRepoName(`keepmind-${res.login ?? 'me'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'))
           onToast('GitHub connected!', 'success')
         }
       } catch (e: any) {
@@ -98,7 +99,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   const createRepo = async () => {
     setBusy(true)
     try {
-      const repo = await window.sb.ghCreateRepo(repoName || 'second-brain', 'My second brain — memory & insights')
+      const repo = await window.sb.ghCreateRepo(repoName || 'keepmind', 'My KeepMind — memory & insights')
       setRepoCreated(true)
       onToast(`Repo created: ${repo.html_url}`, 'success')
     } catch (e: any) {
@@ -194,7 +195,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
       <div className="wizard">
         <div>
           <div className="hud-tag" style={{ marginBottom: 8 }}>SECOND BRAIN · SETUP</div>
-          <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>Second Brain</h1>
+          <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>KeepMind</h1>
           <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>
             Let&apos;s set up your digital brain in ~2 minutes.
           </p>
@@ -209,7 +210,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
         {/* STEP 0 — welcome */}
         {step === 0 && (
           <div className="card wizard__card">
-            <h2>What Second Brain does</h2>
+            <h2>What KeepMind does</h2>
             <p className="sub">
               It connects your apps (GitHub, WhatsApp, Telegram, databases), stores memories in
               <strong> your own GitHub repo</strong>, and learns while you sleep — nightly cycles
@@ -244,7 +245,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
           <div className="card wizard__card">
             <h2>1 · Connect GitHub</h2>
             <p className="sub">
-              Second Brain stores all memory in <strong>a private repository you own</strong>.
+              KeepMind stores all memory in <strong>a private repository you own</strong>.
               You authorize via the browser — no token ever touches the app.
             </p>
             {!ghDevice && !ghLogin && (
@@ -382,7 +383,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                   <>
                     <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
                       No Codex login found. Install the Codex CLI and run <code className="mono">codex login</code> in your
-                      terminal — Second Brain reuses that session automatically. No API key needed.
+                      terminal — KeepMind reuses that session automatically. No API key needed.
                     </p>
                     <button className="btn btn--ghost" style={{ marginTop: 10 }} onClick={async () => setCodexStatus(await window.sb.aiCodexStatus())}>
                       ↻ Re-check login
@@ -471,7 +472,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
               <span className="m-emoji">✈️</span>
               <div className="m-info">
                 <div className="m-name">Telegram</div>
-                <div className="m-desc">Official bot via BotFather. Chat with your second brain remotely.</div>
+                <div className="m-desc">Official bot via BotFather. Chat with your KeepMind remotely.</div>
                 {!serverStatus.telegram && (
                   <input value={tgToken} onChange={e => setTgToken(e.target.value)}
                     placeholder="Bot token (@BotFather)" className="mono"
@@ -516,44 +517,20 @@ export default function Wizard({ config, onDone, onToast }: Props) {
         {/* STEP 4 — done */}
         {step === 4 && (
           <div className="card wizard__card" style={{ textAlign: 'center', padding: '44px 32px' }}>
-            <BrainMarkLarge />
-            <h2 style={{ fontSize: 22 }}>Your second brain is ready</h2>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <BrainMark size={72} />
+            </div>
+            <h2 style={{ fontSize: 22 }}>Your KeepMind is ready</h2>
             <p className="sub" style={{ margin: '10px auto 26px', maxWidth: 460 }}>
               Start chatting — ask &quot;what do you know about me?&quot; Your brain learns every night.
               Everything that happens is remembered in your repository.
             </p>
             <button className="btn btn--primary btn--lg" style={{ width: '100%', maxWidth: 320 }} onClick={onDone}>
-              Enter Second Brain →
+              Enter KeepMind →
             </button>
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function BrainMarkLarge() {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-      <svg width="72" height="72" viewBox="0 0 48 48">
-        <defs>
-          <filter id="wz-glow" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="1.6" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <linearGradient id="wz-grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#7dd3fc" />
-            <stop offset="100%" stopColor="#0891b2" />
-          </linearGradient>
-        </defs>
-        <g filter="url(#wz-glow)" stroke="url(#wz-grad)" strokeWidth="1.8" fill="rgba(34,211,238,0.08)" strokeLinecap="round">
-          <path d="M24 10c-5.5 0-9.5 3.8-9.5 9 0 2.6 1.2 4.8 2.8 6.4-1.8.8-3 2.4-3 4.4 0 2.8 2.4 5 5.7 5h8c3.3 0 5.7-2.2 5.7-5 0-2-1.2-3.6-3-4.4 1.6-1.6 2.8-3.8 2.8-6.4 0-5.2-4-9-9.5-9Z" />
-          <path d="M24 10v20" strokeWidth="1.4" />
-          <path d="M17 17c2-1.4 4-2 7-2M17.5 24c2.2-1.2 4.5-1.6 6.5-1.6M17.5 30.5c2.4-.8 4.8-1 6.8-.8" strokeWidth="1.2" />
-          <path d="M31 17c-2-1.4-4-2-7-2M30.5 24c-2.2-1.2-4.5-1.6-6.5-1.6M30.5 30.5c-2.4-.8-4.8-1-6.8-.8" strokeWidth="1.2" />
-        </g>
-        <circle cx="24" cy="24" r="3" fill="#a5f3fc" />
-      </svg>
     </div>
   )
 }

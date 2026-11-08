@@ -81,7 +81,7 @@ export default function App() {
         <div style={{ textAlign: 'center' }}>
           <BrainMark size={64} />
           <p className="dim" style={{ marginTop: 18, fontFamily: 'var(--mono)', letterSpacing: '.15em', fontSize: 11, textTransform: 'uppercase' }}>
-            booting second brain…
+            booting keepmind…
           </p>
         </div>
       </div>

@@ -39,7 +39,7 @@ async function startSocket() {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, undefined as any)
     },
-    browser: Browsers.macOS('Second Brain'),
+    browser: Browsers.macOS('KeepMind'),
     printQRInTerminal: false,
     syncFullHistory: false,
     markOnlineOnConnect: false
@@ -171,7 +171,7 @@ function handle(msg: any) {
       reply({
         protocolVersion: params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'second-brain-whatsapp', version: '0.1.0' }
+        serverInfo: { name: 'keepmind-whatsapp', version: '0.1.0' }
       })
       break
     case 'tools/list':

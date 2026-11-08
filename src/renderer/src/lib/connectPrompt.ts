@@ -1,9 +1,9 @@
 // Builds the copy-paste prompt that connects an external LLM (Claude, Codex,
-// Grok, Gemini, ChatGPT…) to the user's Second Brain GitHub repo.
+// Grok, Gemini, ChatGPT…) to the user's KeepMind GitHub repo.
 
 export function buildConnectPrompt(repoUrl: string): string {
   const repo = repoUrl?.replace(/\.git$/, '') ?? 'YOUR_SECOND_BRAIN_REPO_URL'
-  return `You are now connected to my "Second Brain" — a private GitHub repository that is my long-term memory. From now on, use it like a persistent memory across every session, shared with my Second Brain desktop app.
+  return `You are now connected to my "KeepMind" — a private GitHub repository that is my long-term memory. From now on, use it like a persistent memory across every session, shared with my KeepMind desktop app.
 
 REPOSITORY: ${repo}
 
@@ -15,13 +15,13 @@ The repo keeps memory in tiers under \`memory/\`:
 - \`insights/\`, \`summaries/\`, \`sleep/\` — generated reports (read-only for you)
 - \`notes/\`, \`tasks/\`, \`daily/\` — user notes, to-dos and daily goals
 - \`entities/\` — knowledge graph: one page per person/project/topic with [[wikilinks]]
-- \`tools/second-brain-mcp.mjs\` — zero-dep MCP server; if you support MCP, prefer it over raw file edits:
-  \`node tools/second-brain-mcp.mjs --dir ./memory\` exposes sb_search / sb_read / sb_write / sb_remember / sb_tasks
+- \`tools/keepmind-mcp.mjs\` — zero-dep MCP server; if you support MCP, prefer it over raw file edits:
+  \`node tools/keepmind-mcp.mjs --dir ./memory\` exposes sb_search / sb_read / sb_write / sb_remember / sb_tasks
 
 ## Setup (do once)
 - Clone the repo locally, or access it via the GitHub API / \`gh\` CLI / GitHub MCP if you have one.
 - Read \`memory/long-term/facts.md\`, \`memory/long-term/lessons.md\`, \`memory/long-term/skills.md\` and the last few \`short-term/\` logs to load context.
-- The app syncs this repo continuously — anything you push is pulled into my Second Brain automatically, and vice versa. Always \`git pull\` before reading and \`git push\` after writing.
+- The app syncs this repo continuously — anything you push is pulled into my KeepMind automatically, and vice versa. Always \`git pull\` before reading and \`git push\` after writing.
 - If \`memory/INDEX.md\` does not exist, create it — a markdown table of contents of everything stored.
 
 ## Every session

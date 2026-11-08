@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest! Second Brain is early — issues and PRs are very welcome.
+Thanks for your interest! KeepMind is early — issues and PRs are very welcome.
 
 ## Setup
 

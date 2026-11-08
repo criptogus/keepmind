@@ -88,7 +88,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
         <div className="chat-header">
           <div className="msg__avatar"><span className="feat-emoji">🧠</span></div>
           <div>
-            <h3>Second Brain</h3>
+            <h3>KeepMind</h3>
             <div className="faint" style={{ fontSize: 12 }}>
               your memory · semantic recall · sleep-cycle learning
             </div>
@@ -99,7 +99,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
           {messages.length === 0 && (
             <div className="empty">
               <div className="e-emoji"><span className="feat-emoji" style={{ fontSize: 'inherit' }}>🧠</span></div>
-              <h3>Talk to your second brain</h3>
+              <h3>Talk to your KeepMind</h3>
               <p>
                 Ask anything — I know everything you connected: apps, memory, insights.
                 I learn while you sleep and get sharper every night.
@@ -137,7 +137,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
             }}
-            placeholder="Message your second brain… (Enter to send)"
+            placeholder="Message your KeepMind… (Enter to send)"
             rows={1}
           />
           <button className="btn btn--primary" onClick={send} disabled={busy || !input.trim()} style={{ borderRadius: 999, padding: '0 18px', height: 42 }}>

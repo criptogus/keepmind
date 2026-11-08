@@ -81,7 +81,7 @@ export function googleLogin(creds: GoogleCreds | null | undefined): Promise<Goog
           throw new Error(`Google sign-in failed: incomplete profile (${info?.error ?? 'missing sub/email'})`)
         }
         res.writeHead(200, { 'Content-Type': 'text/html' })
-        res.end('<html><body style="background:#030712;color:#a3e635;font-family:monospace;display:grid;place-items:center;height:100vh"><h2>✓ Signed in — return to Second Brain.</h2></body></html>')
+        res.end('<html><body style="background:#030712;color:#a3e635;font-family:monospace;display:grid;place-items:center;height:100vh"><h2>✓ Signed in — return to KeepMind.</h2></body></html>')
         clearTimeout(timer); server?.close()
         resolve({ sub: info.sub, email: info.email, name: info.name, picture: info.picture })
       } catch (e) {

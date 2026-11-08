@@ -45,7 +45,7 @@ export interface Automation {
   id: string
   name: string
   instruction: string          // what the brain should do (natural language)
-  kind: 'brain' | 'sleep' | 'summary' | 'librarian'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string                // 'HH:MM' for daily/weekly
   everyMinutes?: number        // for interval
@@ -91,7 +91,7 @@ export interface AgentPersona {
 // Single-brain model: the app is a memory/learning engine, not a persona
 // switcher. Specialist personas were removed — the LLM itself is pluggable.
 const DEFAULT_AGENTS: AgentPersona[] = [
-  { id: 'brain', name: 'Second Brain', emoji: '🧠', persona: 'You are the user\'s second brain — a persistent, learning memory engine. You know everything they connected: apps, memory tiers, entities, insights. Be warm, concise and insightful. Prefer grounding answers in memory (use get_memory / save_memory). Write what matters to long-term memory. Answer in the user\'s language.', builtin: true }
+  { id: 'brain', name: 'KeepMind', emoji: '🧠', persona: 'You are the user\'s second brain — a persistent, learning memory engine. You know everything they connected: apps, memory tiers, entities, insights. Be warm, concise and insightful. Prefer grounding answers in memory (use get_memory / save_memory). Write what matters to long-term memory. Answer in the user\'s language.', builtin: true }
 ]
 
 function defaultConfig(): AppConfig {
@@ -106,12 +106,37 @@ function defaultConfig(): AppConfig {
       { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
     ],
     agents: DEFAULT_AGENTS,
-    // Weekly librarian pass keeps the memory base clean (dedupe, archive, triage)
+    // Self-learning defaults: nightly sleep, morning summary, weekly
+    // librarian hygiene, weekly evolution review, nightly note enrichment.
     automations: [
+      {
+        id: 'sleep-nightly', name: 'Nightly sleep cycle',
+        instruction: 'Review the day and distill durable memory.',
+        kind: 'sleep', schedule: 'daily', time: '23:00',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'summary-morning', name: 'Morning summary',
+        instruction: 'Recap yesterday and brief the day.',
+        kind: 'summary', schedule: 'daily', time: '08:00',
+        enabled: true, createdAt: new Date().toISOString()
+      },
       {
         id: 'librarian-weekly', name: 'Weekly librarian',
         instruction: 'Weekly vault hygiene: consolidate old logs, dedupe long-term memory, refresh entity pages.',
         kind: 'librarian', schedule: 'weekly', weekday: 1, time: '09:00',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'evolve-weekly', name: 'Weekly evolution',
+        instruction: 'Review the brain\'s own reports and propose upgrades to sleep questions, memory structure and automations.',
+        kind: 'evolve', schedule: 'weekly', weekday: 0, time: '18:00',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'enrich-nightly', name: 'Nightly note enrichment',
+        instruction: 'Enrich recent notes with summaries, topic tags and entity wikilinks.',
+        kind: 'enrich', schedule: 'daily', time: '02:30',
         enabled: true, createdAt: new Date().toISOString()
       }
     ],
@@ -140,7 +165,11 @@ export class Store {
         merged.localLlm = { ...defaultConfig().localLlm, ...raw.localLlm }
         merged.github = { ...defaultConfig().github, ...raw.github }
         merged.agents = DEFAULT_AGENTS
-        merged.automations = raw.automations?.length ? raw.automations : defaultConfig().automations
+        // Keep user automations, but seed any new built-in defaults they lack
+        const defaults = defaultConfig().automations
+        const existing = raw.automations ?? []
+        const have = new Set(existing.map((a: Automation) => a.id))
+        merged.automations = [...existing, ...defaults.filter(d => !have.has(d.id))]
         merged.auth = { ...defaultConfig().auth, ...raw.auth }
         merged.pro = { ...defaultConfig().pro, ...raw.pro }
         return merged

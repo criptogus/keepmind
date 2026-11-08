@@ -30,6 +30,8 @@ export function parseNaturalSchedule(text: string): ParsedSchedule {
   let kind: Automation['kind'] = 'brain'
   if (/\b(sleep|sono|dormir|learning cycle)\b/.test(t)) kind = 'sleep'
   else if (/\b(librarian|hygiene|defrag|vault|dedup|limpeza|faxina)\b/.test(t)) kind = 'librarian'
+  else if (/\b(evol|evolve|evolução|self-improv|meta-learn|upgrade the brain)\b/.test(t)) kind = 'evolve'
+  else if (/\b(enrich|enriquec|annotate|tag notes|wikilink)\b/.test(t)) kind = 'enrich'
   else if (/\b(daily summary|sum[aá]rio|recap|briefing)\b/.test(t)) kind = 'summary'
 
   // Suggested name: first meaningful words
@@ -171,6 +173,10 @@ export class AutomationScheduler {
       await this.brain.sleep()
     } else if (auto.kind === 'librarian') {
       await this.brain.librarian()
+    } else if (auto.kind === 'evolve') {
+      await this.brain.evolve()
+    } else if (auto.kind === 'enrich') {
+      await this.brain.enrich()
     } else if (auto.kind === 'summary') {
       await this.brain.generateInsights()
       await this.brain.dailySummary()

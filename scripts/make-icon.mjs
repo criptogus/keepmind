@@ -1,4 +1,4 @@
-// Generates build/icon.png — the Second Brain app icon (1024x1024).
+// Generates build/icon.png — the KeepMind app icon (1024x1024).
 // Rasterizes the BrainMark logo (two glowing hemispheres + folds + core)
 // onto a dark squircle with synapse accents. Pure Node: manual PNG encode.
 // Run: node scripts/make-icon.mjs   →  icon.png + icon.ico
@@ -74,14 +74,16 @@ function samplePath(d, map) {
   return pts
 }
 
-// BrainMark geometry (viewBox 0 0 48 48) scaled to icon space
+// KeepMind mark geometry (viewBox 0 0 48 48) scaled to icon space.
+// A circuit-K: hex chip + neural K beams + synapse nodes.
 const SC = S / 48
 const map = (vx, vy) => [cx + (vx - 24) * SC * 0.92, cy + (vy - 24) * SC * 0.92]
 
-const OUTLINE = 'M24 10c-5.5 0-9.5 3.8-9.5 9 0 2.6 1.2 4.8 2.8 6.4-1.8.8-3 2.4-3 4.4 0 2.8 2.4 5 5.7 5h8c3.3 0 5.7-2.2 5.7-5 0-2-1.2-3.6-3-4.4 1.6-1.6 2.8-3.8 2.8-6.4 0-5.2-4-9-9.5-9Z'
-const FISSURE = 'M24 10v20'
-const FOLDS_L = 'M17 17c2-1.4 4-2 7-2M17.5 24c2.2-1.2 4.5-1.6 6.5-1.6M17.5 30.5c2.4-.8 4.8-1 6.8-.8'
-const FOLDS_R = 'M31 17c-2-1.4-4-2-7-2M30.5 24c-2.2-1.2-4.5-1.6-6.5-1.6M30.5 30.5c-2.4-.8-4.8-1-6.8-.8'
+const CHIP = 'M24 5.5 L39 14.5 V33.5 L24 42.5 L9 33.5 V14.5 Z'
+const SPINE = 'M20 14.5 V33.5'
+const ARM_UP = 'M20 24 L30.5 15'
+const ARM_DN = 'M20 24 L30.5 33'
+const TRACES = 'M13.5 14.5 H17 M13.5 33.5 H17 M35.5 15 H32 M35.5 33 H32'
 
 const CYAN = [125, 211, 252], DEEP = [8, 145, 178], WHITE = [224, 247, 255]
 const LIME = [163, 230, 53], VIOLET = [167, 139, 250], AMBER = [250, 204, 21]
@@ -95,29 +97,43 @@ function strokePath(d, color, width, intensity, passes = 1) {
   }
 }
 
-// 1) soft outer glow of the whole brain silhouette
-strokePath(OUTLINE, DEEP, 26, 0.10, 1)
-strokePath(OUTLINE, CYAN, 10, 0.16, 1)
+// 1) soft outer glow of the chip
+strokePath(CHIP, DEEP, 26, 0.10, 1)
+strokePath(CHIP, CYAN, 10, 0.16, 1)
 
-// 2) hemisphere fill — faint cyan wash inside (approx via dense center strokes is overkill;
-//    instead draw a soft radial "brain core" glow behind)
-addDot(cx, cy - S * 0.02, S * 0.20, [10, 60, 90], 0.5)
-addDot(cx, cy - S * 0.02, S * 0.13, [20, 110, 150], 0.45)
+// 2) chip core glow
+addDot(cx, cy, S * 0.20, [10, 60, 90], 0.5)
+addDot(cx, cy, S * 0.13, [20, 110, 150], 0.45)
 
-// 3) crisp outline
-strokePath(OUTLINE, CYAN, 4.5, 0.85)
-strokePath(OUTLINE, WHITE, 1.6, 0.5)
+// 3) crisp chip outline
+strokePath(CHIP, CYAN, 4.5, 0.85)
+strokePath(CHIP, WHITE, 1.6, 0.5)
 
-// 4) fissure + folds
-strokePath(FISSURE, DEEP, 5, 0.5)
-strokePath(FISSURE, CYAN, 2, 0.7)
-strokePath(FOLDS_L, [70, 170, 220], 3, 0.5)
-strokePath(FOLDS_R, [70, 170, 220], 3, 0.5)
+// 4) neural K: spine + arms + circuit traces
+strokePath(SPINE, DEEP, 5, 0.5)
+strokePath(SPINE, CYAN, 2, 0.7)
+strokePath(ARM_UP, [70, 170, 220], 3, 0.55)
+strokePath(ARM_DN, [70, 170, 220], 3, 0.55)
+strokePath(ARM_UP, LIME, 1.4, 0.5)
+strokePath(ARM_DN, LIME, 1.4, 0.5)
+strokePath(TRACES, [70, 170, 220], 2, 0.4)
 
-// 5) core synapse node
-addDot(cx, cy, S * 0.028, DEEP, 1.4)
-addDot(cx, cy, S * 0.02, WHITE, 1.2)
-addDot(cx, cy, S * 0.009, [255, 255, 255], 1.6)
+// 5) synapse nodes: joint + arm tips + spine ends
+const nodes = [
+  [20, 24, WHITE], [20, 14.5, CYAN], [20, 33.5, CYAN],
+  [30.5, 15, LIME], [30.5, 33, LIME]
+]
+for (const [vx, vy, col] of nodes) {
+  const [x, y] = map(vx, vy)
+  addDot(x, y, S * 0.016, DEEP, 1.3)
+  addDot(x, y, S * 0.010, col, 1.1)
+  addDot(x, y, S * 0.004, [255, 255, 255], 1.5)
+}
+// extra-bright joint node
+{
+  const [x, y] = map(20, 24)
+  addDot(x, y, S * 0.007, [255, 255, 255], 1.8)
+}
 
 // 6) satellite synapses orbiting the brain
 let seed = 7

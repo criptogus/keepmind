@@ -28,7 +28,13 @@ const CHUNK_OVERLAP = 150
 const MAX_CHUNKS = 6000
 const SEARCH_K = 6
 
-const INDEX_DIRS = ['short-term', 'medium-term', 'long-term', 'insights', 'summaries', 'agents', 'inbox']
+// Order matters: on MAX_CHUNKS truncation the most durable/valuable
+// sources survive — entities & long-term first, raw logs last.
+const INDEX_DIRS = [
+  'entities', 'long-term', 'notes', 'tasks', 'daily',
+  'insights', 'summaries', 'sleep',
+  'short-term', 'medium-term', 'agents', 'inbox', 'meetings'
+]
 const SKIP_FILES = new Set(['INDEX.md'])
 
 export class RagService {
