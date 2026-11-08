@@ -25,6 +25,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   const [busy, setBusy] = useState(false)
 
   const [ghDevice, setGhDevice] = useState<any>(null)
+  const [ghCopied, setGhCopied] = useState(false)
   const [ghLogin, setGhLogin] = useState('')
   const [repoMode, setRepoMode] = useState<'create' | 'import'>('create')
   const [userRepos, setUserRepos] = useState<any[]>([])
@@ -301,9 +302,25 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                   fontSize: 32, fontWeight: 700, letterSpacing: '0.2em',
                   color: 'var(--blue-bright)', textShadow: '0 0 20px var(--glow)',
                   padding: '14px', borderRadius: 10, background: 'rgba(3,7,18,.7)',
-                  border: '1px solid var(--line-bright)', marginBottom: 14
+                  border: '1px solid var(--line-bright)', marginBottom: 10,
+                  display: 'inline-block'
                 }}>
                   {ghDevice.user_code}
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <button
+                    className="btn btn--ghost"
+                    style={{ fontSize: 12, padding: '5px 14px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(ghDevice.user_code)
+                        setGhCopied(true)
+                        setTimeout(() => setGhCopied(false), 2000)
+                      } catch { /* clipboard unavailable */ }
+                    }}
+                  >
+                    {ghCopied ? '✓ Copied' : '⧉ Copy code'}
+                  </button>
                 </div>
                 <p className="faint" style={{ fontSize: 12 }}>
                   Waiting for authorization… code expires in ~{Math.round((ghDevice.expires_in ?? 900) / 60)} min.
