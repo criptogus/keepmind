@@ -601,7 +601,7 @@ function UpdatesCard({ onToast }: { onToast: Props['onToast'] }) {
         {state === 'ready' && (
           <button className="btn btn--primary" onClick={install}>RESTART & UPDATE</button>
         )}
-        <button className="btn btn--ghost" onClick={() => window.sb.openExternal('https://github.com/criptogus/second-brain-app/releases')}>
+        <button className="btn btn--ghost" onClick={() => window.sb.openExternal('https://github.com/criptogus/keepmind/releases')}>
           RELEASE NOTES ↗
         </button>
       </div>

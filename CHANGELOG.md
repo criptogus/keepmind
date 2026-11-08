@@ -6,6 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Continuous self-update** — every push to `main` rebuilds a rolling `continuous` prerelease (macOS/Windows/Linux); installed apps poll it on launch + every 6h, download the matching artifact and self-install (macOS bundle swap, Windows NSIS `/S`, Linux AppImage swap). Works unsigned; dedupes by release marker so it won't re-download while awaiting restart.
 - **Webhook triggers** — any automation exposes `POST /hook/<id>` (token auth, localhost or LAN) so external apps (Zapier, n8n, GitHub Actions) can fire brain jobs; approval-mode jobs still queue for review.
 - **Connector permissions** — per-MCP-server `allow`/`ask`/`block`; `ask` skips auto-start, `block` never spawns.
 - **`keepmind.json` brain-as-code** — sanitized declarative snapshot (agents, automations, connectors, models; never secrets) pushed to the repo root so any clone/bot sees the brain's config.
