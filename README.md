@@ -307,11 +307,23 @@ structured queries and durable memories. The server uses stdin/stdout for MCP
 messages and stderr for diagnostics. `KEEPMIND_MEMORY_DIR` and `--memory-dir`
 are preferred; legacy `SECOND_BRAIN_DIR` and `--dir` remain supported.
 
-The desktop app uses SQLite BM25 postings fused with cosine vector ranks via
-reciprocal rank fusion. This sql.js build has FTS3 but no FTS5, so BM25 uses an
-inverted index table. Keyword recall works without embeddings. On first use,
-`memory-embeddings.json` is migrated to `memory-search.sqlite`; the original JSON
-is retained as a backup and is not read again once the SQLite index exists.
+The desktop index uses `better-sqlite3-multiple-ciphers` on disk with WAL,
+prepared statements and incremental transactional updates. FTS5 references the
+chunk table without duplicating text; sensitive text uses HMAC token postings.
+Vectors occupy Float32 BLOBs (sealed separately for sensitive chunks). Deterministic
+hyperplane buckets retrieve bounded vector candidates; cosine reranks those and
+BM25 candidates, then reciprocal rank fusion combines the ranks. Approximate
+vector retrieval trades exhaustive recall for bounded query cost. Int8 storage is
+not enabled: Float32 avoids additional quantization loss; size depends on vector
+dimensions and the proportion of sealed chunks.
+
+When memory encryption is configured, SQLCipher encrypts the database and WAL
+using a domain-separated key derived from the memory master. Restricted columns
+remain sealed independently. The previous sql.js schema migrates in place in a
+transaction; JSON embeddings import only when no SQLite file exists. Original
+JSON backups remain on disk and should be handled under the same security policy.
+For Electron packaging, rebuild the native dependency for Electron's ABI with
+`npx electron-builder install-app-deps` (Node tests require the Node ABI build).
 
 ## Third-party attribution
 

@@ -44,8 +44,32 @@ Settings exposes setup, passphrase/keychain unlock, recovery, lock, encrypt-all 
 
 The native Memory session maintains a conservative high-water classification and the set of spaces it has read. Derived writes inherit that classification; egress inherits that class and requires consent for every read space. This intentionally overprotects unrelated subsequent work after reading a restricted item. A process restart starts a new high-water session; automatic classification and item frontmatter remain authoritative. Model tools' descriptions and schemas are included in the gate and cloud redaction. Memory listing and manual backup use the scoped reader, never a raw filesystem bypass.
 
-SQLite enables secure_delete and vacuums before persistence. This reduces residual plaintext in rewritten database pages but cannot erase older filesystem snapshots, backups, prior JSON indexes or repository history. Scope filters run in SQLite before decryption. A scoped replacement preserves rows and postings belonging to other spaces.
+SQLite enables secure_delete and uses transactional WAL persistence. SQLCipher encrypts the whole database and WAL whenever master keys are configured, including a one-time rekey of older plaintext databases. This reduces exposure in current database pages but cannot erase older filesystem snapshots, backups, prior JSON indexes or repository history. Scope filters run in SQLite before decryption. A scoped replacement preserves rows and postings belonging to other spaces.
 
-Standalone MCP is read-only, refuses sealed items, and defaults to personal/internal. Set KEEPMIND_MCP_SCOPES to a JSON config filename and KEEPMIND_MCP_CLIENT to a launcher-controlled client ID. The config maps client IDs to `{ "spaces": ["personal"], "maxClass": "internal" }`. Unknown clients get no spaces. Every discovery/content access uses the same policy, and audit failures prevent reads. MCP audit records store a resource hash, timestamp, client ID and allowed flag, never note content. Native decryption is intentionally not available to this standalone process.
+Standalone MCP refuses sealed items and defaults to personal/internal with writes disabled. Set KEEPMIND_MCP_SCOPES to a JSON config filename and KEEPMIND_MCP_CLIENT to a launcher-controlled client ID. The config maps client IDs to `{ "spaces": ["company-x"], "defaultSpace": "company-x", "maxClass": "internal", "write": true }`. Unknown clients get no spaces. Every discovery/content access uses the same policy, and audit failures prevent reads. MCP audit records store a resource hash, timestamp, client ID and allowed flag, never note content. Every write checks the existing item and the resulting content against the client scope; new notes receive defaultSpace (or the first allowed space). Explicit write: true is mandatory. Restricted writes require the unlocked native service, even for clients with higher maximum classes. Write attempts, including denials, append an operation, path hash, timestamp, client ID and allowed flag without content. Reserved operational/state files cannot be changed through note tools. Native decryption is intentionally not available to this standalone process.
 
 Long-running chat, sleep, refresh and ingestion operations pin their space/grant snapshot across awaits. Changing the UI's active space cannot redirect an in-flight result into a different compartment. Generated non-personal brain tiers, planner items and entities use spaces/<space>/ paths, while personal keeps the existing tier paths. Explicit file paths still require item-policy authorization. RAG recursively indexes scoped nested tier files and applies space filters before scoring. Imported items may use any contained relative filename but cannot overwrite a path owned by an ungranted space.
+
+
+## Explicit space merges
+
+`keepmind-cli spaces suggest --dir <memory> --state <state>` returns matching
+`board-<slug>` / `company-<slug>` identifiers and note counts only. It does not
+write a config or approve a merge. Symlinks and operational/state directories
+are excluded from suggestions and application.
+
+The user supplies `<state>/space-map.json`, for example:
+
+```json
+{"aliases":{"board-x":"company-x"},"approved":true,"approved_at":"2026-11-08T00:00:00Z"}
+```
+
+`keepmind-cli spaces apply --dir <memory> --state <state>` requires that explicit
+approval and a valid timestamp; malformed/cyclic aliases fail before mutations.
+Approval alone never changes notes. Apply rewrites space metadata through the
+native Memory writer (sealed notes authenticate with the source key and reseal
+with the destination key), then refreshes affected index spaces. It preserves
+paths and classifications and is idempotent. Encrypted installations also require
+`--unlock-stdin`. Each file replacement is atomic; the entire multi-file merge is
+not a filesystem transaction. After interruption, rerun the approved apply to
+finish and refresh the index. No automatically inferred aliases are used.
