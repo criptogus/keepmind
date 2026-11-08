@@ -14,6 +14,7 @@ import type { Planner } from './services/planner'
 import * as llm from './services/llm'
 import * as github from './services/github'
 import { checkForUpdates, installUpdate, updaterStatus } from './services/updater'
+import { listModels, deleteModel } from './services/models'
 import { exportBrainConfig } from './services/scaffold'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
 import type { McpServerConfig } from './store'
@@ -478,6 +479,18 @@ export function registerIpc(
     return rag?.stats ?? null
   })
   ipcMain.handle('rag:reindex', async () => rag ? rag.reindex() : null)
+
+  // ── Model manager (disk inventory + delete) ──
+  ipcMain.handle('models:list', () => {
+    if (!localLlm) return []
+    return listModels(localLlm, laya)
+  })
+  ipcMain.handle('models:delete', async (_e, key: string) => {
+    if (!localLlm || typeof key !== 'string' || key.length > 80) throw new Error('invalid model key')
+    const res = await deleteModel(localLlm, laya, key)
+    pushMcpLog(`model deleted: ${key} (${(res.freedBytes / 1e6).toFixed(0)}MB)`)
+    return res
+  })
 
   // ── Laya decision engine (fast ONNX System-1) ──
   ipcMain.handle('laya:status', () => laya?.status() ?? { available: false, loaded: false, modelDir: '', downloaded: false })

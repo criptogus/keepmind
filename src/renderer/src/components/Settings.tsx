@@ -211,6 +211,9 @@ export default function Settings({ onToast, onActivity }: Props) {
           </div>
         </div>
 
+        {/* Models & runtimes */}
+        <ModelsCard onToast={onToast} />
+
         {/* Memory / GitHub */}
         <div className="card card-pad">
           <h2 style={{ marginBottom: 14 }}>Memory & sync</h2>
@@ -614,6 +617,88 @@ const EMBED_MODELS_FALLBACK = [
   { id: 'bge-small', label: 'BGE Small EN v1.5', sizeMB: 64 },
   { id: 'nomic-embed', label: 'Nomic Embed Text v1.5', sizeMB: 85 }
 ]
+
+const KIND_LABEL: Record<string, string> = {
+  chat: 'CHAT', embed: 'EMBED', runtime: 'RUNTIME', decision: 'DECISION'
+}
+
+function fmtBytes(b: number): string {
+  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`
+  if (b >= 1e6) return `${(b / 1e6).toFixed(0)} MB`
+  if (b >= 1e3) return `${(b / 1e3).toFixed(0)} KB`
+  return `${b} B`
+}
+
+function ModelsCard({ onToast }: { onToast: Props['onToast'] }) {
+  const [models, setModels] = useState<any[] | null>(null)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+
+  const load = () => window.sb.modelsList?.().then(setModels).catch(() => setModels([]))
+  useEffect(() => { load() }, [])
+
+  const del = async (m: any) => {
+    if (!window.confirm(`Delete ${m.label} (${fmtBytes(m.sizeBytes)})?${m.active ? '\n\nThis is the ACTIVE model — the brain will fall back to the default.' : ''}`)) return
+    setBusyKey(m.key)
+    try {
+      const r: any = await window.sb.modelsDelete?.(m.key)
+      onToast(`Freed ${fmtBytes(r?.freedBytes ?? 0)}${r?.warnings?.[0] ? ` — ${r.warnings[0]}` : ''}`, 'success')
+      await load()
+    } catch (e: any) {
+      onToast(`Delete failed: ${e?.message ?? e}`, 'error')
+    } finally { setBusyKey(null) }
+  }
+
+  const total = (models ?? []).reduce((n, m) => n + (m.downloaded ? m.sizeBytes : 0), 0)
+
+  return (
+    <div className="card card-pad">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+        <h2>Models & runtimes</h2>
+        {models && <span className="faint" style={{ fontSize: 11.5 }}>{fmtBytes(total)} on disk</span>}
+      </div>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 14 }}>
+        Local AI assets downloaded by KeepMind — chat models, embeddings, the llama.cpp engine and the Laya decision model.
+        Deleting frees disk space; models re-download automatically if needed again.
+      </p>
+      {!models ? (
+        <p className="faint" style={{ fontSize: 12.5 }}>Loading…</p>
+      ) : models.length === 0 ? (
+        <p className="faint" style={{ fontSize: 12.5 }}>No local models yet.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {models.map(m => (
+            <div key={m.key} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px',
+              borderRadius: 8, border: '1px solid var(--line)', background: 'rgba(3,7,18,.4)'
+            }}>
+              <span className="mono" style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '.06em', minWidth: 64,
+                color: m.kind === 'decision' ? '#c4b5fd' : m.kind === 'runtime' ? '#fbbf24' : m.kind === 'embed' ? '#34d399' : '#22d3ee'
+              }}>{KIND_LABEL[m.kind]}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {m.label}
+                  {m.active && <span style={{ color: 'var(--green)', fontSize: 11, marginLeft: 8 }}>● ACTIVE</span>}
+                  {m.running && <span className="faint" style={{ fontSize: 11, marginLeft: 6 }}>· running</span>}
+                </div>
+                {m.detail && <div className="faint" style={{ fontSize: 11, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.detail}</div>}
+              </div>
+              <span className="mono faint" style={{ fontSize: 11.5, minWidth: 64, textAlign: 'right' }}>
+                {m.downloaded ? fmtBytes(m.sizeBytes) : '—'}
+              </span>
+              {m.downloaded && (
+                <button className="btn btn--ghost" style={{ fontSize: 11, padding: '4px 10px' }}
+                  disabled={busyKey === m.key} onClick={() => del(m)}>
+                  {busyKey === m.key ? '…' : 'DELETE'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function CodexStatus() {
   const [s, setS] = useState<any>(null)

@@ -20,6 +20,8 @@ const api = {
   ghCreateRepo: (name: string, desc: string) => ipcRenderer.invoke('github:createRepo', name, desc),
   ghListRepos: () => ipcRenderer.invoke('github:listRepos'),
   ghUseRepo: (owner: string, repo: string) => ipcRenderer.invoke('github:useRepo', owner, repo),
+  modelsList: () => ipcRenderer.invoke('models:list'),
+  modelsDelete: (key: string) => ipcRenderer.invoke('models:delete', key),
   ghPushMemory: (msg: string) => ipcRenderer.invoke('github:pushMemory', msg),
 
   // local llm

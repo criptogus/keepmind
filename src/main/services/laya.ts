@@ -88,6 +88,12 @@ export class LayaService {
     return this.loading
   }
 
+  // Drop the loaded agent (e.g. before deleting the model files).
+  unload() {
+    this.agent = null
+    this.loading = null
+  }
+
   // ── Download ──
 
   async download(onProgress?: (done: number, total: number, file: string) => void): Promise<void> {
