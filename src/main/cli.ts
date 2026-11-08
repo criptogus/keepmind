@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, writeFileSync, renameSync } from 'node:fs'
 import { resolve, join } from 'node:path'
+import { suggestSpaces, applySpaceMap, approvedSpaceMap } from './services/security/space-map'
 import { Memory } from './services/brain/memory-store'
 import { HybridSearch } from './services/search/hybrid'
 import { RefreshScheduler } from './services/ingest/scheduler'
@@ -8,7 +9,12 @@ export async function runCli(args = process.argv.slice(2)) {
   const option = (name: string, fallback?: string) => { const i = args.indexOf(name); if (i < 0) return fallback; if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error('Missing option value'); return args[i + 1] }
   const command = args[0], root = resolve(command === 'index' ? args[1] ?? '.' : option('--dir', './memory')!)
   const space = option('--space', 'personal')!, state = resolve(option('--state', join(root, '.keepmind'))!)
-  if (!['index', 'search', 'status', 'refresh'].includes(command)) throw new Error('Usage: keepmind-cli index <dir> | search <query> [--space name] | status | refresh [--dir dir] [--state dir] [--unlock-stdin]')
+  if (!['index', 'search', 'status', 'refresh', 'spaces'].includes(command)) throw new Error('Usage: keepmind-cli index <dir> | search <query> [--space name] | spaces suggest|apply | status | refresh [--dir dir] [--state dir] [--unlock-stdin]')
+  if (command === 'spaces') {
+    if (args[1] === 'suggest') return suggestSpaces(root, state)
+    if (args[1] !== 'apply') throw new Error('Usage: spaces suggest|apply')
+    approvedSpaceMap(join(state, 'space-map.json'))
+  }
   const memory = new Memory(root, null); memory.currentSpace = space
   const configFile = join(state, 'security', 'memory-keys.json')
   if (args.includes('--unlock-stdin')) {
@@ -23,9 +29,16 @@ export async function runCli(args = process.argv.slice(2)) {
       renameSync(configFile + '.tmp', configFile)
     }
   }
+  if (existsSync(configFile) && !memory.keys) throw new Error('Index locked: use --unlock-stdin')
   const db = await HybridSearch.open(join(state, 'memory-search.sqlite'), undefined, () => memory.keys, () => memory.encryptAll)
   try {
     const scheduler = new RefreshScheduler(memory, db, state)
+    if (command === 'spaces') {
+      const result = applySpaceMap(root, state, memory.keys, memory.encryptAll, () => memory.onKeysChanged?.())
+      memory.grants = result.spaces
+      await scheduler.indexFiles()
+      return { changed: result.changed }
+    }
     if (command === 'status') return scheduler.status.snapshot()
     if (command === 'index') return await scheduler.indexFiles()
     if (command === 'refresh') return await scheduler.refresh()
