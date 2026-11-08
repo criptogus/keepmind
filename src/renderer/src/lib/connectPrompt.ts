@@ -15,6 +15,8 @@ The repo keeps memory in tiers under \`memory/\`:
 - \`insights/\`, \`summaries/\`, \`sleep/\` — generated reports (read-only for you)
 - \`notes/\`, \`tasks/\`, \`daily/\` — user notes, to-dos and daily goals
 - \`entities/\` — knowledge graph: one page per person/project/topic with [[wikilinks]]
+- \`review/\` — spaced-repetition flashcards and quiz sessions
+- Notes may have YAML frontmatter (\`summary:\`, \`tags:\`, \`links:\`) — preserve it when editing
 - \`tools/keepmind-mcp.mjs\` — zero-dep MCP server; if you support MCP, prefer it over raw file edits:
   \`node tools/keepmind-mcp.mjs --dir ./memory\` exposes sb_search / sb_read / sb_write / sb_remember / sb_tasks
 

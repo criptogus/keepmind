@@ -32,6 +32,7 @@ export function parseNaturalSchedule(text: string): ParsedSchedule {
   else if (/\b(librarian|hygiene|defrag|vault|dedup|limpeza|faxina)\b/.test(t)) kind = 'librarian'
   else if (/\b(evol|evolve|evolução|self-improv|meta-learn|upgrade the brain)\b/.test(t)) kind = 'evolve'
   else if (/\b(enrich|enriquec|annotate|tag notes|wikilink)\b/.test(t)) kind = 'enrich'
+  else if (/\b(quiz|review|flashcard|revis|estudo|self-test|spaced)\b/.test(t)) kind = 'review'
   else if (/\b(daily summary|sum[aá]rio|recap|briefing)\b/.test(t)) kind = 'summary'
 
   // Suggested name: first meaningful words
@@ -177,6 +178,8 @@ export class AutomationScheduler {
       await this.brain.evolve()
     } else if (auto.kind === 'enrich') {
       await this.brain.enrich()
+    } else if (auto.kind === 'review') {
+      await this.brain.review()
     } else if (auto.kind === 'summary') {
       await this.brain.generateInsights()
       await this.brain.dailySummary()

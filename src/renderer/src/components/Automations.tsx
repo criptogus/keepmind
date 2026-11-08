@@ -5,7 +5,7 @@ interface Automation {
   id: string
   name: string
   instruction: string
-  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string
   everyMinutes?: number
@@ -31,7 +31,8 @@ const KIND_LABEL: Record<string, string> = {
   summary: 'summary',
   librarian: 'librarian',
   evolve: 'evolution',
-  enrich: 'enrichment'
+  enrich: 'enrichment',
+  review: 'review'
 }
 
 // Ready-made self-learning crons — one click installs them.
@@ -41,7 +42,8 @@ const TEMPLATES: { emoji: string; name: string; desc: string; input: any }[] = [
   { emoji: '🧹', name: 'Weekly librarian', desc: 'Mon 09:00 — consolidates old logs, dedupes long-term memory, refreshes entities.', input: { name: 'Weekly librarian', kind: 'librarian', schedule: 'weekly', weekday: 1, time: '09:00', instruction: 'Weekly vault hygiene: consolidate old logs, dedupe long-term memory, refresh entity pages.' } },
   { emoji: '🧬', name: 'Weekly evolution', desc: 'Sun 18:00 — the brain reviews its own reports and proposes upgrades to itself.', input: { name: 'Weekly evolution', kind: 'evolve', schedule: 'weekly', weekday: 0, time: '18:00', instruction: 'Meta-learning: review sleep reports and insights, propose improvements to the memory system itself.' } },
   { emoji: '✨', name: 'Nightly enrichment', desc: '02:30 — adds summaries, tags and [[wikilinks]] to recent notes.', input: { name: 'Nightly note enrichment', kind: 'enrich', schedule: 'daily', time: '02:30', instruction: 'Enrich recent notes with summaries, topic tags and entity wikilinks.' } },
-  { emoji: '🧠', name: 'Inbox triage', desc: 'Every 6h — sorts raw inbox captures into notes, tasks or memory.', input: { name: 'Inbox triage', kind: 'brain', schedule: 'interval', everyMinutes: 360, instruction: 'Triage the inbox: move valuable items into notes/tasks/long-term memory, discard noise, and report what you did.' } }
+  { emoji: '🧠', name: 'Inbox triage', desc: 'Every 6h — sorts raw inbox captures into notes, tasks or memory.', input: { name: 'Inbox triage', kind: 'brain', schedule: 'interval', everyMinutes: 360, instruction: 'Triage the inbox: move valuable items into notes/tasks/long-term memory, discard noise, and report what you did.' } },
+  { emoji: '🃏', name: 'Spaced review', desc: 'Daily 20:00 — quizzes the brain on its own flashcards and grades retention.', input: { name: 'Spaced review', kind: 'review', schedule: 'daily', time: '20:00', instruction: 'Spaced-repetition review: quiz yourself on flashcards from long-term memory.' } }
 ]
 
 function scheduleLabel(a: Automation): string {

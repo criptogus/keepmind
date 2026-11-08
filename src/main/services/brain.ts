@@ -26,7 +26,7 @@ export class Memory {
     //   long-term   = durable facts, lessons, skills (never forgotten)
     //   sleep       = nightly learning reports
     //   inbox       = legacy dir kept for backward compatibility
-    for (const sub of ['short-term', 'medium-term', 'long-term', 'sleep', 'inbox', 'insights', 'summaries', 'agents', 'notes', 'tasks', 'daily', 'meetings', 'entities']) {
+    for (const sub of ['short-term', 'medium-term', 'long-term', 'sleep', 'inbox', 'insights', 'summaries', 'agents', 'notes', 'tasks', 'daily', 'meetings', 'entities', 'review']) {
       mkdirSync(join(this.dir, sub), { recursive: true })
     }
   }
@@ -416,7 +416,15 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
       console.warn('[brain] sleep: long-term extraction failed:', e)
     }
 
-    // 3) Consolidate short-term logs older than 7 days into medium-term weekly files
+    // 3) Generate spaced-repetition flashcards from durable learnings
+    try {
+      const n = await this.generateFlashcards()
+      if (n) console.log(`[brain] sleep: ${n} flashcard(s) added`)
+    } catch (e) {
+      console.warn('[brain] flashcard generation failed:', e)
+    }
+
+    // 4) Consolidate short-term logs older than 7 days into medium-term weekly files
     const consolidated = await this.consolidateShortTerm()
 
     // 4) Refresh the entity layer (knowledge graph in Markdown)
@@ -607,9 +615,52 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
   }
 
   // ── Enrich: note intelligence pass ──
-  // Picks recent notes missing metadata and asks the LLM to enrich them:
-  // one-line summary, topic tags, and [[wikilinks]] to known entities.
-  // Appends an "Enrichment" block — never rewrites user content.
+  // Picks recent notes missing frontmatter and asks the LLM to enrich them:
+  // summary, topic tags and [[wikilinks]] to known entities — written as
+  // YAML frontmatter at the top of the note (never rewrites user content).
+
+  private async enrichNote(rel: string, entityNames: string[]): Promise<boolean> {
+    const content = this.memory.read(rel) ?? ''
+    if (!content.trim()) return false
+    // already enriched (frontmatter marker or legacy Enrichment section)
+    if (/^---\n[\s\S]*?enriched:/m.test(content) || content.includes('## Enrichment')) return false
+
+    const res = await chat(this.store.get().ai as AiProviderConfig, [
+      {
+        role: 'system',
+        content: `You enrich personal notes in a knowledge base. Given a note, output ONLY these three lines and nothing else:
+
+summary: <one sentence, max 25 words>
+tags: <3-6 comma-separated lowercase tags>
+links: <comma-separated [[Entity]] wikilinks — ONLY from this list: ${entityNames.join(', ') || '(none yet)'}>
+
+If a field has nothing useful write "-". Write values in the user's language.`
+      },
+      { role: 'user', content: content.slice(0, 6000) }
+    ], [], this.localLlm?.endpoint)
+
+    const fields: Record<string, string> = {}
+    for (const line of res.text.split('\n')) {
+      const m = line.match(/^(summary|tags|links):\s*(.+)$/i)
+      if (m) fields[m[1].toLowerCase()] = m[2].trim()
+    }
+    if (!fields.summary && !fields.tags) return false
+
+    const day = new Date().toISOString().slice(0, 10)
+    const fmLines = ['---', `enriched: ${day}`]
+    if (fields.summary && fields.summary !== '-') fmLines.push(`summary: ${JSON.stringify(fields.summary)}`)
+    if (fields.tags && fields.tags !== '-') fmLines.push(`tags: ${fields.tags}`)
+    if (fields.links && fields.links !== '-') fmLines.push(`links: ${fields.links}`)
+    fmLines.push('---', '')
+    const fm = fmLines.join('\n')
+
+    // replace existing frontmatter or prepend
+    let next: string
+    const existing = content.match(/^---\n[\s\S]*?\n---\n?/)
+    next = existing ? fm + content.slice(existing[0].length) : fm + content
+    this.memory.write(rel, next)
+    return true
+  }
 
   async enrich(): Promise<{ enriched: number; report: string }> {
     const day = new Date().toISOString().slice(0, 10)
@@ -620,30 +671,9 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
     let enriched = 0
     const lines: string[] = []
     for (const f of notes) {
-      const rel = `notes/${f}`
-      const content = this.memory.read(rel) ?? ''
-      if (!content.trim() || content.includes('## Enrichment')) continue
       if (enriched >= 8) break // bound LLM calls per run
-
       try {
-        const res = await chat(this.store.get().ai as AiProviderConfig, [
-          {
-            role: 'system',
-            content: `You enrich personal notes in a knowledge base. Given a note, output EXACTLY this block and nothing else:
-
-## Enrichment
-- **Summary:** <one sentence, max 25 words>
-- **Topics:** <3-6 comma-separated tags>
-- **Links:** <[[Entity]] wikilinks — ONLY from this list: ${entityNames.join(', ') || '(none yet)'}>
-
-If a field has nothing useful, write "—". Write in the user's language.`
-          },
-          { role: 'user', content: content.slice(0, 6000) }
-        ], [], this.localLlm?.endpoint)
-
-        const block = res.text.trim()
-        if (block.includes('Summary')) {
-          this.memory.append(rel, `\n\n${block.startsWith('##') ? block : `## Enrichment\n${block}`}\n`)
+        if (await this.enrichNote(`notes/${f}`, entityNames)) {
           enriched++
           lines.push(`- \`${f}\` — enriched`)
         }
@@ -664,6 +694,104 @@ If a field has nothing useful, write "—". Write in the user's language.`
     } catch { /* offline ok */ }
     void this.rag?.reindex().catch(() => {})
     return { enriched, report }
+  }
+
+  // ── Spaced repetition: flashcards + review sessions ──
+  // Sleep distills durable learnings into Q/A cards in review/cards.md.
+  // The 'review' automation quizzes the brain against them nightly.
+
+  private async generateFlashcards(): Promise<number> {
+    // source: recent long-term learnings
+    const src = ['facts.md', 'lessons.md', 'skills.md']
+      .map(f => this.memory.read(`long-term/${f}`) ?? '')
+      .join('\n')
+      .slice(-12000)
+    if (src.trim().length < 200) return 0
+
+    const res = await chat(this.store.get().ai as AiProviderConfig, [
+      {
+        role: 'system',
+        content: `You create spaced-repetition flashcards from a knowledge base's durable learnings. Output UP TO 6 cards, each in EXACTLY this format:
+
+Q: <question that tests recall of one specific fact/lesson/skill>
+A: <one-line answer>
+
+Rules: only cards with real retrieval value (decisions, procedures, corrections, preferences). Skip trivia. No numbering, no commentary, no markdown.`
+      },
+      { role: 'user', content: src }
+    ], [], this.localLlm?.endpoint)
+
+    const cards = [...res.text.matchAll(/^Q:\s*(.+)\nA:\s*(.+)$/gm)]
+      .map(m => ({ q: m[1].trim(), a: m[2].trim() }))
+      .filter(c => c.q.length > 10 && c.a.length > 3)
+    if (!cards.length) return 0
+
+    // dedupe against existing cards (normalized question)
+    const existing = this.memory.read('review/cards.md') ?? ''
+    const seen = new Set([...existing.matchAll(/^Q:\s*(.+)$/gm)].map(m => m[1].trim().toLowerCase()))
+    const day = new Date().toISOString().slice(0, 10)
+    const fresh = cards.filter(c => !seen.has(c.q.toLowerCase())).slice(0, 6)
+    if (!fresh.length) return 0
+
+    const block = `\n### ${day}\n\n` + fresh.map(c => `Q: ${c.q}\nA: ${c.a}`).join('\n\n') + '\n'
+    this.memory.append('review/cards.md', block)
+    return fresh.length
+  }
+
+  // Review session: sample cards, ask the LLM to answer blind, then grade.
+  async review(): Promise<string> {
+    const day = new Date().toISOString().slice(0, 10)
+    const raw = this.memory.read('review/cards.md') ?? ''
+    const cards = [...raw.matchAll(/^Q:\s*(.+)\nA:\s*(.+)$/gm)]
+      .map(m => ({ q: m[1].trim(), a: m[2].trim() }))
+      .filter(c => c.q && c.a)
+
+    if (!cards.length) {
+      const msg = '# Review — no flashcards yet\n\nRun a sleep cycle first — it generates cards from long-term learnings.\n'
+      this.memory.write(`review/session-${day}.md`, msg)
+      return msg
+    }
+
+    // deterministic-ish sample of up to 8 cards
+    const sample = cards.sort(() => Math.random() - 0.5).slice(0, 8)
+    const questions = sample.map((c, i) => `${i + 1}. ${c.q}`).join('\n')
+
+    // blind self-test: can the brain answer its own cards?
+    const answers = await chat(this.store.get().ai as AiProviderConfig, [
+      {
+        role: 'system',
+        content: `You are taking a closed-book quiz on your own knowledge base. Answer each numbered question from memory — concise, one line each, format "N. answer". If unsure, say "don't know" honestly.`
+      },
+      { role: 'user', content: questions }
+    ], [], this.localLlm?.endpoint)
+
+    // grade: show correct answers next to model's attempt
+    const grade = await chat(this.store.get().ai as AiProviderConfig, [
+      {
+        role: 'system',
+        content: `Grade a quiz. For each question show: the model's answer, the correct answer, and PASS/FAIL (PASS = same fact, wording may differ). End with "Score: N/M". Be strict but fair.`
+      },
+      {
+        role: 'user',
+        content: `QUESTIONS:\n${questions}\n\nMODEL ANSWERS:\n${answers.text}\n\nCORRECT ANSWERS:\n${sample.map((c, i) => `${i + 1}. ${c.a}`).join('\n')}`
+      }
+    ], [], this.localLlm?.endpoint)
+
+    const report = [
+      `# Review session — ${day}`,
+      `_${sample.length} cards sampled from ${cards.length} total_`,
+      '',
+      '## Questions', '', questions, '',
+      '## Model answers (blind)', '', answers.text, '',
+      '## Grading', '', grade.text, ''
+    ].join('\n')
+    this.memory.write(`review/session-${day}.md`, report)
+
+    try {
+      if (this.gitSync) await this.gitSync.syncNow()
+    } catch { /* offline ok */ }
+    void this.rag?.reindex().catch(() => {})
+    return report
   }
 
   listSleepReports(): { date: string; content: string }[] {

@@ -45,7 +45,7 @@ export interface Automation {
   id: string
   name: string
   instruction: string          // what the brain should do (natural language)
-  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string                // 'HH:MM' for daily/weekly
   everyMinutes?: number        // for interval

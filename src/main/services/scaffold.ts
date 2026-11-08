@@ -34,6 +34,7 @@ long-term memory: read before answering, write what matters.
 | \`daily/\` | daily intentions/goals |
 | \`meetings/\` | legacy roundtable transcripts |
 | \`entities/\` | one page per person/project/topic, linked with \`[[Name]]\` |
+| \`review/\` | spaced-repetition flashcards (\`cards.md\`) + quiz sessions |
 
 ## MCP server (recommended)
 
@@ -45,7 +46,8 @@ node tools/keepmind-mcp.mjs --dir ./memory
 
 Tools: \`sb_search\` (search memory first!), \`sb_read\`, \`sb_write\`,
 \`sb_append\`, \`sb_remember\` (durable fact/lesson/skill), \`sb_recent\`,
-\`sb_list\`, \`sb_tree\`, \`sb_tasks\`.
+\`sb_list\`, \`sb_tree\`, \`sb_tasks\`, \`sb_query\` (structured filters:
+tasks by status/priority/due, notes by tag, entities by text).
 
 Claude Code picks it up automatically via \`.mcp.json\`. Codex, Gemini CLI,
 OpenCode or any MCP client can spawn the same command.
@@ -54,6 +56,7 @@ OpenCode or any MCP client can spawn the same command.
 
 - Markdown only. One fact per bullet in \`long-term/\` files.
 - Tasks: first line \`# Title\`, second line \`> status: open|done · priority: low|normal|high · due: YYYY-MM-DD · created: ISO\`.
+- Notes may carry YAML frontmatter (\`summary:\`, \`tags:\`, \`links:\`, \`enriched:\`) — preserve it when editing.
 - Link recurring people/projects/topics with \`[[Name]]\` — entity pages live in \`memory/entities/\`.
 - Write in the user's language. Keep entries dated and concise.
 - Prefer \`sb_remember\` for durable facts — it lands in the right long-term file.

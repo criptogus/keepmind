@@ -34,6 +34,25 @@ function slug(s: string): string {
 
 interface EntityHit { name: string; files: Set<string>; count: number }
 
+// Backlinks: which memory files explicitly link to each entity via [[Name]].
+// Returns Map<entity-slug, Set<file>>. Scans the whole memory tree once.
+function computeBacklinks(memory: Memory): Map<string, Set<string>> {
+  const links = new Map<string, Set<string>>()
+  for (const rel of memory.allRelFiles()) {
+    if (rel.startsWith('entities/')) continue // entity pages don't count as sources
+    const content = memory.read(rel)
+    if (!content) continue
+    for (const m of content.matchAll(WIKILINK_RE)) {
+      const target = m[1].split('|')[0].trim()
+      const key = slug(target)
+      if (!key) continue
+      if (!links.has(key)) links.set(key, new Set())
+      links.get(key)!.add(rel)
+    }
+  }
+  return links
+}
+
 // Scan recent memory for capitalized entity candidates + existing [[links]]
 function extractCandidates(memory: Memory): Map<string, EntityHit> {
   const hits = new Map<string, EntityHit>()
@@ -102,6 +121,7 @@ export async function refreshEntities(
     ? await llmDescribe(kept.map(k => k.name), complete)
     : new Map<string, string>()
 
+  const backlinks = computeBacklinks(memory)
   const today = new Date().toISOString().slice(0, 10)
   let created = 0, updated = 0
 
@@ -110,12 +130,15 @@ export async function refreshEntities(
     const existed = memory.read(file) != null
     const desc = descriptions.get(h.name.toLowerCase())
     const sources = [...h.files].sort().slice(0, 25)
+    const linkedFrom = [...(backlinks.get(slug(h.name)) ?? [])]
+      .filter(f => f !== file).sort().slice(0, 25)
     const body = [
       `# ${h.name}\n`,
       `> entity · first seen ${today} · mentioned ${h.count}× in scanned memory\n`,
       desc ? `\n${desc}\n` : '',
       `\n## Sources\n`,
       ...sources.map(s => `- ${s}`),
+      linkedFrom.length ? `\n## Linked from\n` + linkedFrom.map(s => `- ${s}`).join('\n') + '\n' : '',
       `\n## Notes\n\n_(agents and the user can add durable context here)_\n`
     ].join('\n')
     memory.write(file, body)

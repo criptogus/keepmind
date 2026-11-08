@@ -112,6 +112,75 @@ function listTasks(status) {
   return out.length ? out.join('\n') : `no ${status ?? ''} tasks`
 }
 
+// ── structured query: filter tasks / notes / entities ──
+
+function parseTaskMeta(c) {
+  const title = (c.split('\n').find(l => l.startsWith('# ')) ?? '# ').slice(2).trim()
+  const meta = (c.split('\n').find(l => l.startsWith('> ')) ?? '').replace(/^>\s*/, '')
+  return {
+    title, meta, done: /status:\s*done/.test(meta),
+    due: meta.match(/due:\s*(\S+)/)?.[1] ?? '',
+    pri: meta.match(/priority:\s*(\S+)/)?.[1] ?? 'normal'
+  }
+}
+
+function queryMem(a = {}) {
+  const kind = String(a.kind ?? 'tasks')
+  const limit = Math.min(a.limit ?? 20, 100)
+  const text = String(a.text ?? '').toLowerCase()
+  const match = (s) => !text || String(s).toLowerCase().includes(text)
+
+  if (kind === 'tasks') {
+    const dir = join(ROOT, 'tasks')
+    if (!existsSync(dir)) return 'no tasks yet'
+    const out = []
+    for (const f of readdirSync(dir).filter(f => f.endsWith('.md'))) {
+      const c = readMem(`tasks/${f}`) ?? ''
+      const t = parseTaskMeta(c)
+      if (a.status === 'open' && t.done) continue
+      if (a.status === 'done' && !t.done) continue
+      if (a.priority && t.pri !== a.priority) continue
+      if (a.dueBefore && t.due && t.due >= String(a.dueBefore)) continue
+      if (a.dueAfter && t.due && t.due <= String(a.dueAfter)) continue
+      if (a.overdue === true && (!t.due || t.done || t.due >= new Date().toISOString().slice(0, 10))) continue
+      if (!match(t.title) && !match(c.slice(0, 400))) continue
+      out.push(`${t.done ? '[x]' : '[ ]'} ${t.title} · ${t.pri}${t.due ? ` · due ${t.due}` : ''} · tasks/${f}`)
+    }
+    return out.length ? out.slice(0, limit).join('\n') : 'no matching tasks'
+  }
+
+  if (kind === 'notes') {
+    const files = allFiles().filter(f => f.startsWith('notes/'))
+    const out = []
+    for (const f of files) {
+      const c = readMem(f) ?? ''
+      const title = (c.split('\n').find(l => l.startsWith('# ')) ?? f).slice(2).trim()
+      const tags = [...c.matchAll(/#([\p{L}\p{N}_-]{2,})/gu)].map(m => m[1].toLowerCase())
+      if (a.tag && !tags.includes(String(a.tag).toLowerCase().replace(/^#/, ''))) continue
+      if (!match(title) && !match(c.slice(0, 800))) continue
+      out.push(`${title} · ${f}${tags.length ? ` · #${[...new Set(tags)].slice(0, 5).join(' #')}` : ''}`)
+    }
+    return out.length ? out.slice(0, limit).join('\n') : 'no matching notes'
+  }
+
+  if (kind === 'entities') {
+    const idx = readMem('entities/index.md') ?? ''
+    const rows = idx.split('\n').filter(l => l.includes('[['))
+    const out = rows.filter(l => match(l)).map(l => l.replace(/^- /, '').trim())
+    return out.length ? out.slice(0, limit).join('\n') : 'no matching entities'
+  }
+
+  if (kind === 'files' || kind === 'memory') {
+    const dir = String(a.dir ?? '').replace(/\/$/, '')
+    const out = allFiles()
+      .filter(f => (!dir || f === dir || f.startsWith(dir + '/')) && match(readMem(f) ?? ''))
+      .slice(0, limit)
+    return out.length ? out.join('\n') : 'no matching files'
+  }
+
+  return `unknown kind "${kind}" — use tasks|notes|entities|files`
+}
+
 // ── tools ──
 
 const TOOLS = [
@@ -169,6 +238,19 @@ const TOOLS = [
     name: 'sb_tasks',
     description: 'List tasks from memory/tasks/. status: open|done|all.',
     inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['open', 'done', 'all'] } } }
+  },
+  {
+    name: 'sb_query',
+    description: 'Structured query over memory. kind: tasks|notes|entities|files. Filters: text (substring), tag (notes), status/priority/dueBefore/dueAfter/overdue (tasks), dir (files), limit.',
+    inputSchema: { type: 'object', properties: {
+      kind: { type: 'string', enum: ['tasks', 'notes', 'entities', 'files'] },
+      text: { type: 'string' }, tag: { type: 'string' }, dir: { type: 'string' },
+      status: { type: 'string' }, priority: { type: 'string' },
+      dueBefore: { type: 'string', description: 'YYYY-MM-DD' },
+      dueAfter: { type: 'string', description: 'YYYY-MM-DD' },
+      overdue: { type: 'boolean' },
+      limit: { type: 'number' }
+    } }
   }
 ]
 
@@ -205,6 +287,7 @@ function callTool(name, a = {}) {
     }
     case 'sb_tree': return allFiles().join('\n') || '(empty memory)'
     case 'sb_tasks': return listTasks(a.status && a.status !== 'all' ? a.status : undefined)
+    case 'sb_query': return queryMem(a)
     default: throw new Error(`unknown tool: ${name}`)
   }
 }
@@ -227,7 +310,7 @@ function handle(msg) {
     return ok(id, {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: {}, resources: {} },
-      serverInfo: { name: 'second-brain', version: '1.0.0' }
+      serverInfo: { name: 'keepmind', version: '1.0.0' }
     })
   }
   if (method === 'ping') return ok(id, {})

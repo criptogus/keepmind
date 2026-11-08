@@ -32,7 +32,7 @@ const SEARCH_K = 6
 // sources survive — entities & long-term first, raw logs last.
 const INDEX_DIRS = [
   'entities', 'long-term', 'notes', 'tasks', 'daily',
-  'insights', 'summaries', 'sleep',
+  'insights', 'summaries', 'sleep', 'review',
   'short-term', 'medium-term', 'agents', 'inbox', 'meetings'
 ]
 const SKIP_FILES = new Set(['INDEX.md'])
