@@ -111,7 +111,7 @@ export default function Meetings({ agents, onActivity, onToast }: {
                 onClick={() => toggleAgent(a.id)}
                 disabled={running}
               >
-                <span style={{ color: AGENT_ACCENTS[a.id] ?? '#22d3ee' }}>{a.emoji}</span> {a.name}
+                <span className="feat-emoji" style={{ fontSize: 15 }}>{a.emoji}</span> {a.name}
               </button>
             ))}
           </div>
@@ -132,7 +132,7 @@ export default function Meetings({ agents, onActivity, onToast }: {
               const agent = agents.find(a => a.id === m.agentId)
               return (
                 <div key={i} className="meeting-msg">
-                  <span className="meeting-msg__who" style={{ color: AGENT_ACCENTS[m.agentId] ?? undefined }}>{agent?.emoji} {agent?.name ?? m.agentId}</span>
+                  <span className="meeting-msg__who" style={{ color: AGENT_ACCENTS[m.agentId] ?? undefined }}><span className="feat-emoji" style={{ fontSize: 13 }}>{agent?.emoji}</span> {agent?.name ?? m.agentId}</span>
                   <p>{m.text}</p>
                 </div>
               )

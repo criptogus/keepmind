@@ -649,21 +649,20 @@ button.chip { cursor: pointer; font-family: var(--mono); }
   0%, 100% { filter: drop-shadow(0 0 3px rgba(34,211,238,.35)); }
   50% { filter: drop-shadow(0 0 10px rgba(34,211,238,.8)); }
 }
-/* glow that inherits the element's own accent color */
-@keyframes glowPulseCurrent {
-  0%, 100% { filter: drop-shadow(0 0 4px currentColor); }
-  50% { filter: drop-shadow(0 0 14px currentColor); }
-}
 .nav__item .ico { animation: icoGlow 3.2s ease-in-out infinite; }
 .nav__item.is-active .ico { animation-name: icoGlowActive; animation-duration: 2.2s; }
 .mobile-nav__item svg { animation: icoGlow 3.2s ease-in-out infinite; }
 .btn svg { animation: icoGlow 4s ease-in-out infinite; }
-.agent-btn:not(.is-active) .emoji { animation: glowPulseCurrent 3.4s ease-in-out infinite; }
 
-/* emoji "icons" across cards/menus — tinted glow pulse in their accent color */
+/* platform icon standard: desaturated glyph + pulsing cyan glow */
+@keyframes emojiGlowBlue {
+  0%, 100% { filter: grayscale(1) brightness(1.2) drop-shadow(0 0 4px rgba(34,211,238,.55)); }
+  50% { filter: grayscale(1) brightness(1.2) drop-shadow(0 0 13px rgba(34,211,238,1)); }
+}
+.agent-btn .emoji { animation: emojiGlowBlue 3s ease-in-out infinite; }
+
 .p-emoji, .m-emoji, .a-emoji, .conn-emoji, .feat-emoji {
-  animation: glowPulseCurrent 3s ease-in-out infinite;
-  filter: drop-shadow(0 0 6px currentColor);
+  animation: emojiGlowBlue 3s ease-in-out infinite;
 }
 
 /* ── Gradient view titles + accent text ──── */

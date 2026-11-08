@@ -26,9 +26,9 @@ interface Parsed {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  brain: '🧠 brain task',
-  sleep: '🌙 sleep cycle',
-  summary: '📋 summary'
+  brain: 'brain task',
+  sleep: 'sleep cycle',
+  summary: 'summary'
 }
 
 function scheduleLabel(a: Automation): string {

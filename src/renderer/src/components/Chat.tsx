@@ -114,7 +114,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
                 textShadow: `0 0 10px ${accent}aa`
               } : undefined}
             >
-              <span className="emoji" style={{ color: accent, ...(isActive ? { filter: `drop-shadow(0 0 6px ${accent})` } : {}) }}>{a.emoji}</span>
+              <span className="emoji">{a.emoji}</span>
               <span className="label">{a.name}</span>
             </button>
           )
@@ -128,7 +128,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
             color: AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee',
             borderColor: `${AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee'}88`,
             boxShadow: `0 0 16px ${AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee'}40`
-          }}>{agent?.emoji}</div>
+          }}><span className="feat-emoji">{agent?.emoji}</span></div>
           <div>
             <h3>{agent?.name ?? 'Second Brain'}</h3>
             <div className="faint" style={{ fontSize: 12 }}>
@@ -140,7 +140,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
         <div className="chat-messages">
           {msgs.length === 0 && (
             <div className="empty">
-              <div className="e-emoji">{agent?.emoji}</div>
+              <div className="e-emoji"><span className="feat-emoji" style={{ fontSize: 'inherit' }}>{agent?.emoji}</span></div>
               <h3>Talk to {agent?.name}</h3>
               <p>
                 {agent?.id === 'brain'
@@ -155,7 +155,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
             return (
             <div key={i} className={`msg ${m.role === 'user' ? 'msg--user' : ''}`}>
               <div className="msg__avatar" style={m.role === 'assistant' ? { color: msgAccent } : undefined}>
-                {m.role === 'user' ? '🧑' : (msgAgent?.emoji ?? agent?.emoji ?? '🧠')}
+                <span className="feat-emoji" style={{ fontSize: 'inherit' }}>{m.role === 'user' ? '🧑' : (msgAgent?.emoji ?? agent?.emoji ?? '🧠')}</span>
               </div>
               <div>
                 <div className="msg__bubble msg__body">
