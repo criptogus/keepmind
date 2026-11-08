@@ -41,14 +41,20 @@ export default function NeuralNet({ seed, color }: { seed: string; color: string
   })
 
   return (
-    <svg className="nn" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <svg className="nn" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice"
+      style={{ ['--nnc' as any]: color }} aria-hidden="true">
       {edges.map(([a, b], i) => (
         <line key={i} className="nn-edge" x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y}
           style={{ stroke: color, animationDelay: `${(i % 7) * 0.9}s` }} />
       ))}
       {nodes.map((n, i) => (
-        <circle key={i} className="nn-node" cx={n.x} cy={n.y} r={n.r}
-          style={{ fill: color, animationDelay: `${n.d}s` }} />
+        <g key={i}>
+          {/* discharge halo — expands and fades like a neuron firing */}
+          <circle className="nn-halo" cx={n.x} cy={n.y} r={n.r}
+            style={{ stroke: color, animationDelay: `${n.d}s` }} />
+          <circle className="nn-node" cx={n.x} cy={n.y} r={n.r}
+            style={{ fill: color, animationDelay: `${n.d * 0.7}s` }} />
+        </g>
       ))}
       {/* signal pulses traveling along a few edges */}
       {edges.slice(0, 4).map(([a, b], i) => (
