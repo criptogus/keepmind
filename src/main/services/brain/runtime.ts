@@ -48,8 +48,8 @@ export class BrainRuntime {
     return {
       shortTerm: this.memory.shortTermFiles().length,
       mediumTerm: this.memory.mediumTermFiles().length,
-      longTerm: this.memory.countFiles('long-term'),
-      sleepCycles: this.memory.list('sleep').length
+      longTerm: this.memory.countFiles(this.memory.scopePath('long-term')),
+      sleepCycles: this.memory.list(this.memory.scopePath('sleep')).length
     }
   }
 

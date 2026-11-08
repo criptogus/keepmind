@@ -1,6 +1,10 @@
-import { appendFileSync,existsSync,mkdirSync,readdirSync,readFileSync,statSync,unlinkSync,writeFileSync } from 'node:fs'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { appendFileSync,existsSync,mkdirSync,readdirSync,readFileSync,renameSync,statSync,unlinkSync,writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveInside } from '../../safe-path'
+import { randomUUID } from 'node:crypto'
+import { policy, frontmatter, detections, restricted, allowedSpace, maxClass, type Classification } from '../security/classification'
+import type { SpaceKeys } from '../security/keys'
 import type { GitHubConfig } from '../../store'
 
 export interface ActivityEntry {
@@ -17,9 +21,24 @@ export class Memory {
   // journal can attribute each change (sleep cycle, chat, ui, automation…)
   activitySource = 'system'
   private quiet = false
+  private migrating = false
   private journal: ActivityEntry[] = []
   private journalFile: string
   private journalAppends = 0
+
+  classificationFloor: Classification = 'public'
+  readonly readSpaces = new Set<string>()
+  private scope = new AsyncLocalStorage<{ space: string; grants: string[] }>()
+  private activeSpace = 'personal'
+  private activeGrants: string[] = []
+  get currentSpace() { return this.scope.getStore()?.space ?? this.activeSpace }
+  set currentSpace(value: string) { this.activeSpace = value }
+  get grants() { return this.scope.getStore()?.grants ?? this.activeGrants }
+  set grants(value: string[]) { this.activeGrants = value }
+  withScope<T>(fn: () => T): T { return this.scope.run({ space: this.currentSpace, grants: [...this.grants] }, fn) }
+  keys?: SpaceKeys
+  encryptAll = false
+  onKeysChanged: (() => void) | null = null
 
   constructor(private dir: string, private gh: GitHubConfig | (() => GitHubConfig) | null) {
     mkdirSync(this.dir, { recursive: true })
@@ -45,7 +64,27 @@ export class Memory {
   write(relative: string, content: string) {
     const p = this.path(relative)
     mkdirSync(join(p, '..'), { recursive: true })
-    writeFileSync(p, content, 'utf8')
+    if (!this.migrating && existsSync(p) && this.read(relative) === null) throw new Error('Space access denied')
+    const item = policy(content, this.currentSpace)
+    item.class = maxClass(item.class, this.classificationFloor)
+    if (!allowedSpace(item.space, this.currentSpace, this.grants)) throw new Error('Space access denied')
+    const mustEncrypt = this.encryptAll || restricted(item.class)
+    if (mustEncrypt && !this.keys) throw new Error('Memory locked: encryption keys required')
+    for (const hit of detections(content).filter(h => h.secret)) {
+      if (!this.keys) throw new Error('Secret store unavailable')
+      const id = randomUUID()
+      this.keys.secrets.put(id, hit.value)
+      content = content.split(hit.value).join(`[MASKED] keychain:${id}`)
+    }
+    content = frontmatter(content, item)
+    if (mustEncrypt) {
+      this.keys!.createSpace(item.space)
+      this.onKeysChanged?.()
+      content = 'KEEPMIND-ITEM:1\n' + JSON.stringify({ space: item.space, box: this.keys!.encrypt(content, item.space, relative) })
+    }
+    const temp = p + '.tmp'
+    writeFileSync(temp, content, { encoding: 'utf8', mode: 0o600 })
+    renameSync(temp, p)
     if (!this.quiet) {
       this.onWrite?.(relative)
       this.journalPush('write', relative)
@@ -53,13 +92,7 @@ export class Memory {
   }
 
   append(relative: string, content: string) {
-    const p = this.path(relative)
-    mkdirSync(join(p, '..'), { recursive: true })
-    appendFileSync(p, content, 'utf8')
-    if (!this.quiet) {
-      this.onWrite?.(relative)
-      this.journalPush('append', relative)
-    }
+    this.write(relative, (this.read(relative) ?? '') + content)
   }
 
   // Activity journal — every local mutation is recorded to
@@ -91,7 +124,7 @@ export class Memory {
   }
 
   activity(limit = 200): ActivityEntry[] {
-    return this.journal.slice(-limit).reverse()
+    return this.journal.filter(e => { try { return this.read(e.path) !== null } catch { return false } }).slice(-limit).reverse()
   }
 
   // Writes/removes that must NOT trigger a sync push (used by GitSync.pull)
@@ -107,14 +140,45 @@ export class Memory {
 
   allRelFiles(): string[] { return this.allFiles('') }
 
+  // Explicit migration boundary: classify imported plaintext before readers/indexers see it.
+  // Existing ciphertext is left untouched, preserving incremental behavior.
+  protectExisting(): number {
+    if (!this.keys) throw new Error('Memory locked')
+    let protectedCount = 0
+    for (const rel of this.allFiles('', '', true)) {
+      const text = readFileSync(this.path(rel), 'utf8')
+      if (text.startsWith('KEEPMIND-ITEM:1\n')) continue
+      const item = policy(text)
+      if (!allowedSpace(item.space, this.currentSpace, this.grants) || (!this.encryptAll && !restricted(item.class))) continue
+      this.migrating = true
+      try { this.write(rel, text); protectedCount++ } finally { this.migrating = false }
+    }
+    return protectedCount
+  }
+
   read(relative: string): string | null {
     const p = this.path(relative)
-    return existsSync(p) ? readFileSync(p, 'utf8') : null
+    if (!existsSync(p)) return null
+    let text = readFileSync(p, 'utf8')
+    const encrypted = text.startsWith('KEEPMIND-ITEM:1\n')
+    if (encrypted) {
+      const item = JSON.parse(text.slice('KEEPMIND-ITEM:1\n'.length))
+      if (!allowedSpace(item.space, this.currentSpace, this.grants)) return null
+      if (!this.keys) throw new Error('Memory locked')
+      text = this.keys.decrypt(item.box, item.space, relative)
+    }
+    const item = policy(text)
+    if (!allowedSpace(item.space, this.currentSpace, this.grants)) return null
+    if (restricted(item.class) && !encrypted) throw new Error('Unencrypted restricted memory requires migration')
+    this.classificationFloor = maxClass(this.classificationFloor, item.class)
+    this.readSpaces.add(item.space)
+    return text
   }
 
   remove(relative: string) {
     const p = this.path(relative)
     if (existsSync(p)) {
+      if (this.read(relative) === null) throw new Error('Space access denied')
       unlinkSync(p)
       if (!this.quiet) {
         this.onWrite?.(relative)
@@ -124,13 +188,15 @@ export class Memory {
   }
 
   // Short-term files older than `days` are candidates for medium-term consolidation
-  shortTermFiles(): string[] { return this.list('short-term').sort() }
-  mediumTermFiles(): string[] { return this.list('medium-term').sort() }
-  longTermFiles(): string[] { return this.list('long-term').sort() }
+  scopePath(relative: string) { return this.currentSpace === 'personal' || relative.startsWith('spaces/') ? relative : `spaces/${this.currentSpace}/${relative}` }
+
+  shortTermFiles(): string[] { return this.list(this.scopePath('short-term')).sort() }
+  mediumTermFiles(): string[] { return this.list(this.scopePath('medium-term')).sort() }
+  longTermFiles(): string[] { return this.list(this.scopePath('long-term')).sort() }
 
   list(dir: string): string[] {
     const p = this.path(dir)
-    return existsSync(p) ? readdirSync(p).filter(f => f.endsWith('.md')) : []
+    return existsSync(p) ? readdirSync(p).filter(f => f.endsWith('.md') && this.read(`${dir}/${f}`) !== null) : []
   }
 
   async syncToGitHub(message: string) {
@@ -153,19 +219,19 @@ export class Memory {
     let n = 0
     for (const e of readdirSync(p, { withFileTypes: true })) {
       if (e.isDirectory()) n += this.countFiles(join(dir, e.name))
-      else if (e.name.endsWith('.md')) n++
+      else if (e.name.endsWith('.md') && this.read(join(dir, e.name)) !== null) n++
     }
     return n
   }
 
-  private allFiles(dir: string, prefix = ''): string[] {
+  private allFiles(dir: string, prefix = '', raw = false): string[] {
     const out: string[] = []
     const p = this.path(dir)
     if (!existsSync(p)) return out
     for (const e of readdirSync(p, { withFileTypes: true })) {
       const rel = prefix ? `${prefix}/${e.name}` : e.name
-      if (e.isDirectory()) out.push(...this.allFiles(join(dir, e.name), rel))
-      else if (e.name.endsWith('.md')) out.push(rel)
+      if (e.isDirectory()) out.push(...this.allFiles(join(dir, e.name), rel, raw))
+      else if (e.name.endsWith('.md') && (raw || this.read(rel) !== null)) out.push(rel)
     }
     return out
   }

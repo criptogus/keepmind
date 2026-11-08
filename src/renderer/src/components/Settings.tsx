@@ -1,3 +1,4 @@
+import MemorySecurity from './MemorySecurity'
 import { useEffect, useState } from 'react'
 import { IconSparkle } from './icons'
 
@@ -210,6 +211,8 @@ export default function Settings({ onToast, onActivity }: Props) {
             </button>
           </div>
         </div>
+
+        <MemorySecurity />
 
         {/* Memory / GitHub */}
         <div className="card card-pad">

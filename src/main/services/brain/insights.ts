@@ -6,10 +6,10 @@ import { BrainContext } from './context'
 export class BrainInsights extends BrainContext {
   async generateInsights(): Promise<string[]> {
     const cfg = this.store.get()
-    const memoryFiles = [...this.memory.shortTermFiles(), ...this.memory.list('inbox')].slice(-10)
+    const memoryFiles = [...this.memory.shortTermFiles(), ...this.memory.list(this.memory.scopePath('inbox'))].slice(-10)
     const corpus = memoryFiles.map(f => {
-      const dir = this.memory.read(`short-term/${f}`) != null ? 'short-term' : 'inbox'
-      return this.memory.read(`${dir}/${f}`) ?? ''
+      const dir = this.memory.read(this.memory.scopePath(`short-term/${f}`)) != null ? 'short-term' : 'inbox'
+      return this.memory.read(this.memory.scopePath(`${dir}/${f}`)) ?? ''
     }).join('\n---\n').slice(-12000)
     if (!corpus.trim()) return []
 
@@ -22,14 +22,14 @@ export class BrainInsights extends BrainContext {
     ], [], this.localLlm?.endpoint)
     const lines = res.text.split('\n').map(l => l.trim()).filter(Boolean)
     const day = new Date().toISOString().slice(0, 10)
-    this.memory.write(`insights/${day}.md`, `# Insights — ${day}\n\n${lines.map(l => `- ${l}`).join('\n')}\n`)
+    this.memory.write(this.memory.scopePath(`insights/${day}.md`), `# Insights — ${day}\n\n${lines.map(l => `- ${l}`).join('\n')}\n`)
     return lines
   }
 
   async dailySummary(): Promise<string> {
     const cfg = this.store.get()
     const day = new Date().toISOString().slice(0, 10)
-    const today = this.memory.read(`short-term/${day}.md`) ?? this.memory.read(`inbox/${day}.md`) ?? '(no activity today)'
+    const today = this.memory.read(this.memory.scopePath(`short-term/${day}.md`)) ?? this.memory.read(this.memory.scopePath(`inbox/${day}.md`)) ?? '(no activity today)'
     const res = await chat(cfg.ai as AiProviderConfig, [
       {
         role: 'system',
@@ -37,7 +37,7 @@ export class BrainInsights extends BrainContext {
       },
       { role: 'user', content: `Today\'s activity:\n${today.slice(-8000)}` }
     ], [], this.localLlm?.endpoint)
-    this.memory.write(`summaries/${day}.md`, `# Daily summary — ${day}\n\n${res.text}\n`)
+    this.memory.write(this.memory.scopePath(`summaries/${day}.md`), `# Daily summary — ${day}\n\n${res.text}\n`)
     return res.text
   }
 
@@ -52,21 +52,21 @@ export class BrainInsights extends BrainContext {
     const parts: string[] = []
     const short = this.memory.shortTermFiles().slice(-10)
     for (const f of short) {
-      const c = this.memory.read(`short-term/${f}`)
+      const c = this.memory.read(this.memory.scopePath(`short-term/${f}`))
       if (c) parts.push(`### ${f}\n${c}`)
     }
     // legacy inbox fallback
-    for (const f of this.memory.list('inbox').slice(-5)) {
-      const c = this.memory.read(`inbox/${f}`)
+    for (const f of this.memory.list(this.memory.scopePath('inbox')).slice(-5)) {
+      const c = this.memory.read(this.memory.scopePath(`inbox/${f}`))
       if (c) parts.push(`### inbox/${f}\n${c}`)
     }
-    const insights = this.memory.list('insights').slice(-5)
+    const insights = this.memory.list(this.memory.scopePath('insights')).slice(-5)
     for (const f of insights) {
-      const c = this.memory.read(`insights/${f}`)
+      const c = this.memory.read(this.memory.scopePath(`insights/${f}`))
       if (c) parts.push(`### ${f}\n${c}`)
     }
     // knowledge gaps: searches that returned nothing (logged by MCP/RAG clients)
-    const gaps = this.memory.read('ops/search-gaps.md')
+    const gaps = this.memory.read(this.memory.scopePath('ops/search-gaps.md'))
     if (gaps) parts.push(`### ops/search-gaps.md (unanswered queries)\n${gaps.slice(-3000)}`)
     const corpus = parts.join('\n\n').slice(-maxChars)
     return corpus
@@ -75,7 +75,7 @@ export class BrainInsights extends BrainContext {
   protected async generateFlashcards(): Promise<number> {
     // source: recent long-term learnings
     const src = ['facts.md', 'lessons.md', 'skills.md']
-      .map(f => this.memory.read(`long-term/${f}`) ?? '')
+      .map(f => this.memory.read(this.memory.scopePath(`long-term/${f}`)) ?? '')
       .join('\n')
       .slice(-12000)
     if (src.trim().length < 200) return 0
@@ -99,14 +99,14 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
     if (!cards.length) return 0
 
     // dedupe against existing cards (normalized question)
-    const existing = this.memory.read('review/cards.md') ?? ''
+    const existing = this.memory.read(this.memory.scopePath('review/cards.md')) ?? ''
     const seen = new Set([...existing.matchAll(/^Q:\s*(.+)$/gm)].map(m => m[1].trim().toLowerCase()))
     const day = new Date().toISOString().slice(0, 10)
     const fresh = cards.filter(c => !seen.has(c.q.toLowerCase())).slice(0, 6)
     if (!fresh.length) return 0
 
     const block = `\n### ${day}\n\n` + fresh.map(c => `Q: ${c.q}\nA: ${c.a}`).join('\n\n') + '\n'
-    this.memory.append('review/cards.md', block)
+    this.memory.append(this.memory.scopePath('review/cards.md'), block)
     return fresh.length
   }
 

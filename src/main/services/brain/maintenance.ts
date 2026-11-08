@@ -11,17 +11,17 @@ export class BrainMaintenance extends BrainSleep {
 
     // Gather the brain's recent self-reports as evidence
     const corpusParts: string[] = [`Memory stats: ${JSON.stringify(stats)}`]
-    for (const r of this.memory.list('sleep').sort().slice(-5)) {
-      const c = this.memory.read(`sleep/${r}`)
+    for (const r of this.memory.list(this.memory.scopePath('sleep')).sort().slice(-5)) {
+      const c = this.memory.read(this.memory.scopePath(`sleep/${r}`))
       if (c) corpusParts.push(`### sleep/${r}\n${c.slice(0, 3000)}`)
     }
-    for (const f of this.memory.list('insights').sort().slice(-5)) {
-      const c = this.memory.read(`insights/${f}`)
+    for (const f of this.memory.list(this.memory.scopePath('insights')).sort().slice(-5)) {
+      const c = this.memory.read(this.memory.scopePath(`insights/${f}`))
       if (c) corpusParts.push(`### insights/${f}\n${c.slice(0, 2000)}`)
     }
-    const gaps = this.memory.read('ops/search-gaps.md')
+    const gaps = this.memory.read(this.memory.scopePath('ops/search-gaps.md'))
     if (gaps) corpusParts.push(`### unanswered queries (knowledge gaps)\n${gaps.slice(-3000)}`)
-    const prior = this.memory.read('long-term/evolution.md')
+    const prior = this.memory.read(this.memory.scopePath('long-term/evolution.md'))
     if (prior) corpusParts.push(`### prior evolution proposals\n${prior.slice(-4000)}`)
     const corpus = corpusParts.join('\n\n').slice(-24000)
 
@@ -42,8 +42,8 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
     ], [], this.localLlm?.endpoint)
 
     const report = `# Evolution — ${day}\n\n_Generated ${new Date().toISOString()} · stats: ${JSON.stringify(stats)}_\n\n${res.text}\n`
-    this.memory.write(`insights/evolution-${day}.md`, report)
-    this.memory.append('long-term/evolution.md', `\n\n## ${day}\n\n${res.text}\n`)
+    this.memory.write(this.memory.scopePath(`insights/evolution-${day}.md`), report)
+    this.memory.append(this.memory.scopePath('long-term/evolution.md'), `\n\n## ${day}\n\n${res.text}\n`)
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()
@@ -59,7 +59,7 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
   // YAML frontmatter at the top of the note (never rewrites user content).
 
   protected async enrichNote(rel: string, entityNames: string[]): Promise<boolean> {
-    const content = this.memory.read(rel) ?? ''
+    const content = this.memory.read(this.memory.scopePath(rel)) ?? ''
     if (!content.trim()) return false
     // already enriched (frontmatter marker or legacy Enrichment section)
     if (/^---\n[\s\S]*?enriched:/m.test(content) || content.includes('## Enrichment')) return false
@@ -97,14 +97,14 @@ If a field has nothing useful write "-". Write values in the user's language.`
     let next: string
     const existing = content.match(/^---\n[\s\S]*?\n---\n?/)
     next = existing ? fm + content.slice(existing[0].length) : fm + content
-    this.memory.write(rel, next)
+    this.memory.write(this.memory.scopePath(rel), next)
     return true
   }
 
   async enrich(): Promise<{ enriched: number; report: string }> {
     const day = new Date().toISOString().slice(0, 10)
-    const notes = this.memory.list('notes').sort().slice(-30)
-    const entityIndex = this.memory.read('entities/index.md') ?? ''
+    const notes = this.memory.list(this.memory.scopePath('notes')).sort().slice(-30)
+    const entityIndex = this.memory.read(this.memory.scopePath('entities/index.md')) ?? ''
     const entityNames = [...entityIndex.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map(m => m[1].trim()).slice(0, 80)
 
     let enriched = 0
@@ -126,7 +126,7 @@ If a field has nothing useful write "-". Write values in the user's language.`
       ...lines,
       ''
     ].join('\n')
-    this.memory.write(`insights/enrich-${day}.md`, report)
+    this.memory.write(this.memory.scopePath(`insights/enrich-${day}.md`), report)
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()
@@ -142,14 +142,14 @@ If a field has nothing useful write "-". Write values in the user's language.`
   // Review session: sample cards, ask the LLM to answer blind, then grade.
   async review(): Promise<string> {
     const day = new Date().toISOString().slice(0, 10)
-    const raw = this.memory.read('review/cards.md') ?? ''
+    const raw = this.memory.read(this.memory.scopePath('review/cards.md')) ?? ''
     const cards = [...raw.matchAll(/^Q:\s*(.+)\nA:\s*(.+)$/gm)]
       .map(m => ({ q: m[1].trim(), a: m[2].trim() }))
       .filter(c => c.q && c.a)
 
     if (!cards.length) {
       const msg = '# Review — no flashcards yet\n\nRun a sleep cycle first — it generates cards from long-term learnings.\n'
-      this.memory.write(`review/session-${day}.md`, msg)
+      this.memory.write(this.memory.scopePath(`review/session-${day}.md`), msg)
       return msg
     }
 
@@ -186,7 +186,7 @@ If a field has nothing useful write "-". Write values in the user's language.`
       '## Model answers (blind)', '', answers.text, '',
       '## Grading', '', grade.text, ''
     ].join('\n')
-    this.memory.write(`review/session-${day}.md`, report)
+    this.memory.write(this.memory.scopePath(`review/session-${day}.md`), report)
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()
@@ -229,7 +229,7 @@ If a field has nothing useful write "-". Write values in the user's language.`
       ? [`# Security audit — ${day}`, '', `⚠️ **${hits.length} potential secret(s) found in memory:**`, '', ...hits.slice(0, 100), '', '_Values redacted — review and rotate/remove the exposed credentials._', '']
       : [`# Security audit — ${day}`, '', '✅ No secret patterns detected in memory files.', '']
     const text = report.join('\n')
-    this.memory.write(`insights/security-${day}.md`, text)
+    this.memory.write(this.memory.scopePath(`insights/security-${day}.md`), text)
     return text
   }
 
@@ -240,13 +240,13 @@ If a field has nothing useful write "-". Write values in the user's language.`
 
   async evolveSkills(): Promise<string> {
     const day = new Date().toISOString().slice(0, 10)
-    const skillsMd = this.memory.read('long-term/skills.md') ?? ''
-    const skillFiles = this.memory.list('skills').sort()
-    const skillDocs = skillFiles.map(f => `### skills/${f}\n${(this.memory.read(`skills/${f}`) ?? '').slice(0, 3000)}`)
+    const skillsMd = this.memory.read(this.memory.scopePath('long-term/skills.md')) ?? ''
+    const skillFiles = this.memory.list(this.memory.scopePath('skills')).sort()
+    const skillDocs = skillFiles.map(f => `### skills/${f}\n${(this.memory.read(this.memory.scopePath(`skills/${f}`)) ?? '').slice(0, 3000)}`)
 
     if (!skillsMd.trim() && !skillDocs.length) {
       const msg = '# Skills evolution — nothing to review yet\n\nNo skills recorded. They accumulate from sleep cycles and `sb_remember kind=skill`.\n'
-      this.memory.write(`insights/skills-${day}.md`, msg)
+      this.memory.write(this.memory.scopePath(`insights/skills-${day}.md`), msg)
       return msg
     }
 
@@ -265,7 +265,7 @@ If a field has nothing useful write "-". Write values in the user's language.`
         out.push(line)
       }
       const next = out.join('\n')
-      if (next !== skillsMd) this.memory.write('long-term/skills.md', next)
+      if (next !== skillsMd) this.memory.write(this.memory.scopePath('long-term/skills.md'), next)
     }
 
     // 2) LLM consolidation review
@@ -294,8 +294,8 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
       `_${deduped} duplicate bullet(s) removed from skills.md · ${skillFiles.length} skill page(s)_`,
       '', res.text, ''
     ].join('\n')
-    this.memory.write(`insights/skills-${day}.md`, report)
-    this.memory.append('long-term/skills.md', `\n\n## Evolution review ${day}\n\n${res.text}\n`)
+    this.memory.write(this.memory.scopePath(`insights/skills-${day}.md`), report)
+    this.memory.append(this.memory.scopePath('long-term/skills.md'), `\n\n## Evolution review ${day}\n\n${res.text}\n`)
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()
@@ -313,17 +313,17 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
     const day = new Date().toISOString().slice(0, 10)
     if (!this.laya?.status().available) {
       const msg = '# Inbox triage — skipped\n\nLaya decision engine not installed (Settings → Decision engine).\n'
-      this.memory.write(`insights/triage-${day}.md`, msg)
+      this.memory.write(this.memory.scopePath(`insights/triage-${day}.md`), msg)
       return msg
     }
 
     const processed = new Set(
-      (this.memory.read('ops/triaged-files.txt') ?? '').split('\n').map(s => s.trim()).filter(Boolean)
+      (this.memory.read(this.memory.scopePath('ops/triaged-files.txt')) ?? '').split('\n').map(s => s.trim()).filter(Boolean)
     )
-    const pending = this.memory.list('inbox').filter(f => !processed.has(f)).sort()
+    const pending = this.memory.list(this.memory.scopePath('inbox')).filter(f => !processed.has(f)).sort()
     if (!pending.length) {
       const msg = '# Inbox triage — nothing new\n\nAll inbox files already triaged.\n'
-      this.memory.write(`insights/triage-${day}.md`, msg)
+      this.memory.write(this.memory.scopePath(`insights/triage-${day}.md`), msg)
       return msg
     }
 
@@ -343,7 +343,7 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
     let blocksSeen = 0, kept = 0, dropped = 0, dups = 0
 
     for (const file of pending.slice(0, 10)) {
-      const content = this.memory.read(`inbox/${file}`) ?? ''
+      const content = this.memory.read(this.memory.scopePath(`inbox/${file}`)) ?? ''
       if (!content.trim()) { processed.add(file); continue }
       const blocks = splitBlocks(content).slice(0, 30)
       for (const block of blocks) {
@@ -358,7 +358,7 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
 
         // semantic dedup gate for durable writes
         if (['fact', 'lesson', 'skill', 'decision'].includes(dest)) {
-          const existing = this.memory.read(`long-term/${dest}s.md`)?.slice(-4000) ?? ''
+          const existing = this.memory.read(this.memory.scopePath(`long-term/${dest}s.md`))?.slice(-4000) ?? ''
           if (existing) {
             const p = await this.laya!.yesNo(
               `New item: ${text}\n\nExisting memory:\n${existing}`,
@@ -382,25 +382,25 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
         for (const [i, t] of items.entries()) {
           const title = t.split(/[.\n]/)[0].slice(0, 80) || 'triage item'
           const id = `${day.replace(/-/g, '')}-triage-${i}-${Math.random().toString(36).slice(2, 5)}`
-          this.memory.write(`tasks/${id}.md`,
+          this.memory.write(this.memory.scopePath(`tasks/${id}.md`),
             `# ${title}\n> status: open · priority: normal · created: ${new Date().toISOString()}\n\n${prov}${t}\n`)
         }
       } else if (dest === 'note') {
-        this.memory.append(`notes/triage-${day}.md`,
+        this.memory.append(this.memory.scopePath(`notes/triage-${day}.md`),
           items.map(t => `## ${t.split(/[.\n]/)[0].slice(0, 70)}\n\n${prov}${t}\n`).join('\n'))
       } else if (dest === 'crm') {
-        this.memory.append(`crm/interactions/triage-${day}.md`,
+        this.memory.append(this.memory.scopePath(`crm/interactions/triage-${day}.md`),
           `\n## ${day}\n\n` + items.map(t => `- ${t}`).join('\n') + '\n')
       } else {
-        this.memory.append(`long-term/${dest}s.md`,
+        this.memory.append(this.memory.scopePath(`long-term/${dest}s.md`),
           `\n\n## ${day} (inbox triage)\n\n` + items.map(t => `- ${t}`).join('\n') + '\n')
       }
     }
 
     report.push('', `- ${blocksSeen} block(s) seen · ${kept} kept · ${dropped} discarded · ${dups} semantic duplicates skipped`)
     const text = report.join('\n') + '\n'
-    this.memory.write(`insights/triage-${day}.md`, text)
-    this.memory.write('ops/triaged-files.txt', [...processed].sort().join('\n') + '\n')
+    this.memory.write(this.memory.scopePath(`insights/triage-${day}.md`), text)
+    this.memory.write(this.memory.scopePath('ops/triaged-files.txt'), [...processed].sort().join('\n') + '\n')
 
     try { if (this.gitSync) await this.gitSync.syncNow() } catch { /* offline ok */ }
     void this.rag?.reindex().catch(() => {})

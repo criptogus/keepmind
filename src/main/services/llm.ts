@@ -1,3 +1,4 @@
+import { gate, isLocalEndpoint, egressContext, type EgressContext } from './security/egress'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -72,11 +73,11 @@ export function listProviders() {
 
 async function post(url: string, body: unknown, headers: Record<string, string> = {}): Promise<any> {
   const res = await fetch(url, {
-    method: 'POST',
+    method: 'POST', redirect: 'error',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body)
   })
-  if (!res.ok) throw new Error(`${url} -> ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  if (!res.ok) throw new Error(`Model request failed: ${res.status}`)
   return res.json()
 }
 
@@ -207,7 +208,7 @@ async function refreshCodexToken(auth: CodexAuth): Promise<boolean> {
   if (!rt) return false
   try {
     const res = await fetch('https://auth.openai.com/oauth/token', {
-      method: 'POST',
+      method: 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client_id: CODEX_CLIENT_ID,
@@ -249,7 +250,7 @@ async function callCodex(cfg: AiProviderConfig, messages: ChatMessage[], tools: 
     stream: false
   }
   const res = await fetch('https://chatgpt.com/backend-api/codex/responses', {
-    method: 'POST',
+    method: 'POST', redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
@@ -262,7 +263,7 @@ async function callCodex(cfg: AiProviderConfig, messages: ChatMessage[], tools: 
   if (res.status === 401 && !retried && auth) {
     if (await refreshCodexToken(auth)) return callCodex(cfg, messages, tools, true)
   }
-  if (!res.ok) throw new Error(`Codex API -> ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  if (!res.ok) throw new Error(`Model request failed: ${res.status}`)
   const data = await res.json()
   let text = ''
   const toolCalls: ToolCall[] = []
@@ -314,7 +315,10 @@ function safeJson(s: any): Record<string, unknown> {
   try { return JSON.parse(s) } catch { return {} }
 }
 
-export async function chat(aiCfg: AiProviderConfig, messages: ChatMessage[], tools: ToolDefinition[] = [], localEndpoint?: string): Promise<LlmResponse> {
+export async function chat(aiCfg: AiProviderConfig, messages: ChatMessage[], tools: ToolDefinition[] = [], localEndpoint?: string, egress: EgressContext = {}): Promise<LlmResponse> {
+  const gated = gate(aiCfg.provider, isLocalEndpoint(aiCfg.provider, localEndpoint ?? aiCfg.baseUrl), [...messages, { content: JSON.stringify(tools) }], { logFile: join(homedir(), ".keepmind", "egress.jsonl"), ...egressContext(), ...egress })
+  messages = gated.slice(0, -1) as ChatMessage[]
+  tools = JSON.parse(gated[gated.length - 1].content) as ToolDefinition[]
   const cfg = effectiveConfig(aiCfg, localEndpoint)
   switch (cfg.provider) {
     case 'anthropic':
@@ -347,8 +351,10 @@ export async function chatStream(
   aiCfg: AiProviderConfig,
   messages: ChatMessage[],
   onDelta: (text: string) => void,
-  localEndpoint?: string
+  localEndpoint?: string,
+  egress: EgressContext = {}
 ): Promise<string> {
+  messages = gate(aiCfg.provider, isLocalEndpoint(aiCfg.provider, localEndpoint ?? aiCfg.baseUrl), messages, { logFile: join(homedir(), ".keepmind", "egress.jsonl"), ...egressContext(), ...egress }) as ChatMessage[]
   const cfg = effectiveConfig(aiCfg, localEndpoint)
   // Ollama / llama-server streaming path
   if (cfg.provider === 'ollama' || aiCfg.provider === 'local') {
@@ -369,7 +375,7 @@ export async function chatStream(
           stream: true
         }
     const res = await fetch(url, {
-      method: 'POST',
+      method: 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json', ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}) },
       body: JSON.stringify(body)
     })
@@ -394,7 +400,7 @@ export async function chatStream(
   }
 
   // For hosted providers, fall back to non-streaming with a simulated typewriter feel
-  const res = await chat(cfg, messages)
+  const res = await chat(aiCfg, messages, [], localEndpoint, egress)
   const words = res.text.split(/(\s+)/)
   let acc = ''
   for (const w of words) {

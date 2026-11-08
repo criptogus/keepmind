@@ -17,28 +17,28 @@ export class BrainContext extends BrainRuntime {
     ]
     // ── Tiered memory context (like human memory) ──
     // Long-term: durable facts, lessons and skills — always injected.
-    const facts = this.memory.read('long-term/facts.md')
+    const facts = this.memory.read(this.memory.scopePath('long-term/facts.md'))
     if (facts) parts.push('', '## Long-term memory — facts & preferences', facts.slice(0, 3000))
-    const skills = this.memory.read('long-term/skills.md')
+    const skills = this.memory.read(this.memory.scopePath('long-term/skills.md'))
     if (skills) parts.push('', '## Learned skills (from nightly sleep cycles)', skills.slice(0, 2500))
-    const lessons = this.memory.read('long-term/lessons.md')
+    const lessons = this.memory.read(this.memory.scopePath('long-term/lessons.md'))
     if (lessons) parts.push('', '## Lessons learned', lessons.slice(0, 2000))
     // Medium-term: recent weekly consolidations.
     const medium = this.memory.mediumTermFiles().slice(-2)
     for (const f of medium) {
-      const c = this.memory.read(`medium-term/${f}`)
+      const c = this.memory.read(this.memory.scopePath(`medium-term/${f}`))
       if (c) parts.push('', `### ${f}`, c.slice(0, 1500))
     }
     // Short-term: today's + yesterday's raw logs.
     const today = new Date().toISOString().slice(0, 10)
     const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10)
     for (const d of [yesterday, today]) {
-      const c = this.memory.read(`short-term/${d}.md`) ?? this.memory.read(`inbox/${d}.md`)
+      const c = this.memory.read(this.memory.scopePath(`short-term/${d}.md`)) ?? this.memory.read(this.memory.scopePath(`inbox/${d}.md`))
       if (c) parts.push('', `## Short-term memory — ${d}`, c.slice(-4000))
     }
-    const insights = this.memory.list('insights').slice(-5)
+    const insights = this.memory.list(this.memory.scopePath('insights')).slice(-5)
     for (const f of insights) {
-      const c = this.memory.read(`insights/${f}`)
+      const c = this.memory.read(this.memory.scopePath(`insights/${f}`))
       if (c) parts.push('', `### ${f}`, c.slice(0, 1200))
     }
     // Semantic recall (local embeddings) — memories related to this message
@@ -93,11 +93,11 @@ export class BrainContext extends BrainRuntime {
       const file = kind === 'note'
         ? `long-term/notes/${slug(title)}.md`
         : `long-term/${kind}s.md` // facts.md / lessons.md / skills.md / decisions.md
-      this.memory.append(file, `\n\n## ${title}\n\n${content}\n`)
+      this.memory.append(this.memory.scopePath(file), `\n\n## ${title}\n\n${content}\n`)
       return `Saved to memory/${file} (long-term · classified as ${kind})`
     }
     if (name === 'get_memory') {
-      const c = this.memory.read(String(args.path ?? ''))
+      const c = this.memory.read(this.memory.scopePath(String(args.path ?? '')))
       return c ?? 'Not found'
     }
     // MCP tool routing: mcp_<serverId>_<toolName>
@@ -146,7 +146,7 @@ export class BrainContext extends BrainRuntime {
 
     // Persist exchange to short-term memory (raw daily log)
     const day = new Date().toISOString().slice(0, 10)
-    this.memory.append(`short-term/${day}.md`, `\n\n## ${new Date().toLocaleTimeString()} — ${agent.name}\n\n**You:** ${userMessage}\n\n**${agent.name}:** ${finalText}\n`)
+    this.memory.append(this.memory.scopePath(`short-term/${day}.md`), `\n\n## ${new Date().toLocaleTimeString()} — ${agent.name}\n\n**You:** ${userMessage}\n\n**${agent.name}:** ${finalText}\n`)
     return finalText
   }
 

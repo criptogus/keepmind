@@ -1,4 +1,8 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { randomUUID } from 'node:crypto'
+import { configureEgressContext, type Consent } from './services/security/egress'
+import { RefreshScheduler } from './services/ingest/scheduler'
+import { SecuritySession, diskSecretStore } from './services/security/session'
+import { app, BrowserWindow, shell, ipcMain, safeStorage } from 'electron'
 import { join } from 'node:path'
 import { Store } from './store'
 import { Brain } from './services/brain'
@@ -19,6 +23,7 @@ let brain: Brain
 let mcp: McpManager | null = null
 let localLlmGlobal: LocalLlm | null = null
 let gitSyncGlobal: GitSync | null = null
+let refreshSchedulerGlobal: RefreshScheduler | null = null
 let autoSchedulerGlobal: AutomationScheduler | null = null
 
 // Headless mode: services only (GitHub sync, MCP, LLM, automations) — no window.
@@ -62,12 +67,36 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   store = new Store()
   mcp = new McpManager(store.get().mcpServers, app.getPath('userData'))
   const localLlm = new LocalLlm(store)
   localLlmGlobal = localLlm
   brain = new Brain(store, mcp, localLlm)
+  const securityDir = join(app.getPath('userData'), 'second-brain', 'security')
+  const consents: Consent[] = []
+  configureEgressContext(() => ({ space: brain.getMemory().currentSpace, spaces: [...brain.getMemory().readSpaces], class: brain.getMemory().classificationFloor, grants: consents, logFile: join(securityDir, 'egress.jsonl') }))
+  ipcMain.handle('security:consent', (_e, provider: string) => {
+    if (!['anthropic', 'claude-oauth', 'openai', 'codex', 'gemini', 'grok'].includes(provider)) throw new Error('Invalid cloud provider')
+    const consent = { id: randomUUID(), provider, space: brain.getMemory().currentSpace, expiresAt: Date.now() + 15 * 60_000 }
+    consents.push(consent); return consent
+  })
+  const security = new SecuritySession(brain.getMemory(), securityDir, diskSecretStore(join(securityDir, 'keychain'), safeStorage))
+  if (security.status.configured) { try { await security.unlock() } catch { /* remains locked until explicit unlock */ } }
+  ipcMain.handle('security:status', () => security.status)
+  ipcMain.handle('security:setup', async (_e, passphrase: unknown) => {
+    if (typeof passphrase !== 'string' || !passphrase || passphrase.length > 8192) throw new Error('Invalid passphrase')
+    return security.setup(passphrase)
+  })
+  ipcMain.handle('security:unlock', async (_e, credential: { passphrase?: string; recoveryKey?: string } | undefined) => {
+    if (credential && (Object.keys(credential).some(k => !['passphrase', 'recoveryKey'].includes(k)) || Object.values(credential).some(v => typeof v !== 'string' || v.length > 8192))) throw new Error('Invalid credential')
+    await security.unlock(credential); return security.status
+  })
+  ipcMain.handle('security:lock', () => { security.lock(); consents.splice(0); return security.status })
+  ipcMain.handle('security:configure', async (_e, space: string, grants: string[], encryptAll: boolean) => {
+    if (typeof space !== 'string' || !Array.isArray(grants) || grants.some(s => typeof s !== 'string') || typeof encryptAll !== 'boolean') throw new Error('Invalid security configuration')
+    security.configure(space, grants, encryptAll); await rag.reindex(); return security.status
+  })
   brain.setMcp(mcp)
   const gitSync = new GitSync(store, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
   brain.attachSync(gitSync)
@@ -77,6 +106,18 @@ app.whenReady().then(() => {
   const auth = new AuthService(join(app.getPath('userData'), 'second-brain'))
   const rag = new RagService(localLlm, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
   brain.setRag(rag)
+  const refreshDir = join(app.getPath('userData'), 'second-brain')
+  const refreshDb = await rag.database()
+  const configuredInterval = Number(process.env.KEEPMIND_REFRESH_INTERVAL_MS ?? 60000)
+  const refresh = new RefreshScheduler(brain.getMemory(), refreshDb, refreshDir, configuredInterval)
+  refreshSchedulerGlobal = refresh
+  refresh.start()
+  ipcMain.handle('pipeline:status', () => refresh.status.snapshot())
+  ipcMain.handle('pipeline:refresh', () => refresh.refresh())
+  ipcMain.handle('pipeline:enqueue', (_e, job: { platform: string; url: string; space: string }) => {
+    if (!job || typeof job.url !== 'string' || job.url.length > 4096 || !/^[a-z0-9_-]{1,50}$/.test(job.platform) || typeof job.space !== 'string') throw new Error('Invalid ingestion job')
+    refresh.enqueue(job); return { queued: true }
+  })
   // Laya — fast System-1 decision engine (ONNX, local). Powers quick
   // decisions: memory classification, dedup gates, RAG reranking.
   const laya = new LayaService()
@@ -151,3 +192,5 @@ app.on('window-all-closed', () => {
   autoSchedulerGlobal?.stop()
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('before-quit', () => refreshSchedulerGlobal?.stop())

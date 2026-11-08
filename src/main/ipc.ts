@@ -245,10 +245,10 @@ export function registerIpc(
     const gh = store.get().github
     if (!gh.accessToken || !gh.repoOwner) throw new Error('GitHub not connected')
     // push whole memory dir files via contents API
-    const memDir = store.memoryDir
-    const files = collectMd(memDir)
+    const files = brain.getMemory().allRelFiles()
     for (const rel of files) {
-      const content = readFileSync(join(memDir, rel), 'utf8')
+      const content = brain.getMemory().read(rel)
+      if (content === null) continue
       await github.pushFile(gh, `memory/${rel}`, content, message)
     }
     return { pushed: files.length }
@@ -362,8 +362,8 @@ export function registerIpc(
   ipcMain.handle('brain:listInsights', () => brain.listInsights())
   ipcMain.handle('brain:listSummaries', () => brain.listSummaries())
   ipcMain.handle('brain:listMemory', () => {
-    const memDir = store.memoryDir
-    return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 4000) }))
+    const memory = brain.getMemory()
+    return memory.allRelFiles().map(rel => ({ path: rel, content: memory.read(rel)!.slice(0, 4000) }))
   })
   ipcMain.handle('brain:activity', (_e, limit?: number) => brain.getMemory().activity(limit ?? 200))
 
@@ -492,15 +492,4 @@ const mcpLogs: string[] = []
 export function pushMcpLog(line: string) {
   mcpLogs.push(line)
   if (mcpLogs.length > 500) mcpLogs.shift()
-}
-
-function collectMd(dir: string, prefix = ''): string[] {
-  const out: string[] = []
-  if (!existsSync(dir)) return out
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const rel = prefix ? `${prefix}/${e.name}` : e.name
-    if (e.isDirectory()) out.push(...collectMd(join(dir, e.name), rel))
-    else if (e.name.endsWith('.md')) out.push(rel)
-  }
-  return out
 }

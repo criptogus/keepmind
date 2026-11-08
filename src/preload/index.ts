@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
+  securityConsent: (provider: string) => ipcRenderer.invoke('security:consent', provider),
+  pipelineStatus: () => ipcRenderer.invoke('pipeline:status'),
+  pipelineRefresh: () => ipcRenderer.invoke('pipeline:refresh'),
+  pipelineEnqueue: (job: { platform: string; url: string; space: string }) => ipcRenderer.invoke('pipeline:enqueue', job),
+  securityStatus: () => ipcRenderer.invoke('security:status'),
+  securitySetup: (passphrase: string) => ipcRenderer.invoke('security:setup', passphrase),
+  securityUnlock: (credential?: { passphrase?: string; recoveryKey?: string }) => ipcRenderer.invoke('security:unlock', credential),
+  securityLock: () => ipcRenderer.invoke('security:lock'),
+  securityConfigure: (space: string, grants: string[], encryptAll: boolean) => ipcRenderer.invoke('security:configure', space, grants, encryptAll),
   // config
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch: any) => ipcRenderer.invoke('config:set', patch),

@@ -20,7 +20,7 @@ it('scaffolds tiers and handles writes, appends, quiet sync and removal', () => 
   expect(dirty.mock.calls.map(x => x[0])).toEqual(['short-term/2020-01-01.md', 'long-term/facts.md'])
   expect(memory.shortTermFiles()).toEqual(['2020-01-01.md'])
   expect(memory.mediumTermFiles()).toEqual(['2020-W01.md'])
-  expect(memory.read('long-term/facts.md')).toBe('durable')
+  expect(memory.read('long-term/facts.md')).toContain('durable')
   memory.quietRemove('medium-term/2020-W01.md')
   expect(memory.mediumTermFiles()).toEqual([])
   expect(() => memory.write('../outside.md', 'bad')).toThrow()
@@ -36,9 +36,9 @@ it('consolidates old short-term logs into a weekly digest and preserves recent l
   memory.write('long-term/facts.md', 'Keep durable facts')
   expect(await brain.consolidate()).toBe(1)
   expect(memory.read('short-term/2026-10-01.md')).toBeNull()
-  expect(memory.read('short-term/2026-11-08.md')).toBe('Recent events')
+  expect(memory.read('short-term/2026-11-08.md')).toContain('Recent events')
   expect(memory.read('medium-term/2026-W40.md')).toContain('Weekly decisions and lessons.')
-  expect(memory.read('long-term/facts.md')).toBe('Keep durable facts')
+  expect(memory.read('long-term/facts.md')).toContain('Keep durable facts')
   expect(await brain.consolidate()).toBe(0)
 })
 it('sleep extracts durable facts, lessons and skills without deleting recent working memory', async () => {
@@ -57,4 +57,25 @@ it('sleep extracts durable facts, lessons and skills without deleting recent wor
   expect(memory.read('long-term/skills.md')).toContain('check totals before payment')
   expect(memory.read('short-term/2026-11-08.md')).toContain('prefers tea')
   expect(memory.read('sleep/2026-11-08.md')).toContain('Verified invoices')
+})
+it('filters the nightly corpus by active space and requires explicit grants', () => {
+  const dir = directory(), store = { memoryDir: dir, get: () => ({ github: {}, ai: { provider: 'local' } }) } as unknown as Store
+  class TestBrain extends Brain { corpus() { return this.recentCorpus() } }
+  const brain = new TestBrain(store, null), memory = brain.getMemory()
+  memory.currentSpace = 'company-x'; memory.write('short-term/company.md', 'Company-only planning')
+  memory.currentSpace = 'personal'; memory.write('short-term/personal.md', 'Personal-only planning')
+  expect(brain.corpus()).toContain('Personal-only'); expect(brain.corpus()).not.toContain('Company-only')
+  memory.grants = ['company-x']; expect(brain.corpus()).toContain('Company-only')
+})
+it('keeps same-day sleep reports and durable output paths distinct across spaces', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-08T12:00:00Z'))
+  const dir = directory(), store = { memoryDir: dir, get: () => ({ github: {}, ai: { provider: 'local' } }) } as unknown as Store
+  const brain = new Brain(store, null), memory = brain.getMemory()
+  vi.mocked(chat).mockImplementation(async (_cfg, messages) => ({ text: messages.some(m => m.content.includes('Company activity')) ? 'Company report' : 'Personal report' }))
+  memory.write('short-term/2026-11-08.md', 'Personal activity'); await brain.sleep()
+  memory.currentSpace = 'company-x'
+  memory.write(memory.scopePath('short-term/2026-11-08.md'), 'Company activity'); await brain.sleep()
+  expect(memory.read(memory.scopePath('sleep/2026-11-08.md'))).toContain('Company report')
+  expect(memory.read('sleep/2026-11-08.md')).toBeNull()
+  memory.currentSpace = 'personal'; expect(memory.read('sleep/2026-11-08.md')).toContain('Personal report')
 })

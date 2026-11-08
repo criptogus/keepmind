@@ -13,7 +13,7 @@ export class BrainSleep extends BrainInsights {
 
     if (!corpus.trim()) {
       const report = `# Sleep cycle — ${day}\n\nNo memory activity to process yet. The brain sleeps peacefully. 💤\n`
-      this.memory.write(`sleep/${day}.md`, report)
+      this.memory.write(this.memory.scopePath(`sleep/${day}.md`), report)
       return { report, consolidated: 0 }
     }
 
@@ -39,7 +39,7 @@ Rules:
     ], [], this.localLlm?.endpoint)
 
     const report = `# Sleep cycle — ${day}\n\n_Generated ${new Date().toISOString()}_\n\n${res.text}\n`
-    this.memory.write(`sleep/${day}.md`, report)
+    this.memory.write(this.memory.scopePath(`sleep/${day}.md`), report)
 
     // 2) Extract durable learnings → long-term memory (facts / lessons / skills)
     try {
@@ -70,12 +70,12 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
         const clean = body.split('\n').filter(l => l.trim() && l.trim() !== '(none)').join('\n')
         if (!clean) return
         // Laya semantic dedup: skip sections already captured in long-term
-        const existing = this.memory.read(`long-term/${file}`) ?? ''
+        const existing = this.memory.read(this.memory.scopePath(`long-term/${file}`)) ?? ''
         if (await this.isSemanticDuplicate(clean, existing)) {
           console.log(`[brain] sleep: skipped duplicate ${file} section`)
           return
         }
-        this.memory.append(`long-term/${file}`, `\n\n## ${day}\n\n${clean}\n`)
+        this.memory.append(this.memory.scopePath(`long-term/${file}`), `\n\n## ${day}\n\n${clean}\n`)
       }
       await appendIf('facts.md', '', grab('===FACTS===', '===LESSONS==='))
       await appendIf('lessons.md', '', grab('===LESSONS===', '===SKILLS==='))
@@ -136,13 +136,13 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     let consolidated = 0
     for (const [week, files] of weeks) {
       const target = `medium-term/${week}.md`
-      if (this.memory.read(target)) {
+      if (this.memory.read(this.memory.scopePath(target))) {
         // already consolidated — just drop the raw files
-        for (const f of files) this.memory.remove(`short-term/${f}`)
+        for (const f of files) this.memory.remove(this.memory.scopePath(`short-term/${f}`))
         consolidated += files.length
         continue
       }
-      const corpus = files.map(f => `### ${f}\n${this.memory.read(`short-term/${f}`) ?? ''}`).join('\n\n').slice(-16000)
+      const corpus = files.map(f => `### ${f}\n${this.memory.read(this.memory.scopePath(`short-term/${f}`)) ?? ''}`).join('\n\n').slice(-16000)
       try {
         const cfg = this.store.get()
         const res = await chat(cfg.ai as AiProviderConfig, [
@@ -152,12 +152,12 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
           },
           { role: 'user', content: corpus }
         ], [], this.localLlm?.endpoint)
-        this.memory.write(target, `# Week ${week}\n\n${res.text}\n`)
+        this.memory.write(this.memory.scopePath(target), `# Week ${week}\n\n${res.text}\n`)
       } catch {
         // LLM unavailable — still consolidate mechanically so short-term doesn't grow forever
-        this.memory.write(target, `# Week ${week}\n\n_Consolidated without LLM._\n\n${files.map(f => `- ${f}`).join('\n')}\n`)
+        this.memory.write(this.memory.scopePath(target), `# Week ${week}\n\n_Consolidated without LLM._\n\n${files.map(f => `- ${f}`).join('\n')}\n`)
       }
-      for (const f of files) this.memory.remove(`short-term/${f}`)
+      for (const f of files) this.memory.remove(this.memory.scopePath(`short-term/${f}`))
       consolidated += files.length
     }
     return consolidated
@@ -183,7 +183,7 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     let removed = 0
     for (const file of ['facts.md', 'lessons.md', 'skills.md']) {
       const rel = `long-term/${file}`
-      const content = this.memory.read(rel)
+      const content = this.memory.read(this.memory.scopePath(rel))
       if (!content) continue
       const seen = new Set<string>()
       const out: string[] = []
@@ -198,7 +198,7 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
         out.push(line)
       }
       const next = out.join('\n')
-      if (next !== content) this.memory.write(rel, next)
+      if (next !== content) this.memory.write(this.memory.scopePath(rel), next)
     }
     return removed
   }
@@ -225,7 +225,7 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
       `- entities: ${entities.created} new, ${entities.updated} updated (${entities.total} total)`,
       ''
     ].join('\n')
-    this.memory.write(`insights/librarian-${day}.md`, report)
+    this.memory.write(this.memory.scopePath(`insights/librarian-${day}.md`), report)
     return report
   }
 

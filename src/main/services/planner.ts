@@ -62,8 +62,8 @@ export class Planner {
   // ── Notes ──
 
   listNotes(): Note[] {
-    return this.memory.list('notes').sort().reverse().map(f => {
-      const content = this.memory.read(`notes/${f}`) ?? ''
+    return this.memory.list(this.memory.scopePath('notes')).sort().reverse().map(f => {
+      const content = this.memory.read(this.memory.scopePath(`notes/${f}`)) ?? ''
       const id = f.replace(/\.md$/, '')
       const m = content.match(/updated:\s*(\S+)/)
       return {
@@ -76,7 +76,7 @@ export class Planner {
   }
 
   getNote(id: string): Note | null {
-    const content = this.memory.read(`notes/${id}.md`)
+    const content = this.memory.read(this.memory.scopePath(`notes/${id}.md`))
     if (content == null) return null
     return {
       id,
@@ -89,22 +89,22 @@ export class Planner {
   saveNote(id: string | null, title: string, body: string): Note {
     const slugId = id ?? slug(title)
     const now = new Date().toISOString()
-    const existing = this.memory.read(`notes/${slugId}.md`) ?? ''
+    const existing = this.memory.read(this.memory.scopePath(`notes/${slugId}.md`)) ?? ''
     const created = existing.match(/created:\s*(\S+)/)?.[1] ?? now
-    this.memory.write(`notes/${slugId}.md`,
+    this.memory.write(this.memory.scopePath(`notes/${slugId}.md`),
       `# ${title.trim() || 'Untitled'}\n\n${body.trim()}\n\n---\ncreated: ${created}\nupdated: ${now}\n`)
     return this.getNote(slugId)!
   }
 
   deleteNote(id: string) {
-    this.memory.remove(`notes/${id}.md`)
-    this.memory.remove(`notes/${id}`) // safety
+    this.memory.remove(this.memory.scopePath(`notes/${id}.md`))
+    this.memory.remove(this.memory.scopePath(`notes/${id}`)) // safety
   }
 
   // ── Tasks ──
 
   private parseTaskFile(f: string): Task | null {
-    const content = this.memory.read(`tasks/${f}`)
+    const content = this.memory.read(this.memory.scopePath(`tasks/${f}`))
     if (content == null) return null
     const lines = content.split('\n')
     const title = (lines.find(l => l.startsWith('# ')) ?? '# ').slice(2).trim()
@@ -123,12 +123,12 @@ export class Planner {
 
   private writeTask(t: Task) {
     const now = new Date().toISOString()
-    this.memory.write(`tasks/${t.id}.md`,
+    this.memory.write(this.memory.scopePath(`tasks/${t.id}.md`),
       `# ${t.title}\n> status: ${t.done ? 'done' : 'open'} · priority: ${t.priority}${t.due ? ` · due: ${t.due}` : ''} · created: ${t.created || now}\n\n${t.notes}\n`)
   }
 
   listTasks(): Task[] {
-    const tasks = this.memory.list('tasks')
+    const tasks = this.memory.list(this.memory.scopePath('tasks'))
       .map(f => this.parseTaskFile(f))
       .filter((t): t is Task => !!t)
     return tasks.sort((a, b) => {
@@ -168,14 +168,14 @@ export class Planner {
   }
 
   deleteTask(id: string) {
-    this.memory.remove(`tasks/${id}.md`)
+    this.memory.remove(this.memory.scopePath(`tasks/${id}.md`))
   }
 
   // ── Daily goals ──
 
   getDailyGoals(date?: string): DailyGoals {
     const d = date ?? today()
-    const content = this.memory.read(`daily/${d}.md`) ?? ''
+    const content = this.memory.read(this.memory.scopePath(`daily/${d}.md`)) ?? ''
     const items = content.split('\n')
       .filter(l => /^- \[[ xX]\]/.test(l.trim()))
       .map(l => ({ done: /\[[xX]\]/.test(l), text: l.replace(/^- \[[ xX]\]\s*/, '').trim() }))
@@ -184,7 +184,7 @@ export class Planner {
 
   private writeDailyGoals(d: DailyGoals) {
     const body = d.items.map(i => `- [${i.done ? 'x' : ' '}] ${i.text}`).join('\n')
-    this.memory.write(`daily/${d.date}.md`, `# Goals — ${d.date}\n\n${body || '_No goals yet._'}\n`)
+    this.memory.write(this.memory.scopePath(`daily/${d.date}.md`), `# Goals — ${d.date}\n\n${body || '_No goals yet._'}\n`)
   }
 
   setDailyGoals(date: string, items: GoalItem[]) {
@@ -213,10 +213,11 @@ export class Planner {
   }
 
   // AI-suggested daily intentions grounded in recent memory
-  async suggestGoals(): Promise<string[]> {
+  suggestGoals() { return this.memory.withScope(() => this.scopedSuggestGoals()) }
+  private async scopedSuggestGoals(): Promise<string[]> {
     const cfg = this.store.get()
     const recent = this.memory.shortTermFiles().slice(-3)
-      .map(f => this.memory.read(`short-term/${f}`) ?? '')
+      .map(f => this.memory.read(this.memory.scopePath(`short-term/${f}`)) ?? '')
       .join('\n').slice(-6000)
     const openTasks = this.listTasks().filter(t => !t.done).slice(0, 10)
       .map(t => `- ${t.title}${t.due ? ` (due ${t.due})` : ''}`).join('\n')
