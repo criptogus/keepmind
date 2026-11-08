@@ -3,6 +3,20 @@
 All notable changes to KeepMind are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Webhook triggers** — any automation exposes `POST /hook/<id>` (token auth, localhost or LAN) so external apps (Zapier, n8n, GitHub Actions) can fire brain jobs; approval-mode jobs still queue for review.
+- **Connector permissions** — per-MCP-server `allow`/`ask`/`block`; `ask` skips auto-start, `block` never spawns.
+- **`keepmind.json` brain-as-code** — sanitized declarative snapshot (agents, automations, connectors, models; never secrets) pushed to the repo root so any clone/bot sees the brain's config.
+- **Laya decision engine** — local ONNX "System 1" (~33ms) for inbox triage, memory classification, semantic dedup and RAG reranking.
+- **Secret redaction for cloud LLMs** — secret-shaped spans masked before messages reach non-local providers; `sensitivity:` frontmatter convention documented.
+- **Scripted brain jobs (zero LLM tokens)** — daily insights, daily summary, note enrichment and weekly consolidation are now deterministic: facts and structure over generated prose.
+- Flashcards + spaced-repetition review, entity backlinks, `sb_query`, search-gap logging, security audit, skills evolution, activity journal, per-automation auto/approval modes.
+
+### Security
+- Memory path containment, IPC input validation + config whitelisting, sandboxed renderer, tightened CSP, secrets sealed via OS keychain, per-platform onnxruntime pruning (−200MB installer).
+
 ## [0.1.1] — 2026-11
 
 ### Added

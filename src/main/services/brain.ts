@@ -378,41 +378,116 @@ export class Brain {
     return this.chat(agentId, userMessage)
   }
 
-  async generateInsights(): Promise<string[]> {
-    const cfg = this.store.get()
-    const memoryFiles = [...this.memory.shortTermFiles(), ...this.memory.list('inbox')].slice(-10)
-    const corpus = memoryFiles.map(f => {
-      const dir = this.memory.read(`short-term/${f}`) != null ? 'short-term' : 'inbox'
-      return this.memory.read(`${dir}/${f}`) ?? ''
-    }).join('\n---\n').slice(-12000)
-    if (!corpus.trim()) return []
+  // Deterministic insight engine — no LLM tokens. Surfaces real signals:
+  // overdue/due tasks, stale notes, search gaps, pending approvals,
+  // activity stats. Facts beat hallucinated fluff for a memory product.
+  private scriptedInsights(): string[] {
+    const today = new Date().toISOString().slice(0, 10)
+    const lines: string[] = []
 
-    const res = await chat(cfg.ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: 'You are an insight engine for a personal second brain. From the memory below, produce 3-5 concise, actionable insights (what to do, what matters, patterns). One per line, starting with an emoji. Max 30 words each. Respond in the user\'s language.'
-      },
-      { role: 'user', content: corpus }
-    ], [], this.localLlm?.endpoint)
-    const lines = res.text.split('\n').map(l => l.trim()).filter(Boolean)
+    // tasks: parse meta lines for due dates
+    const open: { title: string; due?: string; priority?: string }[] = []
+    for (const f of this.memory.list('tasks')) {
+      const c = this.memory.read(`tasks/${f}`) ?? ''
+      const title = c.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? f.replace('.md', '')
+      const meta = c.match(/^>\s*(.+)$/m)?.[1] ?? ''
+      if (/status:\s*done/i.test(meta)) continue
+      const due = meta.match(/due:\s*(\d{4}-\d{2}-\d{2})/)?.[1]
+      const priority = meta.match(/priority:\s*(\w+)/i)?.[1]?.toLowerCase()
+      open.push({ title, due, priority })
+    }
+    const overdue = open.filter(t => t.due && t.due < today)
+    const dueToday = open.filter(t => t.due === today)
+    if (overdue.length) lines.push(`⏰ ${overdue.length} task(s) overdue — oldest: "${overdue.sort((a, b) => (a.due ?? '').localeCompare(b.due ?? ''))[0].title}"`)
+    if (dueToday.length) lines.push(`📌 ${dueToday.length} task(s) due today`)
+    const highOpen = open.filter(t => t.priority === 'high' && (!t.due || t.due >= today))
+    if (highOpen.length) lines.push(`🔥 ${highOpen.length} high-priority task(s) still open`)
+
+    // stale notes (frontmatter validity dates already used by RAG)
+    let stale = 0
+    for (const dir of ['notes', 'entities']) {
+      for (const f of this.memory.list(dir)) {
+        const c = this.memory.read(`${dir}/${f}`) ?? ''
+        const fm = c.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ''
+        const exp = fm.match(/(?:valido_ate|expires|review_after|stale_after|valid_until):\s*['"]?(\d{4}-\d{2}-\d{2})/i)?.[1]
+        if (exp && exp < today) stale++
+      }
+    }
+    if (stale) lines.push(`🕸️ ${stale} note(s) past their validity date — candidates for review or refresh`)
+
+    // search gaps — unanswered queries the brain should learn
+    const gaps = this.memory.read('ops/search-gaps.md') ?? ''
+    const gapCount = (gaps.match(/^- /gm) ?? []).length
+    if (gapCount) lines.push(`🔍 ${gapCount} unanswered search(es) logged — the gap-review automation can fill them`)
+
+    // pending approvals
+    const pending = this.store.get().pendingApprovals.length
+    if (pending) lines.push(`⏳ ${pending} automation(s) waiting for your approval`)
+
+    // activity today
+    const act = this.memory.activity(500).filter(e => new Date(e.ts).toISOString().slice(0, 10) === today)
+    if (act.length) {
+      const byOp = act.reduce<Record<string, number>>((m, e) => ({ ...m, [e.op]: (m[e.op] ?? 0) + 1 }), {})
+      lines.push(`✍️ ${act.length} memory change(s) today (${Object.entries(byOp).map(([k, v]) => `${v} ${k}`).join(', ')})`)
+    }
+
+    // entity graph size
+    const entities = this.memory.list('entities').length
+    if (entities) lines.push(`🕸️ Knowledge graph: ${entities} entity page(s) with backlinks`)
+
+    if (!lines.length) lines.push('🌱 Quiet day — no urgent signals. The brain kept consolidating in the background.')
+    return lines.slice(0, 6)
+  }
+
+  async generateInsights(): Promise<string[]> {
+    const lines = this.scriptedInsights()
     const day = new Date().toISOString().slice(0, 10)
     this.memory.write(`insights/${day}.md`, `# Insights — ${day}\n\n${lines.map(l => `- ${l}`).join('\n')}\n`)
     return lines
   }
 
+  // Deterministic daily summary — counts, due items, carry-over. No LLM.
   async dailySummary(): Promise<string> {
-    const cfg = this.store.get()
     const day = new Date().toISOString().slice(0, 10)
-    const today = this.memory.read(`short-term/${day}.md`) ?? this.memory.read(`inbox/${day}.md`) ?? '(no activity today)'
-    const res = await chat(cfg.ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: 'You write a warm, concise daily summary of a person\'s digital life. 5-8 bullet points max. Highlight what mattered, what\'s pending, one suggested focus for tomorrow. Plain language.'
-      },
-      { role: 'user', content: `Today\'s activity:\n${today.slice(-8000)}` }
-    ], [], this.localLlm?.endpoint)
-    this.memory.write(`summaries/${day}.md`, `# Daily summary — ${day}\n\n${res.text}\n`)
-    return res.text
+    const today = this.memory.read(`short-term/${day}.md`) ?? this.memory.read(`inbox/${day}.md`) ?? ''
+    const sections = (today.match(/^##\s+.+$/gm) ?? []).length
+    const bullets = (today.match(/^[-*]\s+/gm) ?? []).length
+
+    const out = [`# Daily summary — ${day}`, '']
+    if (today.trim()) {
+      out.push(`- Captured ${sections} section(s), ${bullets} bullet(s) of activity`)
+      const heads = [...today.matchAll(/^#{2,3}\s+(.+)$/gm)].map(m => m[1].trim()).slice(0, 5)
+      if (heads.length) out.push(`- Topics: ${heads.join(' · ')}`)
+    } else {
+      out.push('- No short-term captures today')
+    }
+
+    // open loops: tasks due soonest
+    const open: { title: string; due?: string; priority?: string }[] = []
+    for (const f of this.memory.list('tasks')) {
+      const c = this.memory.read(`tasks/${f}`) ?? ''
+      const meta = c.match(/^>\s*(.+)$/m)?.[1] ?? ''
+      if (/status:\s*done/i.test(meta)) continue
+      open.push({
+        title: c.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? f.replace('.md', ''),
+        due: meta.match(/due:\s*(\d{4}-\d{2}-\d{2})/)?.[1],
+        priority: meta.match(/priority:\s*(\w+)/i)?.[1]?.toLowerCase()
+      })
+    }
+    const next = open.filter(t => !t.due || t.due >= day).sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999')).slice(0, 3)
+    if (next.length) out.push(`- Next up: ${next.map(t => `"${t.title}"${t.due ? ` (${t.due})` : ''}`).join(' · ')}`)
+    const overdue = open.filter(t => t.due && t.due < day).length
+    if (overdue) out.push(`- ⚠️ ${overdue} overdue task(s) still open`)
+
+    const pending = this.store.get().pendingApprovals.length
+    if (pending) out.push(`- ⏳ ${pending} automation(s) awaiting approval`)
+
+    const focus = next.find(t => t.priority === 'high') ?? next[0]
+    out.push('', focus ? `**Suggested focus:** "${focus.title}"${focus.due ? ` — due ${focus.due}` : ''}.` : '**Suggested focus:** review open tasks in the planner.')
+
+    const text = out.join('\n') + '\n'
+    this.memory.write(`summaries/${day}.md`, text)
+    return text
   }
 
   // ── Sleep mode: nightly learning cycle ──
@@ -582,21 +657,16 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
         consolidated += files.length
         continue
       }
-      const corpus = files.map(f => `### ${f}\n${this.memory.read(`short-term/${f}`) ?? ''}`).join('\n\n').slice(-16000)
-      try {
-        const cfg = this.store.get()
-        const res = await chat(cfg.ai as AiProviderConfig, [
-          {
-            role: 'system',
-            content: 'You compress daily memory logs into a weekly medium-term memory. Produce a tight markdown digest: key events, decisions, open loops, patterns. Max ~400 words. No fluff.'
-          },
-          { role: 'user', content: corpus }
-        ], [], this.localLlm?.endpoint)
-        this.memory.write(target, `# Week ${week}\n\n${res.text}\n`)
-      } catch {
-        // LLM unavailable — still consolidate mechanically so short-term doesn't grow forever
-        this.memory.write(target, `# Week ${week}\n\n_Consolidated without LLM._\n\n${files.map(f => `- ${f}`).join('\n')}\n`)
-      }
+      // Scripted consolidation — lossless per-day digest, zero LLM tokens.
+      // Medium-term memory keeps every capture organized by date; the RAG
+      // index handles retrieval, so compression would only lose information.
+      const parts = files.map(f => {
+        const day = f.replace('.md', '')
+        const content = this.memory.read(`short-term/${f}`) ?? ''
+        const stats = `${(content.match(/^##\s+/gm) ?? []).length} sections · ${(content.match(/^[-*]\s+/gm) ?? []).length} bullets · ${content.length} chars`
+        return `## ${day}\n\n_${stats}_\n\n${content.trim()}`
+      })
+      this.memory.write(target, `# Week ${week}\n\n${parts.join('\n\n')}\n`)
       for (const f of files) this.memory.remove(`short-term/${f}`)
       consolidated += files.length
     }
@@ -725,49 +795,55 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
   }
 
   // ── Enrich: note intelligence pass ──
-  // Picks recent notes missing frontmatter and asks the LLM to enrich them:
-  // summary, topic tags and [[wikilinks]] to known entities — written as
-  // YAML frontmatter at the top of the note (never rewrites user content).
+  // Enriches recent notes missing frontmatter — summary, topic tags and
+  // [[wikilinks]] to known entities, written as YAML frontmatter at the
+  // top of the note (never rewrites user content).
 
-  private async enrichNote(rel: string, entityNames: string[]): Promise<boolean> {
+  // Deterministic enrichment — extracts frontmatter with plain parsing,
+  // no LLM tokens. Summary = first prose paragraph; tags/links = entity
+  // matches + wikilinks found in the text.
+  private enrichNote(rel: string, entityNames: string[]): boolean {
     const content = this.memory.read(rel) ?? ''
     if (!content.trim()) return false
     // already enriched (frontmatter marker or legacy Enrichment section)
     if (/^---\n[\s\S]*?enriched:/m.test(content) || content.includes('## Enrichment')) return false
 
-    const res = await chat(this.store.get().ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: `You enrich personal notes in a knowledge base. Given a note, output ONLY these three lines and nothing else:
+    const body = content
+      .replace(/^---\n[\s\S]*?\n---\n?/, '')          // strip existing frontmatter
+      .replace(/```[\s\S]*?```/g, ' ')               // drop code blocks
+      .replace(/^#{1,6}\s+.+$/gm, ' ')               // drop headings (title isn't summary)
+      .replace(/^>\s.*$/gm, ' ')                     // drop meta/blockquote lines
+      .replace(/[#>*_`\-[\]|]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
 
-summary: <one sentence, max 25 words>
-tags: <3-6 comma-separated lowercase tags>
-links: <comma-separated [[Entity]] wikilinks — ONLY from this list: ${entityNames.join(', ') || '(none yet)'}>
+    // summary: first ~30 words of prose
+    const summary = body.split(/(?<=[.!?])\s/)[0]?.slice(0, 220).trim() ?? ''
 
-If a field has nothing useful write "-". Write values in the user's language.`
-      },
-      { role: 'user', content: content.slice(0, 6000) }
-    ], [], this.localLlm?.endpoint)
+    // entity mentions (word-boundary, case-insensitive, len>3)
+    const mentioned = entityNames.filter(n => n.length > 3 && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(content))
 
-    const fields: Record<string, string> = {}
-    for (const line of res.text.split('\n')) {
-      const m = line.match(/^(summary|tags|links):\s*(.+)$/i)
-      if (m) fields[m[1].toLowerCase()] = m[2].trim()
-    }
-    if (!fields.summary && !fields.tags) return false
+    // wikilinks already in the note
+    const wikilinks = [...content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map(m => m[1].trim())
+    const links = [...new Set([...mentioned, ...wikilinks])].slice(0, 8)
+
+    // tags: mentioned entities lowercased + filename words
+    const fileTags = rel.replace(/^notes\//, '').replace(/\.md$/, '').toLowerCase().split(/[-_\s]+/).filter(w => w.length > 2)
+    const tags = [...new Set([...mentioned.map(n => n.toLowerCase()), ...fileTags])].slice(0, 6)
+
+    if (!summary && !tags.length) return false
 
     const day = new Date().toISOString().slice(0, 10)
     const fmLines = ['---', `enriched: ${day}`]
-    if (fields.summary && fields.summary !== '-') fmLines.push(`summary: ${JSON.stringify(fields.summary)}`)
-    if (fields.tags && fields.tags !== '-') fmLines.push(`tags: ${fields.tags}`)
-    if (fields.links && fields.links !== '-') fmLines.push(`links: ${fields.links}`)
+    if (summary) fmLines.push(`summary: ${JSON.stringify(summary)}`)
+    if (tags.length) fmLines.push(`tags: ${tags.join(', ')}`)
+    if (links.length) fmLines.push(`links: ${links.map(l => `[[${l}]]`).join(', ')}`)
     fmLines.push('---', '')
     const fm = fmLines.join('\n')
 
     // replace existing frontmatter or prepend
-    let next: string
     const existing = content.match(/^---\n[\s\S]*?\n---\n?/)
-    next = existing ? fm + content.slice(existing[0].length) : fm + content
+    const next = existing ? fm + content.slice(existing[0].length) : fm + content
     this.memory.write(rel, next)
     return true
   }
@@ -781,13 +857,11 @@ If a field has nothing useful write "-". Write values in the user's language.`
     let enriched = 0
     const lines: string[] = []
     for (const f of notes) {
-      if (enriched >= 8) break // bound LLM calls per run
-      try {
-        if (await this.enrichNote(`notes/${f}`, entityNames)) {
-          enriched++
-          lines.push(`- \`${f}\` — enriched`)
-        }
-      } catch { /* skip note on failure */ }
+      // deterministic pass — no LLM budget needed, enrich everything scanned
+      if (this.enrichNote(`notes/${f}`, entityNames)) {
+        enriched++
+        lines.push(`- \`${f}\` — enriched`)
+      }
     }
 
     const report = [
