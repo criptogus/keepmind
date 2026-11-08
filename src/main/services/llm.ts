@@ -2,6 +2,16 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { AiProviderConfig } from '../store'
+import { redactSecrets, isLocalProvider } from './redact'
+
+// Memory content can contain credentials (the vault is user-owned Markdown,
+// synced from anywhere). Before messages leave for a CLOUD provider, mask
+// secret-shaped spans — local providers (llama.cpp, Ollama) get plaintext
+// since inference never leaves the machine.
+function scrubForProvider(aiCfg: AiProviderConfig, messages: ChatMessage[]): ChatMessage[] {
+  if (isLocalProvider(aiCfg.provider)) return messages
+  return messages.map(m => ({ ...m, content: redactSecrets(m.content) }))
+}
 
 // Resolve the effective provider config. The bundled 'local' provider talks to
 // the llama-server OpenAI-compatible endpoint managed by LocalLlm.
@@ -316,6 +326,7 @@ function safeJson(s: any): Record<string, unknown> {
 
 export async function chat(aiCfg: AiProviderConfig, messages: ChatMessage[], tools: ToolDefinition[] = [], localEndpoint?: string): Promise<LlmResponse> {
   const cfg = effectiveConfig(aiCfg, localEndpoint)
+  messages = scrubForProvider(aiCfg, messages)
   switch (cfg.provider) {
     case 'anthropic':
       if (!cfg.apiKey) throw new Error('Anthropic API key missing')
@@ -350,6 +361,7 @@ export async function chatStream(
   localEndpoint?: string
 ): Promise<string> {
   const cfg = effectiveConfig(aiCfg, localEndpoint)
+  messages = scrubForProvider(aiCfg, messages)
   // Ollama / llama-server streaming path
   if (cfg.provider === 'ollama' || aiCfg.provider === 'local') {
     const isOpenAI = aiCfg.provider === 'local' // llama-server OpenAI-compat path

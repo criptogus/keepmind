@@ -200,6 +200,7 @@ export class AutomationScheduler {
   async run(auto: Automation) {
     this.log(`automation "${auto.name}" running (${auto.kind})`)
     this.brain.setActivitySource(`auto:${auto.name}`)
+    await this.brain.ensureProviderReady()
     if (auto.kind === 'sleep') {
       await this.brain.sleep()
     } else if (auto.kind === 'librarian') {

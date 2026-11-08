@@ -12,6 +12,7 @@ import type { GitSync } from './sync'
 import type { RagService } from './rag'
 import type { LayaService } from './laya'
 import { refreshEntities } from './entities'
+import { SECRET_PATTERNS } from './redact'
 
 // ── Memory: markdown files in the local memory dir, mirrored to the GitHub repo ──
 
@@ -201,6 +202,21 @@ export class Brain {
 
   setMcp(mcp: McpManager) { this.mcp = mcp }
   setLocalLlm(l: LocalLlm) { this.localLlm = l }
+
+  // Lazily ensure the bundled local model server is up before LLM calls.
+  // The app auto-starts it at launch, but the server can crash or the app
+  // may have started before the model finished downloading — without this,
+  // nightly crons would silently fail on the 'local' provider.
+  async ensureProviderReady(): Promise<void> {
+    const cfg = this.store.get()
+    if (cfg.ai.provider !== 'local' || !this.localLlm) return
+    try {
+      await this.localLlm.ensureRunning(cfg.localLlm.modelId)
+    } catch (e) {
+      console.warn('[brain] local provider not ready:', e)
+    }
+  }
+
   attachSync(sync: GitSync) {
     this.gitSync = sync
     this.memory.onWrite = (rel) => sync.markDirty(rel)
@@ -317,6 +333,7 @@ export class Brain {
   }
 
   async chat(agentId: string, userMessage: string, onDelta?: (t: string) => void): Promise<string> {
+    await this.ensureProviderReady()
     // Pull freshest shared memory before answering (rate-limited internally)
     await this.gitSync?.pullIfDue().catch(() => {})
     // Semantic recall over memory (no-op if embeddings aren't set up)
@@ -893,15 +910,7 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
 
   async securityAudit(): Promise<string> {
     const day = new Date().toISOString().slice(0, 10)
-    const PATTERNS: [string, RegExp][] = [
-      ['openai/generic api key', /\b(sk-[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,})\b/],
-      ['github token', /\b(ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|gho_[A-Za-z0-9]{30,})\b/],
-      ['slack token', /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/],
-      ['aws key', /\bAKIA[0-9A-Z]{16}\b/],
-      ['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
-      ['password assignment', /(?:password|passwd|pwd|secret|api[_-]?key|token)\s*[:=]\s*['"][^'"\s]{8,}['"]/i],
-      ['bearer token', /bearer\s+[A-Za-z0-9._~+/=-]{20,}/i]
-    ]
+    const PATTERNS = SECRET_PATTERNS
     const hits: string[] = []
     for (const rel of this.memory.allRelFiles()) {
       const content = this.memory.read(rel)
@@ -909,6 +918,7 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
       const lines = content.split('\n')
       for (let i = 0; i < lines.length; i++) {
         for (const [label, re] of PATTERNS) {
+          re.lastIndex = 0 // /g patterns are stateful across .test() calls
           if (re.test(lines[i])) {
             // redact: show only the key name/context, never the value
             hits.push(`- \`${rel}:${i + 1}\` — ${label}`)

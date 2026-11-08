@@ -61,6 +61,7 @@ OpenCode or any MCP client can spawn the same command.
 - Markdown only. One fact per bullet in \`long-term/\` files.
 - Tasks: first line \`# Title\`, second line \`> status: open|done · priority: low|normal|high · due: YYYY-MM-DD · created: ISO\`.
 - Notes may carry YAML frontmatter (\`summary:\`, \`tags:\`, \`links:\`, \`enriched:\`) — preserve it when editing.
+- Classify sensitivity in frontmatter: \`sensitivity: public|internal|sensitive|secret\`. The app masks secret-shaped values (API keys, tokens, private keys, password assignments) before any content reaches a cloud LLM — local models see everything. Use \`secret\` for credentials, financial or board-confidential material.
 - Notes may also declare freshness: \`valido_ate: YYYY-MM-DD\` (or \`expires:\`) — expired notes are demoted in search. Set \`review_after:\` for time-sensitive content.
 - Distinguish hypothesis from fact: prefix unverified claims with \`> proof: hypothesis\`; confirmed ones with \`> proof: confirmed\`.
 - Link recurring people/projects/topics with \`[[Name]]\` — entity pages live in \`memory/entities/\`.
