@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createMemoryServer } from '../tools/keepmind-mcp.mjs'
@@ -39,5 +39,53 @@ it('enforces client spaces and maximum class across reads and discovery', () => 
     expect(list).toEqual(['notes/allowed.md'])
     const denied = handle({ id: 2, method: 'resources/read', params: { uri: 'memory://notes/other.md' } })
     expect(denied.error).toBeDefined()
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+it('requires explicit client write permission and audits every attempt without paths or content', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'km-mcp-write-'))
+  try {
+    mkdirSync(join(dir, 'notes'))
+    writeFileSync(join(dir, 'notes/foreign.md'), '---\nspace: company-y\nclass: internal\n---\nforeign')
+    writeFileSync(join(dir, 'notes/high.md'), '---\nspace: company-x\nclass: sensitive\n---\nrestricted')
+    const handle = createMemoryServer(dir, { clientId: 'writer', clients: { writer: { spaces: ['company-x'], defaultSpace: 'company-x', maxClass: 'internal', write: true } } })
+    const call = (name, path, content) => handle({ id: 1, method: 'tools/call', params: { name, arguments: { path, content } } }).result
+    expect(call('sb_write', 'notes/new.md', '# Synthetic note').isError).toBeUndefined()
+    expect(readFileSync(join(dir, 'notes/new.md'), 'utf8')).toContain('space: company-x')
+    expect(call('sb_append', 'notes/new.md', '\nsynthetic addition').isError).toBeUndefined()
+    expect(call('sb_remember', undefined, 'synthetic durable lesson').isError).toBeUndefined()
+    for (const [path, content] of [
+      ['notes/foreign.md', 'replacement'], ['notes/high.md', 'replacement'],
+      ['notes/bad.md', '---\nspace: company-y\nclass: internal\n---\nblocked'],
+      ['notes/high-new.md', '---\nspace: company-x\nclass: sensitive\n---\nblocked'],
+      ['notes/override.md', '---\nspace: company-x\nclass: internal\nclass_override: secret\n---\nblocked'],
+      ['../outside.md', 'blocked'], ['notes/../ops/forged.md', 'blocked'],
+      ['notes/duplicate.md', '---\nspace: company-x\nspace: company-y\n---\nblocked']
+    ]) expect(call('sb_write', path, content).isError).toBe(true)
+    expect(call('sb_append', 'notes/new.md', '\nsynthetic@example.invalid').isError).toBe(true)
+    const denied = createMemoryServer(dir, { clientId: 'reader', clients: { reader: { spaces: ['company-x'], maxClass: 'internal' } } })
+    expect(denied({ id: 1, method: 'tools/call', params: { name: 'sb_write', arguments: { path: 'notes/denied.md', content: 'blocked' } } }).result.isError).toBe(true)
+    const audit = readFileSync(join(dir, 'ops/mcp-reads.jsonl'), 'utf8')
+    const rows = audit.trim().split('\n').map(line => JSON.parse(line))
+    expect(rows).toHaveLength(13)
+    expect(rows.filter(r => r.allowed)).toHaveLength(3)
+    for (const row of rows) {
+      expect(row.operation).toBe('write')
+      expect(row.resource).toMatch(/^[a-f0-9]{64}$/)
+      expect(row.ts).toBeDefined(); expect(['writer', 'reader']).toContain(row.client)
+      expect(Object.keys(row).sort()).toEqual(['allowed', 'client', 'operation', 'resource', 'ts'])
+    }
+    expect(audit).not.toContain('notes/')
+    expect(audit).not.toContain('synthetic')
+    expect(existsSync(join(dir, 'notes/denied.md'))).toBe(false)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+it('routes new remember notes to the default space and refuses restricted plaintext even with a higher scope', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'km-mcp-default-'))
+  try {
+    const handle = createMemoryServer(dir, { clients: { default: { spaces: ['company-x', 'personal'], defaultSpace: 'company-x', maxClass: 'secret', write: true } } })
+    const call = (content) => handle({ id: 1, method: 'tools/call', params: { name: 'sb_remember', arguments: { kind: 'note', content } } }).result
+    expect(call('synthetic ordinary').isError).toBeUndefined()
+    expect(readFileSync(join(dir, 'long-term/notes/synthetic-ordinary.md'), 'utf8')).toContain('space: company-x')
+    expect(call('synthetic@example.invalid').isError).toBe(true)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

@@ -14,8 +14,8 @@
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
-import { readdirSync, readFileSync, writeFileSync, appendFileSync, statSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
-import { join, resolve, sep, dirname } from 'node:path'
+import { readdirSync, readFileSync, writeFileSync, appendFileSync, statSync, existsSync, mkdirSync, realpathSync, renameSync } from 'node:fs'
+import { join, resolve, sep, dirname, relative } from 'node:path'
 
 // ── config ──
 
@@ -38,20 +38,23 @@ if (!/^[a-zA-Z0-9_-]{1,80}$/.test(clientId)) throw new Error('Invalid client id'
 const scope = options.clients?.[clientId] ?? (options.clients ? { spaces: [], maxClass: 'public' } : { spaces: ['personal'], maxClass: 'internal' })
 const levels = ['public', 'internal', 'sensitive', 'secret']
 const auditFile = options.auditFile ?? safe('ops/mcp-reads.jsonl')
-function authorize(content) {
+function authorize(content, maximum = scope.maxClass) {
   if (content.startsWith('KEEPMIND-')) return false
   const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
   const space = fm.match(/^space:\s*(\S+)/m)?.[1] ?? 'personal'
   const declared = fm.match(/^class:\s*(\S+)/m)?.[1] ?? 'internal'
+  const override = fm.match(/^class_override:\s*(\S+)/m)?.[1]
+  if (override !== undefined && !levels.includes(override)) return false
   let rank = levels.indexOf(declared)
   if (rank < 0) return false
+  rank = Math.max(rank, override === undefined ? 0 : levels.indexOf(override))
   if (/\b(?:sk-|ghp_|xox[a-z]-|AKIA)|-----BEGIN .*PRIVATE KEY-----|\beyJ[\w-]+\.[\w-]+\.[\w-]+/.test(content)) rank = 3
   if (/\b[^\s@]+@[^\s@]+\.[^\s@]+|(?:\+\d{8,15}\b|\b\d{10,15}\b)|\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b|\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b|(?:\+\d{1,3}[ .-]?)?(?:\(\d{2,3}\)[ .-]?|\b\d{2,3}[ .-])\d{4,5}[ .-]?\d{4}\b/.test(content)) rank = Math.max(rank, 2)
-  return scope.spaces.includes(space) && rank <= levels.indexOf(scope.maxClass)
+  return scope.spaces.includes(space) && rank <= levels.indexOf(maximum)
 }
-function audit(rel, allowed) {
+function audit(rel, allowed, operation = 'read') {
   mkdirSync(dirname(auditFile), { recursive: true })
-  appendFileSync(auditFile, JSON.stringify({ ts: new Date().toISOString(), client: clientId, resource: createHash('sha256').update(rel).digest('hex'), allowed }) + '\n', { mode: 0o600 })
+  appendFileSync(auditFile, JSON.stringify({ ts: new Date().toISOString(), client: clientId, operation, resource: createHash('sha256').update(rel).digest('hex'), allowed }) + '\n', { mode: 0o600 })
 }
 
 function safe(rel) {
@@ -86,8 +89,45 @@ function readMem(rel) {
 }
 
 function writeMem(rel, content, append = false) {
-  safe(rel)
-  throw new Error('Standalone MCP writes require the unlocked native memory service')
+  let allowed = false
+  try {
+    const p = safe(rel)
+    // Configuration and audit trails cannot be overwritten through note tools.
+    if (!rel.endsWith('.md') || resolve(p) === ROOT || /^(?:ops|state|\.keepmind)(?:[\\/]|$)/.test(relative(ROOT, p)) || p === resolve(auditFile)) throw new Error('Write path denied')
+    if (scope.write !== true) throw new Error('Client write permission required')
+    const previous = existsSync(p) ? readFileSync(p, 'utf8') : null
+    if (previous !== null && !authorize(previous)) throw new Error('Existing note outside client scope')
+    let next = append && previous !== null ? previous + content : content
+    const fm = next.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
+    if (!fm?.[1].match(/^space:/m)) {
+      const previousSpace = previous?.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].match(/^space:\s*(\S+)/m)?.[1]
+      const space = previousSpace ?? scope.defaultSpace ?? scope.spaces[0]
+      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(space ?? '')) throw new Error('Client default space required')
+      next = fm ? `---\nspace: ${space}\n${fm[1]}\n---\n${next.slice(fm[0].length)}` : `---\nspace: ${space}\nclass: internal\n---\n${next}`
+    }
+    // Ambiguous policy fields fail closed; do not let appending/overwriting
+    // downgrade a protected note or reinterpret duplicate frontmatter keys.
+    const fields = next.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
+    if (['space', 'class', 'class_override'].some(key => [...fields.matchAll(new RegExp(`^${key}:`, 'gm'))].length > 1)) throw new Error('Ambiguous note policy')
+    if (!authorize(next)) throw new Error('New note outside client scope')
+    // Standalone MCP has no unlocked key service: restricted writes must use
+    // the native service so no sensitive plaintext is persisted.
+    const classification = fields.match(/^class:\s*(\S+)/m)?.[1] ?? 'internal'
+    const override = fields.match(/^class_override:\s*(\S+)/m)?.[1]
+    if (levels.indexOf(classification) >= 2 || levels.indexOf(override) >= 2 || !authorize(next, 'internal')) throw new Error('Restricted writes require unlocked native memory service')
+    mkdirSync(dirname(p), { recursive: true })
+    // Audit authorization before mutation: an unavailable audit sink denies writes.
+    audit(rel, true, 'write')
+    allowed = true
+    const temp = p + '.tmp'
+    if (existsSync(temp)) throw new Error('Write already pending')
+    writeFileSync(temp, next, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    renameSync(temp, p)
+    return rel
+  } catch (error) {
+    if (!allowed) audit(rel, false, 'write')
+    throw error
+  }
 }
 
 // ── lexical search (BM25-ish, no deps) ──
@@ -127,12 +167,6 @@ function search(query, limit = 8) {
   }
   results.sort((a, b) => b.score - a.score)
   if (!results.length) {
-    // zero-hit = a knowledge gap. Log it so sleep/evolve cycles can see
-    // what the brain fails to answer (inspired by vault evolve_lib gaps).
-    try {
-      writeMem('ops/search-gaps.md',
-        `\n- ${new Date().toISOString().slice(0, 16).replace('T', ' ')} — "${query.replace(/\n/g, ' ').slice(0, 120)}"\n`, true)
-    } catch { /* non-fatal */ }
     return `no matches for "${query}"`
   }
   return results.slice(0, limit).map(r =>
