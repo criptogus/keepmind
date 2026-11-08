@@ -109,6 +109,7 @@ export class RagService {
     if (this.index.modelId !== this.localLlm.embedModelId) {
       this.index.chunks.forEach(c => { c.vec = undefined })
       this.index.modelId = this.localLlm.embedModelId
+      await this.save()
     }
     const pending = this.index.chunks.filter(c => !c.vec)
     if (!pending.length) return 0
@@ -147,7 +148,7 @@ export class RagService {
       }
       const qv = this.localLlm.embedReady ? await this.localLlm.embed([query]).catch(() => null) : null
       const db = await this.searchDb
-      const q = this.index.modelId === this.localLlm.embedModelId ? qv?.[0] : undefined
+      const q = db.modelId === this.localLlm.embedModelId ? qv?.[0] : undefined
       const scored = db.search(query, q, SEARCH_K * 2)
       // Laya rerank (the vault's "Jev" slot): a calibrated yes/no relevance
       // verdict per candidate, blended with the hybrid score. ~33ms each,
@@ -216,4 +217,3 @@ function chunkText(text: string): { offset: number; text: string }[] {
   }
   return chunks.filter(c => c.text.length > 40)
 }
-
