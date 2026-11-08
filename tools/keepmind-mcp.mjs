@@ -6,24 +6,42 @@
 // bots) gets structured read/write/search access to the brain.
 //
 // Usage:
-//   node tools/keepmind-mcp.mjs --dir /path/to/memory
-//   SECOND_BRAIN_DIR=/path/to/memory npx keepmind-mcp
+//   node tools/keepmind-mcp.mjs --memory-dir /path/to/memory
+//   KEEPMIND_MEMORY_DIR=/path/to/memory npx keepmind-mcp
 //
 // Inside a cloned second-brain repo the default `./memory` just works.
 
+import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
-import { readdirSync, readFileSync, writeFileSync, appendFileSync, statSync, existsSync, mkdirSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync, appendFileSync, statSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { join, resolve, sep, dirname } from 'node:path'
 
 // ── config ──
 
-const args = process.argv.slice(2)
-const dirArg = args.includes('--dir') ? args[args.indexOf('--dir') + 1] : null
-const ROOT = resolve(dirArg ?? process.env.SECOND_BRAIN_DIR ?? './memory')
+function configuredRoot() {
+  const args = process.argv.slice(2)
+  const flag = args.includes('--memory-dir') ? '--memory-dir' : '--dir'
+  const position = args.indexOf(flag)
+  if (position >= 0 && (!args[position + 1] || args[position + 1].startsWith('--'))) {
+    process.stderr.write(`${flag} requires a directory\n`); process.exit(1)
+  }
+  const root = resolve((position >= 0 ? args[position + 1] : null) ?? process.env.KEEPMIND_MEMORY_DIR ?? process.env.SECOND_BRAIN_DIR ?? './memory')
+
+  return root
+}
+
+export function createMemoryServer(memoryDir) {
+const ROOT = resolve(memoryDir)
 
 function safe(rel) {
-  const p = resolve(ROOT, String(rel ?? '').replace(/^\/+/, ''))
+  const p = resolve(ROOT, String(rel ?? ''))
   if (p !== ROOT && !p.startsWith(ROOT + sep)) throw new Error(`path escapes memory root: ${rel}`)
+  let ancestor = p
+  while (!existsSync(ancestor) && dirname(ancestor) !== ancestor) ancestor = dirname(ancestor)
+  if (existsSync(ROOT)) {
+    const root = realpathSync(ROOT), target = realpathSync(ancestor)
+    if (target !== root && !target.startsWith(root + sep)) throw new Error('symlink escapes memory root')
+  }
   return p
 }
 
@@ -206,6 +224,8 @@ function queryMem(a = {}) {
 // ── tools ──
 
 const TOOLS = [
+  { name: 'search', description: 'Keyword search over local Markdown memory.', inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['query'] } },
+  { name: 'read_note', description: 'Read a note relative to the local memory directory.', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
   {
     name: 'sb_search',
     description: 'Search the second-brain memory (Markdown files) for a query. Returns matching files with snippets. Use this BEFORE answering questions about the user — their knowledge lives here.',
@@ -278,7 +298,9 @@ const TOOLS = [
 
 function callTool(name, a = {}) {
   switch (name) {
+    case 'search':
     case 'sb_search': return search(String(a.query ?? ''), a.limit ?? 8)
+    case 'read_note':
     case 'sb_read': {
       const c = readMem(String(a.path ?? ''))
       return c ?? `not found: ${a.path}`
@@ -330,6 +352,7 @@ function err(id, code, message) { return { jsonrpc: '2.0', id, error: { code, me
 
 function handle(msg) {
   const { id, method, params } = msg
+  if (id === undefined) return null // JSON-RPC notifications never receive responses
   if (method === 'initialize') {
     return ok(id, {
       protocolVersion: PROTOCOL_VERSION,
@@ -367,14 +390,20 @@ function handle(msg) {
   return err(id, -32601, `method not found: ${method}`)
 }
 
-const rl = createInterface({ input: process.stdin, terminal: false })
-rl.on('line', line => {
-  const trimmed = line.trim()
-  if (!trimmed) return
-  let msg
-  try { msg = JSON.parse(trimmed) } catch { return }
-  const res = handle(msg)
-  if (res) process.stdout.write(JSON.stringify(res) + '\n')
-})
+return handle
+}
 
-process.stderr.write(`[keepmind-mcp] serving memory at ${ROOT}\n`)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const root = configuredRoot()
+  const handle = createMemoryServer(root)
+  const rl = createInterface({ input: process.stdin, terminal: false })
+  rl.on('line', line => {
+    const trimmed = line.trim()
+    if (!trimmed) return
+    let msg
+    try { msg = JSON.parse(trimmed) } catch { return }
+    const res = handle(msg)
+    if (res) process.stdout.write(JSON.stringify(res) + '\n')
+  })
+  process.stderr.write(`[keepmind-mcp] serving memory at ${root}\n`)
+}

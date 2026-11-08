@@ -39,5 +39,13 @@
     "vite": "^5.4.11",
     "vitest": "^2.1.9"
   },
-  "author": "KeepMind contributors"
+  "author": "KeepMind contributors",
+  "files": [
+    "out/",
+    "tools/keepmind-mcp.mjs",
+    "README.md",
+    "NOTICE",
+    "LICENSE",
+    "src/main/vendor/laya/LICENSE.laya"
+  ]
 }

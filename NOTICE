@@ -1,0 +1,10 @@
+KeepMind includes laya-ts, the TypeScript runtime for Laya.
+Source: https://github.com/NandhaKishorM/laya/tree/main/laya-ts
+License: Apache License, Version 2.0.
+The full license is preserved in src/main/vendor/laya/LICENSE.laya.
+Vendored source and attribution: src/main/vendor/laya/VENDORED.md.
+
+Local changes to laya-ts: providers.ts adds alignFeeds() for community ONNX
+exports with different input names and tensor ranks. These changes are
+identified in VENDORED.md. KeepMind's MIT license does not replace the
+Apache-2.0 license applicable to these vendored files.

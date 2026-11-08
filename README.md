@@ -6,7 +6,8 @@
 
 **An open-source, LLM-agnostic second brain.**
 Plug *any* LLM — local llama.cpp, Claude, Codex, GPT, Gemini, Grok, Ollama —
-into persistent memory stored as plain Markdown in **your own GitHub repo**.
+into persistent local Markdown memory synced to **your own GitHub repo**,
+with optional end-to-end encryption.
 Your knowledge is independent of any model: swap providers anytime, nothing is forgotten.
 Runs on your desktop, a VPS, or a bot's own VM.
 
@@ -234,3 +235,87 @@ PRs welcome! Please open an issue first for big changes. See [CONTRIBUTING.md](C
 ## License
 
 [MIT](LICENSE) © KeepMind contributors
+
+## Encrypted GitHub sync
+
+In **Settings → GitHub**, enable **Encrypt GitHub memory**, enter a strong
+passphrase, and unlock sync. Enter the same passphrase on each device after
+restarting KeepMind. The passphrase stays in process memory for that session;
+it is never written to config, uploaded, or returned by IPC. Forgetting it means
+losing access to the encrypted backup.
+
+Before memory uploads, KeepMind uses libsodium's Argon2id (`crypto_pwhash`,
+interactive limits: 2 operations and 64 MiB) to derive a 256-bit key from the
+passphrase and a random per-repository salt. The public `.keepmind/crypto.json`
+contains the version, KDF, salt, and an authenticated key-check ciphertext.
+Each memory file starts with `KEEPMIND-ENCRYPTED:1` and contains a random nonce
+and a `crypto_secretbox` authenticated ciphertext. Pulls verify and decrypt
+before writing local Markdown. Wrong passphrases and tampered files fail closed.
+
+The first encrypted sync rewrites existing local memory and imports remote-only
+memory for encryption. A repository with an encryption header refuses plaintext
+uploads even if its local toggle is disabled. Use a separate repository to return
+to plaintext sync. Existing plaintext Git history is **not removed**: use a fresh
+private repo if previous commits contain sensitive notes. Filenames, sizes, and
+commit timing remain visible. Local Markdown and the local SQLite search index
+remain plaintext, so protect the device and backups. The standalone MCP server
+reads local decrypted Markdown; it cannot search a raw encrypted repository clone.
+
+API credentials are sealed with Electron safeStorage. KeepMind refuses to save
+secrets if the OS keyring is unavailable, fails, or uses Linux's `basic_text`
+backend. Unlock/configure your system keyring and retry; no plaintext fallback
+is used.
+
+## Standalone MCP server
+
+Requires Node.js 18+. The dependency-free `tools/` package is named
+`keepmind-mcp` and can be packaged with `npm pack ./tools`. Once that package is
+published to npm, install/run it with:
+
+```bash
+npx keepmind-mcp --memory-dir /absolute/path/to/memory
+# Or: KEEPMIND_MEMORY_DIR=/absolute/path/to/memory npx keepmind-mcp
+```
+
+From a source checkout, no npm publication or Electron installation is needed:
+
+```bash
+node tools/keepmind-mcp.mjs --memory-dir /absolute/path/to/memory
+# Local installation of the standalone package:
+npm install -g ./tools
+keepmind-mcp --memory-dir /absolute/path/to/memory
+```
+
+Use this stdio MCP configuration in Claude Code's `.mcp.json` or Cursor's
+`.cursor/mcp.json` after installing the package (or replace `npx` and `args` with
+`node` and the absolute script path from your checkout):
+
+```json
+{
+  "mcpServers": {
+    "keepmind": {
+      "command": "npx",
+      "args": ["-y", "keepmind-mcp", "--memory-dir", "/absolute/path/to/memory"]
+    }
+  }
+}
+```
+
+`search` provides keyword search without an embedding model. `read_note` reads a
+relative Markdown path. Existing `sb_*` tools also support writes, appends,
+structured queries and durable memories. The server uses stdin/stdout for MCP
+messages and stderr for diagnostics. `KEEPMIND_MEMORY_DIR` and `--memory-dir`
+are preferred; legacy `SECOND_BRAIN_DIR` and `--dir` remain supported.
+
+The desktop app uses SQLite BM25 postings fused with cosine vector ranks via
+reciprocal rank fusion. This sql.js build has FTS3 but no FTS5, so BM25 uses an
+inverted index table. Keyword recall works without embeddings. On first use,
+`memory-embeddings.json` is migrated to `memory-search.sqlite`; the original JSON
+is retained as a backup and is not read again once the SQLite index exists.
+
+## Third-party attribution
+
+The vendored **laya-ts** runtime is licensed under Apache-2.0, separately from
+KeepMind's MIT license. See [NOTICE](NOTICE), the preserved
+[Apache-2.0 license](src/main/vendor/laya/LICENSE.laya), and
+[vendoring notes](src/main/vendor/laya/VENDORED.md) for source and local changes.

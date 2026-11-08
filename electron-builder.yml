@@ -10,6 +10,9 @@ directories:
 files:
   - out/**
   - package.json
+  - LICENSE
+  - NOTICE
+  - src/main/vendor/laya/LICENSE.laya
   - tools/**
   - node_modules/**
 asar: true
