@@ -8,6 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "start:headless": "electron-vite build && xvfb-run -a env SECOND_BRAIN_HEADLESS=1 electron .",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "dist": "electron-vite build && electron-builder"
   },

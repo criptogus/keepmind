@@ -104,6 +104,50 @@ First launch walks you through a 4-step wizard:
 3. **Connectors** — optional: WhatsApp QR, Telegram bot token, Postgres URL.
 4. Done — start chatting. Insights and a daily summary generate automatically.
 
+## Run on a VPS or a bot's VM
+
+Second Brain is a great fit for always-on memory: an agent (Grok, Claude, your own
+bot) can install it on a VM and every chat — human or AI — shares the same
+GitHub-backed memory.
+
+Electron needs a display server even with no window, so on headless Linux use
+`xvfb` plus the built-in headless mode (services only — sync, MCP servers,
+LLM, automations — no BrowserWindow):
+
+```bash
+# one-time deps on Debian/Ubuntu
+sudo apt install xvfb
+
+npm install && npm run build
+npm run start:headless        # = xvfb-run + SECOND_BRAIN_HEADLESS=1
+
+# or the packaged build:
+xvfb-run -a env SECOND_BRAIN_HEADLESS=1 ./dist/linux-unpacked/second-brain
+xvfb-run -a env SECOND_BRAIN_HEADLESS=1 "./dist/Second Brain-0.1.1.AppImage"
+```
+
+`SECOND_BRAIN_HEADLESS=1` (or `--headless`) skips window creation entirely —
+ideal for bots: lower RAM, no GUI deps beyond xvfb. SIGTERM/SIGINT shut down
+cleanly (stops MCP servers, sync and schedulers), so it works under systemd:
+
+```ini
+# /etc/systemd/system/second-brain.service
+[Unit]
+Description=Second Brain (headless)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/xvfb-run -a /opt/second-brain/second-brain
+Environment=SECOND_BRAIN_HEADLESS=1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Point any MCP-capable agent at the same GitHub repo and it reads/writes the
+same memory — that's the LLM-agnostic part.
+
 ## Memory layout (in your repo)
 
 ```

@@ -20,6 +20,10 @@ let localLlmGlobal: LocalLlm | null = null
 let gitSyncGlobal: GitSync | null = null
 let autoSchedulerGlobal: AutomationScheduler | null = null
 
+// Headless mode: services only (GitHub sync, MCP, LLM, automations) — no window.
+// For VPS / bot VMs: `xvfb-run -a env SECOND_BRAIN_HEADLESS=1 second-brain`
+const HEADLESS = process.env.SECOND_BRAIN_HEADLESS === '1' || process.argv.includes('--headless')
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -70,7 +74,8 @@ app.whenReady().then(() => {
   const planner = new Planner(brain.getMemory(), store, localLlm)
   registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner)
   initUpdater()
-  createWindow()
+  if (!HEADLESS) createWindow()
+  else console.log('[second-brain] headless mode — services only, no window')
 
   // Continuous GitHub sync — push local writes, pull remote memory
   gitSync.start()
@@ -109,12 +114,22 @@ app.whenReady().then(() => {
     }
   }, 45_000)
 
+  if (HEADLESS) {
+    const shutdown = () => {
+      mcp?.stopAll(); localLlmGlobal?.stop(); gitSyncGlobal?.stop(); autoSchedulerGlobal?.stop()
+      app.quit()
+    }
+    process.on('SIGINT', shutdown)
+    process.on('SIGTERM', shutdown)
+  }
+
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0 && !HEADLESS) createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
+  if (HEADLESS) return // services keep running until SIGTERM
   mcp?.stopAll()
   localLlmGlobal?.stop()
   gitSyncGlobal?.stop()
