@@ -18,6 +18,8 @@ const api = {
   ghStartDeviceFlow: () => ipcRenderer.invoke('github:startDeviceFlow'),
   ghPollDeviceFlow: (dc: any) => ipcRenderer.invoke('github:pollDeviceFlow', dc),
   ghCreateRepo: (name: string, desc: string) => ipcRenderer.invoke('github:createRepo', name, desc),
+  ghListRepos: () => ipcRenderer.invoke('github:listRepos'),
+  ghUseRepo: (owner: string, repo: string) => ipcRenderer.invoke('github:useRepo', owner, repo),
   ghPushMemory: (msg: string) => ipcRenderer.invoke('github:pushMemory', msg),
 
   // local llm

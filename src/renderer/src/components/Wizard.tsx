@@ -26,6 +26,9 @@ export default function Wizard({ config, onDone, onToast }: Props) {
 
   const [ghDevice, setGhDevice] = useState<any>(null)
   const [ghLogin, setGhLogin] = useState('')
+  const [repoMode, setRepoMode] = useState<'create' | 'import'>('create')
+  const [userRepos, setUserRepos] = useState<any[]>([])
+  const [importRef, setImportRef] = useState('')
   const [repoName, setRepoName] = useState('')
   const [repoCreated, setRepoCreated] = useState(false)
   const pollRef = useRef<any>(null)
@@ -104,6 +107,31 @@ export default function Wizard({ config, onDone, onToast }: Props) {
       onToast(`Code: ${dc.user_code}`, 'info')
     } catch (e: any) {
       onToast(`GitHub failed: ${e?.message ?? e} — check the OAuth App is configured`, 'error')
+    } finally { setBusy(false) }
+  }
+
+  // Once GitHub is connected, offer the user's repos for import
+  useEffect(() => {
+    if (!ghLogin) return
+    window.sb.ghListRepos?.().then((repos: any[]) => {
+      const sorted = [...(repos ?? [])].sort((a, b) => {
+        const score = (r: any) => /brain|second|keepmind|memory/i.test(r.full_name) ? 0 : 1
+        return score(a) - score(b)
+      })
+      setUserRepos(sorted)
+      if (sorted[0] && !importRef) setImportRef(sorted[0].full_name)
+    }).catch(() => {})
+  }, [ghLogin])
+
+  const useExistingRepo = async () => {
+    setBusy(true)
+    try {
+      const [owner, name] = importRef.split('/')
+      await window.sb.ghUseRepo(owner, name)
+      setRepoCreated(true)
+      onToast(`Repo linked: ${importRef}`, 'success')
+    } catch (e: any) {
+      onToast(`Repo: ${e?.message ?? e}`, 'error')
     } finally { setBusy(false) }
   }
 
@@ -195,7 +223,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   }
 
   const next = () => {
-    if (step === 1 && !repoCreated && ghLogin) { createRepo(); return }
+    if (step === 1 && !repoCreated && ghLogin) { repoMode === 'import' ? useExistingRepo() : createRepo(); return }
     if (step === 2) { saveProvider(); return }
     if (step === 3) { skipConnectors(); return }
     setStep(s => Math.min(s + 1, STEPS.length - 1))
@@ -292,14 +320,54 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                 </div>
                 {!repoCreated ? (
                   <>
-                    <div className="field">
-                      <label>Repository name</label>
-                      <input value={repoName} onChange={e => setRepoName(e.target.value)} />
-                      <span className="hint">Will be created as a private repo on your GitHub automatically.</span>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                      {([['create', '＋ New repo'], ['import', '⇪ Import existing']] as const).map(([m, label]) => (
+                        <button key={m}
+                          className={`btn ${repoMode === m ? 'btn--primary' : 'btn--ghost'}`}
+                          style={{ flex: 1, fontSize: 12.5 }}
+                          onClick={() => setRepoMode(m)}>
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                    <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={next} disabled={busy}>
-                      {busy ? 'Creating…' : 'Create repository'}
-                    </button>
+                    {repoMode === 'create' ? (
+                      <>
+                        <div className="field">
+                          <label>Repository name</label>
+                          <input value={repoName} onChange={e => setRepoName(e.target.value)} />
+                          <span className="hint">Will be created as a private repo on your GitHub automatically.</span>
+                        </div>
+                        <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={next} disabled={busy}>
+                          {busy ? 'Creating…' : 'Create repository'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="field">
+                          <label>Existing repository</label>
+                          {userRepos.length > 0 ? (
+                            <select value={importRef} onChange={e => setImportRef(e.target.value)}>
+                              {userRepos.map((r: any) => (
+                                <option key={r.full_name} value={r.full_name}>
+                                  {r.full_name}{r.private ? ' 🔒' : ''}{/brain|second|keepmind|memory/i.test(r.full_name) ? ' ★' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input value={importRef} onChange={e => setImportRef(e.target.value)} placeholder="owner/repo-name" />
+                          )}
+                          <span className="hint">
+                            {userRepos.length > 0
+                              ? 'Pick a repo — its memory/ contents will sync into KeepMind. ★ = likely a brain repo.'
+                              : 'Loading your repos… or type owner/repo manually.'}
+                          </span>
+                        </div>
+                        <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={next}
+                          disabled={busy || !importRef.includes('/')}>
+                          {busy ? 'Linking…' : 'Use this repo →'}
+                        </button>
+                      </>
+                    )}
                   </>
                 ) : (
                   <div className="card card-pad" style={{ borderColor: 'rgba(52,211,153,.3)' }}>

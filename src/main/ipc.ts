@@ -223,6 +223,23 @@ export function registerIpc(
     }
     return res
   })
+  ipcMain.handle('github:listRepos', async () => {
+    const t = store.get().github.accessToken
+    if (!t) return []
+    try { return await github.listUserRepos(t) } catch { return [] }
+  })
+  ipcMain.handle('github:useRepo', async (_e, owner: string, repo: string) => {
+    const t = store.get().github.accessToken
+    if (!t) throw new Error('Not authenticated')
+    const r = await github.getRepo(t, owner, repo)
+    store.updateGithub({
+      repoOwner: owner, repoName: repo,
+      repoUrl: r.html_url, defaultBranch: r.default_branch
+    })
+    // teach agents the layout — only writes files the repo doesn't already have
+    sync?.maybeScaffold().catch(() => {})
+    return r
+  })
   ipcMain.handle('github:createRepo', async (_e, name: string, description: string) => {
     const cfg = store.get().github
     if (!cfg.accessToken) throw new Error('Not authenticated')

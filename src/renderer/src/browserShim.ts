@@ -67,6 +67,8 @@ const demo = {
   ghStartDeviceFlow: async () => ({ device_code: 'demo', user_code: 'DEMO-1234', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 }),
   ghPollDeviceFlow: async () => null,
   ghCreateRepo: async () => ({ full_name: 'voce/second-brain', html_url: 'https://github.com/voce/keepmind', clone_url: '', default_branch: 'main' }),
+  ghListRepos: async () => [],
+  ghUseRepo: async () => ({ full_name: 'voce/repo' }),
   ghPushMemory: async () => ({ pushed: 12 }),
 
   localLlmStatus: async () => ({

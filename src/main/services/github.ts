@@ -78,6 +78,39 @@ async function apiSend(method: string, path: string, token: string, body?: unkno
   return res.status === 204 ? null : res.json()
 }
 
+export interface UserRepo {
+  full_name: string
+  name: string
+  owner: string
+  html_url: string
+  private: boolean
+  default_branch: string
+  description?: string
+  updated_at: string
+}
+
+// List the authenticated user's repos (newest first, up to 100).
+export async function listUserRepos(token: string): Promise<UserRepo[]> {
+  const items = await apiGet('/user/repos?per_page=100&sort=updated&type=owner', token) as any[]
+  return items.map(r => ({
+    full_name: r.full_name,
+    name: r.name,
+    owner: r.owner?.login ?? '',
+    html_url: r.html_url,
+    private: !!r.private,
+    default_branch: r.default_branch ?? 'main',
+    description: r.description ?? undefined,
+    updated_at: r.updated_at ?? ''
+  }))
+}
+
+// Validate that owner/repo exists and the token can read it.
+export async function getRepo(token: string, owner: string, repo: string) {
+  return apiGet(`/repos/${owner}/${repo}`, token) as Promise<{
+    full_name: string; html_url: string; default_branch: string; private: boolean
+  }>
+}
+
 export async function createRepo(token: string, name: string, description: string, privateRepo = true) {
   const repo = await apiSend('POST', '/user/repos', token, {
     name,
