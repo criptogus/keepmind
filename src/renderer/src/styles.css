@@ -336,22 +336,57 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
 .wizard__card h2 { font-size: 20px; margin-bottom: 8px; }
 .wizard__card .sub { color: var(--text-dim); font-size: 13.5px; margin-bottom: 24px; line-height: 1.6; }
 
-.provider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.provider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .provider-card {
+  --accent: var(--blue);
+  position: relative; overflow: hidden;
   padding: 18px; border-radius: 12px;
-  border: 1px solid var(--line); background: rgba(3,7,18,.5);
-  cursor: pointer; transition: all .15s; text-align: left;
-  color: var(--text); font-family: inherit;
+  border: 1px solid var(--line); background: rgba(2,8,20,.72);
+  cursor: pointer; transition: border-color .2s, box-shadow .25s, transform .15s;
+  text-align: left; color: var(--text); font-family: inherit;
+  min-height: 132px;
 }
-.provider-card:hover { border-color: var(--line-bright); }
+.provider-card > *:not(.nn) { position: relative; z-index: 1; }
+.provider-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, transparent); transform: translateY(-1px); }
 .provider-card.is-selected {
-  border-color: var(--blue); background: rgba(37,99,235,.15);
-  box-shadow: 0 0 16px rgba(37,99,235,.25), inset 0 0 20px rgba(37,99,235,.08);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, rgba(2,8,20,.82));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 26%, transparent),
+              inset 0 0 26px color-mix(in srgb, var(--accent) 6%, transparent);
 }
+/* rotating ray sweep on the selected card */
+.provider-card.is-selected::before {
+  content: ''; position: absolute; inset: -65%;
+  background: conic-gradient(from 0deg,
+    transparent 0deg, transparent 288deg,
+    color-mix(in srgb, var(--accent) 15%, transparent) 342deg,
+    color-mix(in srgb, var(--accent) 30%, transparent) 352deg,
+    transparent 360deg);
+  animation: nnray 9s linear infinite;
+  pointer-events: none;
+}
+@keyframes nnray { to { transform: rotate(360deg); } }
+.provider-card.is-selected::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% -20%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%);
+}
+
+/* neural net layer */
+.nn { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .45; transition: opacity .25s; pointer-events: none; }
+.provider-card:hover .nn, .provider-card.is-selected .nn { opacity: .95; }
+.nn-edge { stroke-width: .5; opacity: .45; stroke-dasharray: 4 5; animation: nnflow 5s linear infinite; }
+@keyframes nnflow { to { stroke-dashoffset: -36; } }
+.nn-node { animation: nntwinkle 3.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes nntwinkle { 0%,100% { opacity: .4 } 50% { opacity: 1 } }
+.nn-pulse { opacity: 0; animation: nnpulse 3.4s linear infinite; }
+@keyframes nnpulse { 0% { opacity: 0 } 12% { opacity: .95 } 88% { opacity: .95 } 100% { opacity: 0 } }
+
 .p-mark {
   width: 38px; height: 38px; border-radius: 10px;
   border: 1px solid; display: grid; place-items: center;
   font-size: 18px; font-weight: 750; margin-bottom: 10px;
+  box-shadow: 0 0 14px color-mix(in srgb, currentColor 22%, transparent),
+              inset 0 0 10px color-mix(in srgb, currentColor 10%, transparent);
 }
 .p-current {
   display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 99px;
@@ -360,8 +395,8 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
   background: rgba(52,211,153,.08);
 }
 .provider-card .p-emoji { font-size: 22px; margin-bottom: 8px; }
-.provider-card .p-name { font-weight: 650; font-size: 14px; color: var(--text); }
-.provider-card .p-desc { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; line-height: 1.45; }
+.provider-card .p-name { font-weight: 700; font-size: 14.5px; color: var(--text); letter-spacing: .01em; }
+.provider-card .p-desc { font-size: 12.5px; color: #9dbfd9; margin-top: 5px; line-height: 1.55; }
 
 .qr-box {
   display: flex; flex-direction: column; align-items: center; gap: 14px;

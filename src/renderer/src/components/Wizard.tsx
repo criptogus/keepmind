@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { BrainMark } from './icons'
+import NeuralNet from './NeuralNet'
 
 interface Props {
   config: any
@@ -423,8 +424,10 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                 <button
                   key={p.id}
                   className={`provider-card ${provider === p.id ? 'is-selected' : ''}`}
-                  onClick={() => setProvider(p.id)}
+                  style={{ '--accent': p.accent } as any}
+                  onClick={() => { setProvider(p.id); if (p.id !== 'local' && p.id !== 'ollama') setModel('') }}
                 >
+                  <NeuralNet seed={p.id} color={p.accent} />
                   <div className="p-mark" style={{ color: p.accent, borderColor: `${p.accent}55`, background: `${p.accent}14` }}>{p.mark}</div>
                   <div className="p-name">{p.name}</div>
                   <div className="p-desc">{p.desc}</div>

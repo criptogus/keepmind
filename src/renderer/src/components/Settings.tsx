@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { IconSparkle } from './icons'
+import NeuralNet from './NeuralNet'
 
 interface Props {
   onToast: (m: string, k?: 'info' | 'error' | 'success') => void
@@ -35,7 +36,8 @@ export default function Settings({ onToast, onActivity }: Props) {
     setConfig(c); setProviders(p); setLocal(l)
     setProvider(c.ai?.provider ?? 'local')
     setApiKey(c.ai?.apiKey ?? '')
-    setModel(c.ai?.model ?? '')
+    const plist = (p as any[])?.find((x: any) => x.id === (c.ai?.provider ?? 'local'))?.models
+    setModel(plist?.length ? (plist.includes(c.ai?.model) ? c.ai.model : plist[0]) : (c.ai?.model ?? ''))
   }
 
   useEffect(() => {
@@ -107,8 +109,14 @@ export default function Settings({ onToast, onActivity }: Props) {
               <button
                 key={p.id}
                 className={`provider-card ${provider === p.id ? 'is-selected' : ''}`}
-                onClick={() => { setProvider(p.id); setTest(null) }}
+                style={{ '--accent': p.accent } as any}
+                onClick={() => {
+                  setProvider(p.id); setTest(null)
+                  const next = providers.find(x => x.id === p.id)
+                  setModel(next?.models?.length ? next.models[0] : '')
+                }}
               >
+                <NeuralNet seed={p.id} color={p.accent} />
                 <div className="p-mark" style={{ color: p.accent, borderColor: `${p.accent}55`, background: `${p.accent}14` }}>{p.mark}</div>
                 <div className="p-name">{p.name}</div>
                 <div className="p-desc">{p.desc}</div>

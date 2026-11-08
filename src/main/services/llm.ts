@@ -61,6 +61,16 @@ const MODELS: Record<string, string[]> = {
   ollama: ['llama3.1', 'qwen2.5', 'mistral']
 }
 
+// Providers with a fixed catalog reject unknown model ids (ChatGPT's Codex
+// backend 400s on e.g. 'qwen2.5-3b' left over from the local provider).
+// Fall back to the provider default when cfg.model isn't in the list.
+// Ollama/local are exempt — their model names are user-defined/free-form.
+function pickModel(provider: string, cfg: AiProviderConfig): string {
+  const list = MODELS[provider]
+  if (cfg.model && list?.includes(cfg.model)) return cfg.model
+  return list?.[0] ?? cfg.model ?? ''
+}
+
 export function listProviders() {
   const names: Record<string, string> = {
     local: 'Local (built-in, offline)',
@@ -93,7 +103,7 @@ async function post(url: string, body: unknown, headers: Record<string, string> 
 async function callAnthropic(cfg: AiProviderConfig, messages: ChatMessage[], tools: ToolDefinition[]): Promise<LlmResponse> {
   const { system, rest } = splitSystem(messages)
   const body: any = {
-    model: cfg.model ?? MODELS.anthropic[0],
+    model: pickModel('anthropic', cfg),
     max_tokens: 4096,
     messages: rest.map(m => ({ role: m.role === 'tool' ? 'user' : m.role, content: m.content }))
   }
@@ -114,7 +124,7 @@ async function callAnthropic(cfg: AiProviderConfig, messages: ChatMessage[], too
 
 async function callOpenAI(cfg: AiProviderConfig, messages: ChatMessage[], tools: ToolDefinition[]): Promise<LlmResponse> {
   const body: any = {
-    model: cfg.model ?? MODELS.openai[0],
+    model: pickModel(cfg.provider in MODELS ? cfg.provider : 'openai', cfg),
     messages: messages.map(m => ({ role: m.role === 'tool' ? 'tool' : m.role, content: m.content, name: m.name })),
     ...(tools.length ? {
       tools: tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })),
@@ -148,7 +158,7 @@ async function callGemini(cfg: AiProviderConfig, messages: ChatMessage[], tools:
     } : {})
   }
   if (system) body.systemInstruction = { parts: [{ text: system }] }
-  const model = cfg.model ?? MODELS.gemini[0]
+  const model = pickModel('gemini', cfg)
   const data = await post(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cfg.apiKey}`,
     body
@@ -242,7 +252,7 @@ async function callCodex(cfg: AiProviderConfig, messages: ChatMessage[], tools: 
   }
   const { system, rest } = splitSystem(messages)
   const body: any = {
-    model: cfg.model ?? MODELS.codex[0],
+    model: pickModel('codex', cfg),
     instructions: system || 'You are a helpful assistant.',
     input: rest.map(m => ({
       type: 'message',
@@ -294,7 +304,7 @@ async function callCodex(cfg: AiProviderConfig, messages: ChatMessage[], tools: 
 async function callClaudeOAuth(cfg: AiProviderConfig, messages: ChatMessage[], tools: ToolDefinition[]): Promise<LlmResponse> {
   const { system, rest } = splitSystem(messages)
   const body: any = {
-    model: cfg.model ?? MODELS['claude-oauth'][0],
+    model: pickModel('claude-oauth', cfg),
     max_tokens: 4096,
     messages: rest.map(m => ({ role: m.role === 'tool' ? 'user' : m.role, content: m.content }))
   }
