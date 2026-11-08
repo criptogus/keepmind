@@ -5,7 +5,7 @@ interface Automation {
   id: string
   name: string
   instruction: string
-  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review' | 'security' | 'skills'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review' | 'security' | 'skills' | 'triage'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string
   everyMinutes?: number
@@ -51,7 +51,8 @@ const KIND_LABEL: Record<string, string> = {
   enrich: 'enrichment',
   review: 'review',
   security: 'security',
-  skills: 'skills'
+  skills: 'skills',
+  triage: 'triage'
 }
 
 // Ready-made self-learning crons — one click installs them.
@@ -65,6 +66,7 @@ const TEMPLATES: { emoji: string; name: string; desc: string; input: any }[] = [
   { emoji: '🃏', name: 'Spaced review', desc: 'Daily 20:00 — quizzes the brain on its own flashcards and grades retention.', input: { name: 'Spaced review', kind: 'review', schedule: 'daily', time: '20:00', instruction: 'Spaced-repetition review: quiz yourself on flashcards from long-term memory.' } },
   { emoji: '🛡️', name: 'Security audit', desc: 'Weekly Sun 07:00 — scans memory for leaked secrets, API keys and credentials.', input: { name: 'Security audit', kind: 'security', schedule: 'weekly', weekday: 0, time: '07:00', instruction: 'Scan all memory files for leaked secrets and credentials; report exposures without printing values.' } },
   { emoji: '📈', name: 'Skills evolution', desc: 'Weekly Sat 10:00 — dedupes skills, consolidates procedures, proposes promotions to skills/.', input: { name: 'Skills evolution', kind: 'skills', schedule: 'weekly', weekday: 6, time: '10:00', instruction: 'Review procedural skills: dedupe, merge, prune stale ones, propose which deserve dedicated pages.' } },
+  { emoji: '⚡', name: 'Fast inbox triage', desc: 'Every 6h — Laya decisions route each capture to notes/tasks/crm/long-term, no LLM needed.', input: { name: 'Fast inbox triage', kind: 'triage', schedule: 'interval', everyMinutes: 360, instruction: 'Triage inbox captures into the right memory destinations using fast decisions.' } },
   { emoji: '🔍', name: 'Gap review', desc: 'Weekly Fri 18:00 — analyzes unanswered searches and writes the missing knowledge.', input: { name: 'Gap review', kind: 'brain', schedule: 'weekly', weekday: 5, time: '18:00', instruction: 'Review ops/search-gaps.md: for each repeated unanswered query, research the answer from memory + connectors and write it where it belongs (notes/long-term). Report what you filled.' } }
 ]
 

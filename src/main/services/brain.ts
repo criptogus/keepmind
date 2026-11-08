@@ -42,7 +42,7 @@ export class Memory {
     //   long-term   = durable facts, lessons, skills (never forgotten)
     //   sleep       = nightly learning reports
     //   inbox       = legacy dir kept for backward compatibility
-    for (const sub of ['short-term', 'medium-term', 'long-term', 'sleep', 'inbox', 'insights', 'summaries', 'agents', 'notes', 'tasks', 'daily', 'meetings', 'entities', 'review', 'skills', 'crm', 'ops']) {
+    for (const sub of ['short-term', 'medium-term', 'long-term', 'sleep', 'inbox', 'insights', 'summaries', 'agents', 'notes', 'tasks', 'daily', 'meetings', 'entities', 'review', 'skills', 'crm', 'crm/people', 'crm/companies', 'crm/interactions', 'ops']) {
       mkdirSync(join(this.dir, sub), { recursive: true })
     }
   }
@@ -484,14 +484,20 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
         const m = learn.text.match(new RegExp(`${marker}([\\s\\S]*?)(?:${next}|$)`))
         return m?.[1]?.trim() ?? ''
       }
-      const appendIf = (file: string, section: string, body: string) => {
+      const appendIf = async (file: string, section: string, body: string) => {
         const clean = body.split('\n').filter(l => l.trim() && l.trim() !== '(none)').join('\n')
         if (!clean) return
+        // Laya semantic dedup: skip sections already captured in long-term
+        const existing = this.memory.read(`long-term/${file}`) ?? ''
+        if (await this.isSemanticDuplicate(clean, existing)) {
+          console.log(`[brain] sleep: skipped duplicate ${file} section`)
+          return
+        }
         this.memory.append(`long-term/${file}`, `\n\n## ${day}\n\n${clean}\n`)
       }
-      appendIf('facts.md', '', grab('===FACTS===', '===LESSONS==='))
-      appendIf('lessons.md', '', grab('===LESSONS===', '===SKILLS==='))
-      appendIf('skills.md', '', grab('===SKILLS===', '$'))
+      await appendIf('facts.md', '', grab('===FACTS===', '===LESSONS==='))
+      await appendIf('lessons.md', '', grab('===LESSONS===', '===SKILLS==='))
+      await appendIf('skills.md', '', grab('===SKILLS===', '$'))
     } catch (e) {
       console.warn('[brain] sleep: long-term extraction failed:', e)
     }
@@ -985,6 +991,120 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
     return report
   }
 
+  // ── Fast inbox triage (Laya System-1) ──
+  // Splits untriaged inbox captures into blocks, classifies each with a
+  // ~33ms local decision (no LLM), routes to the right memory dir, and
+  // dedupes long-term writes semantically. Fully autonomous and cheap.
+
+  async triageInbox(): Promise<string> {
+    const day = new Date().toISOString().slice(0, 10)
+    if (!this.laya?.status().available) {
+      const msg = '# Inbox triage — skipped\n\nLaya decision engine not installed (Settings → Decision engine).\n'
+      this.memory.write(`insights/triage-${day}.md`, msg)
+      return msg
+    }
+
+    const processed = new Set(
+      (this.memory.read('ops/triaged-files.txt') ?? '').split('\n').map(s => s.trim()).filter(Boolean)
+    )
+    const pending = this.memory.list('inbox').filter(f => !processed.has(f)).sort()
+    if (!pending.length) {
+      const msg = '# Inbox triage — nothing new\n\nAll inbox files already triaged.\n'
+      this.memory.write(`insights/triage-${day}.md`, msg)
+      return msg
+    }
+
+    const DESTINATIONS = {
+      note: 'a note worth keeping — reference material, ideas, reading',
+      task: 'an action item or to-do for the user',
+      fact: 'a durable fact, preference or knowledge worth long-term memory',
+      lesson: 'a mistake or correction — what to do differently',
+      skill: 'a reusable procedure — how to do X well',
+      decision: 'a decision that was made, with its rationale',
+      crm: 'information about a person, company or relationship',
+      discard: 'noise, ephemeral chatter, or duplicates — not worth keeping'
+    }
+
+    const routed: Record<string, string[]> = {}
+    const report: string[] = [`# Inbox triage — ${day}`, '', `_${pending.length} file(s) processed · Laya fast decisions_`, '']
+    let blocksSeen = 0, kept = 0, dropped = 0, dups = 0
+
+    for (const file of pending.slice(0, 10)) {
+      const content = this.memory.read(`inbox/${file}`) ?? ''
+      if (!content.trim()) { processed.add(file); continue }
+      const blocks = splitBlocks(content).slice(0, 30)
+      for (const block of blocks) {
+        if (blocksSeen++ >= 60) break
+        const text = block.replace(/\s+/g, ' ').trim().slice(0, 800)
+        if (text.length < 25) continue
+        const verdict: { choice: string; confidence: number } | null = await this.laya!.choose(text,
+          'Where should this captured memory go in a second brain?', DESTINATIONS)
+          .catch(() => null)
+        const dest = verdict && verdict.confidence > 0.35 ? verdict.choice : 'note'
+        if (dest === 'discard') { dropped++; continue }
+
+        // semantic dedup gate for durable writes
+        if (['fact', 'lesson', 'skill', 'decision'].includes(dest)) {
+          const existing = this.memory.read(`long-term/${dest}s.md`)?.slice(-4000) ?? ''
+          if (existing) {
+            const p = await this.laya!.yesNo(
+              `New item: ${text}\n\nExisting memory:\n${existing}`,
+              'Is the new item already captured by the existing memory?'
+            ).catch(() => null)
+            if (p != null && p > 0.72) { dups++; continue }
+          }
+        }
+
+        ;(routed[dest] ??= []).push(text)
+        kept++
+      }
+      processed.add(file)
+      report.push(`- \`inbox/${file}\` → triaged`)
+    }
+
+    // write routed content
+    const prov = `> source: inbox triage ${day}\n\n`
+    for (const [dest, items] of Object.entries(routed)) {
+      if (dest === 'task') {
+        for (const [i, t] of items.entries()) {
+          const title = t.split(/[.\n]/)[0].slice(0, 80) || 'triage item'
+          const id = `${day.replace(/-/g, '')}-triage-${i}-${Math.random().toString(36).slice(2, 5)}`
+          this.memory.write(`tasks/${id}.md`,
+            `# ${title}\n> status: open · priority: normal · created: ${new Date().toISOString()}\n\n${prov}${t}\n`)
+        }
+      } else if (dest === 'note') {
+        this.memory.append(`notes/triage-${day}.md`,
+          items.map(t => `## ${t.split(/[.\n]/)[0].slice(0, 70)}\n\n${prov}${t}\n`).join('\n'))
+      } else if (dest === 'crm') {
+        this.memory.append(`crm/interactions/triage-${day}.md`,
+          `\n## ${day}\n\n` + items.map(t => `- ${t}`).join('\n') + '\n')
+      } else {
+        this.memory.append(`long-term/${dest}s.md`,
+          `\n\n## ${day} (inbox triage)\n\n` + items.map(t => `- ${t}`).join('\n') + '\n')
+      }
+    }
+
+    report.push('', `- ${blocksSeen} block(s) seen · ${kept} kept · ${dropped} discarded · ${dups} semantic duplicates skipped`)
+    const text = report.join('\n') + '\n'
+    this.memory.write(`insights/triage-${day}.md`, text)
+    this.memory.write('ops/triaged-files.txt', [...processed].sort().join('\n') + '\n')
+
+    try { if (this.gitSync) await this.gitSync.syncNow() } catch { /* offline ok */ }
+    void this.rag?.reindex().catch(() => {})
+    return text
+  }
+
+  // Semantic dedup gate: is `candidate` already captured in `existing`?
+  // Used by sleep extraction and anywhere durable writes need a cheap check.
+  async isSemanticDuplicate(candidate: string, existing: string): Promise<boolean> {
+    if (!this.laya?.status().available || !existing.trim()) return false
+    const p = await this.laya.yesNo(
+      `New item: ${candidate.slice(0, 600)}\n\nExisting memory:\n${existing.slice(-4000)}`,
+      'Is the new item already captured by the existing memory?'
+    ).catch(() => null)
+    return p != null && p > 0.72
+  }
+
   listSleepReports(): { date: string; content: string }[] {
     return this.memory.list('sleep').sort().reverse().map(f => ({
       date: f.replace('.md', ''),
@@ -1018,6 +1138,26 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60) || 'note'
+}
+
+// Split inbox content into classifiable blocks: bullets and paragraphs,
+// re-joining tiny fragments so each block carries enough context.
+function splitBlocks(content: string): string[] {
+  const raw = content
+    .split(/\n{2,}|(?<=\n)(?=- |• |\* |\d+\. )/)
+    .map(s => s.trim())
+    .filter(s => s.length > 10)
+  const out: string[] = []
+  let buf = ''
+  for (const b of raw) {
+    if (buf && (buf.length + b.length > 1100 || b.length < 40)) {
+      out.push(buf); buf = ''
+    }
+    buf = buf ? `${buf}\n${b}` : b
+    if (buf.length > 1100) { out.push(buf); buf = '' }
+  }
+  if (buf.trim()) out.push(buf)
+  return out
 }
 
 // ISO-8601 week key like "2026-W45"
