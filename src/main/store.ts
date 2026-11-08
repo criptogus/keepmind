@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, safeStorage } from 'electron'
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -157,6 +157,54 @@ function defaultConfig(): AppConfig {
   }
 }
 
+// ── Secret sealing: sensitive fields are encrypted at rest via the OS
+// keychain (Electron safeStorage) before hitting config.json. Values are
+// stored as "enc:<base64>"; plaintext legacy values still load fine.
+// Falls back to plaintext when the OS offers no encryption (rare Linux).
+
+const SECRET_PREFIX = 'enc:'
+
+function sealValue(v: unknown): unknown {
+  if (typeof v !== 'string' || !v || v.startsWith(SECRET_PREFIX)) return v
+  if (!safeStorage.isEncryptionAvailable()) return v
+  try { return SECRET_PREFIX + safeStorage.encryptString(v).toString('base64') } catch { return v }
+}
+
+function unsealValue(v: unknown): unknown {
+  if (typeof v !== 'string' || !v.startsWith(SECRET_PREFIX)) return v
+  try {
+    return safeStorage.decryptString(Buffer.from(v.slice(SECRET_PREFIX.length), 'base64'))
+  } catch { return v }
+}
+
+function sealConfig(c: AppConfig): AppConfig {
+  const out = JSON.parse(JSON.stringify(c)) as AppConfig
+  out.ai.apiKey = sealValue(out.ai.apiKey) as string | undefined
+  out.github.accessToken = sealValue(out.github.accessToken) as string | undefined
+  out.github.refreshToken = sealValue(out.github.refreshToken) as string | undefined
+  out.auth.sessionToken = sealValue(out.auth.sessionToken) as string | undefined
+  out.auth.googleClientSecret = sealValue(out.auth.googleClientSecret) as string | undefined
+  out.pro.key = sealValue(out.pro.key) as string | undefined
+  for (const s of out.mcpServers ?? []) {
+    if (s.env) for (const k of Object.keys(s.env)) s.env[k] = sealValue(s.env[k]) as string
+  }
+  return out
+}
+
+function unsealConfig(c: AppConfig): AppConfig {
+  const out = JSON.parse(JSON.stringify(c)) as AppConfig
+  out.ai.apiKey = unsealValue(out.ai.apiKey) as string | undefined
+  out.github.accessToken = unsealValue(out.github.accessToken) as string | undefined
+  out.github.refreshToken = unsealValue(out.github.refreshToken) as string | undefined
+  out.auth.sessionToken = unsealValue(out.auth.sessionToken) as string | undefined
+  out.auth.googleClientSecret = unsealValue(out.auth.googleClientSecret) as string | undefined
+  out.pro.key = unsealValue(out.pro.key) as string | undefined
+  for (const s of out.mcpServers ?? []) {
+    if (s.env) for (const k of Object.keys(s.env)) s.env[k] = unsealValue(s.env[k]) as string
+  }
+  return out
+}
+
 export class Store {
   private config: AppConfig
   private file: string
@@ -185,7 +233,9 @@ export class Store {
         merged.pendingApprovals = raw.pendingApprovals ?? []
         merged.auth = { ...defaultConfig().auth, ...raw.auth }
         merged.pro = { ...defaultConfig().pro, ...raw.pro }
-        return merged
+        // decrypt secrets only after all merges — raw.* values may still
+        // carry the "enc:" envelope from the sealed file
+        return unsealConfig(merged)
       }
     } catch { /* corrupt config -> defaults */ }
     return defaultConfig()
@@ -197,7 +247,7 @@ export class Store {
 
   set(patch: Partial<AppConfig>): AppConfig {
     this.config = { ...this.config, ...patch }
-    writeFileSync(this.file, JSON.stringify(this.config, null, 2), 'utf8')
+    writeFileSync(this.file, JSON.stringify(sealConfig(this.config), null, 2), 'utf8')
     return this.config
   }
 

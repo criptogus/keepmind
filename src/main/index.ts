@@ -25,6 +25,15 @@ let autoSchedulerGlobal: AutomationScheduler | null = null
 // For VPS / bot VMs: `xvfb-run -a env SECOND_BRAIN_HEADLESS=1 second-brain`
 const HEADLESS = process.env.SECOND_BRAIN_HEADLESS === '1' || process.argv.includes('--headless')
 
+// Only web/mail links may leave the app — blocks file://, javascript:,
+// custom protocol handlers and anything else a page might try to open.
+function openExternalSafe(url: string) {
+  try {
+    const u = new URL(url)
+    if (u.protocol === 'https:' || u.protocol === 'mailto:') shell.openExternal(url)
+  } catch { /* malformed url — ignore */ }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -37,12 +46,12 @@ function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    openExternalSafe(url)
     return { action: 'deny' }
   })
 

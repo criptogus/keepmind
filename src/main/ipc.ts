@@ -358,7 +358,13 @@ export function registerIpc(
   ipcMain.handle('updater:check', () => checkForUpdates())
   ipcMain.handle('updater:install', () => installUpdate())
 
-  ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))
+  ipcMain.handle('shell:openExternal', (_e, url: string) => {
+    try {
+      const u = new URL(url)
+      if (u.protocol === 'https:' || u.protocol === 'mailto:') return shell.openExternal(url)
+    } catch { /* ignore */ }
+    return false
+  })
 }
 
 const mcpLogs: string[] = []

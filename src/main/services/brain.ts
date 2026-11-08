@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, appendFileSync, unlinkSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { chat, chatStream, type ChatMessage, type ToolDefinition } from './llm'
 import type { AiProviderConfig } from '../store'
 import type { McpManager } from './mcp'
@@ -47,7 +47,16 @@ export class Memory {
     }
   }
 
-  private path(...parts: string[]) { return join(this.dir, ...parts) }
+  // Containment guard: every memory path must resolve inside the memory
+  // dir — blocks `..` traversal from LLM tool args, sync filenames, etc.
+  private path(...parts: string[]) {
+    const p = resolve(this.dir, ...parts)
+    const root = resolve(this.dir)
+    if (p !== root && !p.startsWith(root + sep)) {
+      throw new Error(`path escapes memory root: ${parts.join('/')}`)
+    }
+    return p
+  }
 
   write(relative: string, content: string) {
     const p = this.path(relative)

@@ -194,14 +194,18 @@ export class GitSync {
         if (this.state.sha[rel] === sha) continue // unchanged
         const file = await github.fetchMemoryFile(gh, rel)
         if (!file) continue
-        this.memory.quietWrite(rel, file.content)
-        this.state.sha[rel] = file.sha
+        try {
+          this.memory.quietWrite(rel, file.content)
+          this.state.sha[rel] = file.sha
+        } catch (e) {
+          console.warn(`[sync] skipped unsafe remote path ${rel}:`, e)
+        }
       }
 
       // 2) Remote deletions → remove locally (unless dirty)
       for (const rel of Object.keys(this.state.sha)) {
         if (!remoteMap.has(rel) && !this.dirty.has(rel)) {
-          this.memory.quietRemove(rel)
+          try { this.memory.quietRemove(rel) } catch { /* unsafe path — skip */ }
           delete this.state.sha[rel]
         }
       }
