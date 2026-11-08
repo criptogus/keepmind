@@ -57,18 +57,29 @@ export default function Wizard({ config, onDone, onToast }: Props) {
 
   useEffect(() => {
     if (!ghDevice) return
+    let nextPollAt = 0
     pollRef.current = setInterval(async () => {
+      if (Date.now() < nextPollAt) return // honoring slow_down backoff
       try {
-        const res = await window.sb.ghPollDeviceFlow(ghDevice)
-        if (res) {
+        const res: any = await window.sb.ghPollDeviceFlow(ghDevice)
+        if (res?.status === 'success') {
           clearInterval(pollRef.current)
           setGhLogin(res.login ?? 'you')
           setRepoName(`keepmind-${res.login ?? 'me'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'))
           onToast('GitHub connected!', 'success')
+        } else if (res?.status === 'slow_down') {
+          nextPollAt = Date.now() + 10_000
         }
+        // 'pending' → keep polling
       } catch (e: any) {
-        clearInterval(pollRef.current)
-        onToast(`GitHub: ${e?.message ?? e}`, 'error')
+        const msg = String(e?.message ?? e)
+        if (/expired|denied|bad_verification/i.test(msg)) {
+          // terminal — the code is dead, let the user restart the flow
+          clearInterval(pollRef.current)
+          setGhDevice(null)
+          onToast(`GitHub: ${msg} — start the connection again`, 'error')
+        }
+        // transient errors (network blips) → keep polling
       }
     }, Math.max(ghDevice.interval ?? 5, 5) * 1000)
     return () => clearInterval(pollRef.current)
@@ -266,7 +277,9 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                 }}>
                   {ghDevice.user_code}
                 </div>
-                <p className="faint" style={{ fontSize: 12 }}>Waiting for authorization… the GitHub window should already be open.</p>
+                <p className="faint" style={{ fontSize: 12 }}>
+                  Waiting for authorization… code expires in ~{Math.round((ghDevice.expires_in ?? 900) / 60)} min.
+                </p>
                 <div className="progress-bar" style={{ maxWidth: 280, margin: '14px auto 0' }}>
                   <div style={{ width: '60%' }} />
                 </div>

@@ -211,7 +211,7 @@ export function registerIpc(
   })
   ipcMain.handle('github:pollDeviceFlow', async (_e, deviceCode: any) => {
     const res = await github.pollDeviceFlow(deviceCode)
-    if (res) {
+    if (res.status === 'success') {
       store.updateGithub({ accessToken: res.accessToken })
       // fetch login
       try {

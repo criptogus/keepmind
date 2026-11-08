@@ -29,7 +29,12 @@ export async function startDeviceFlow(): Promise<DeviceCode> {
   return res.json()
 }
 
-export async function pollDeviceFlow(deviceCode: DeviceCode): Promise<{ accessToken: string; login?: string } | null> {
+export type DevicePoll =
+  | { status: 'pending' }
+  | { status: 'slow_down' }
+  | { status: 'success'; accessToken: string; login?: string }
+
+export async function pollDeviceFlow(deviceCode: DeviceCode): Promise<DevicePoll> {
   const res = await fetch(`${WEB}/login/oauth/access_token`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -42,9 +47,11 @@ export async function pollDeviceFlow(deviceCode: DeviceCode): Promise<{ accessTo
   const data = await res.json()
   if (data.access_token) {
     const user = await apiGet('/user', data.access_token)
-    return { accessToken: data.access_token, login: user.login }
+    return { status: 'success', accessToken: data.access_token, login: user.login }
   }
-  if (data.error === 'authorization_pending' || data.error === 'slow_down') return null
+  if (data.error === 'authorization_pending') return { status: 'pending' }
+  if (data.error === 'slow_down') return { status: 'slow_down' }
+  // expired_token / access_denied / bad_verification — terminal, caller should restart
   throw new Error(`GitHub auth error: ${data.error_description ?? data.error}`)
 }
 
