@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { LocalLlm } from './local-llm'
 import type { Memory } from './brain'
+import type { LayaService } from './laya'
 
 // ── Local RAG: semantic search over memory via llama.cpp embeddings ──
 // mem0-style memory layer, but fully local: chunks of every memory file are
@@ -51,6 +52,9 @@ export class RagService {
   }
 
   private memory: Memory
+  private laya: LayaService | null = null
+
+  setLaya(l: LayaService) { this.laya = l }
 
   private load() {
     try {
@@ -158,7 +162,28 @@ export class RagService {
           return { c, s: (vec * 0.7 + lex * 0.3) * stalePenalty, vec, lex }
         })
         .sort((a, b) => b.s - a.s)
-        .slice(0, SEARCH_K)
+        .slice(0, SEARCH_K * 2)
+      // Laya rerank (the vault's "Jev" slot): a calibrated yes/no relevance
+      // verdict per candidate, blended with the hybrid score. ~33ms each,
+      // only runs when the ONNX decision engine is installed.
+      if (this.laya?.status().available && scored.length > 1) {
+        const reranked = await Promise.all(scored.map(async x => {
+          const p = await this.laya!.yesNo(
+            `Query: ${query}\n\nCandidate memory:\n${x.c.text.slice(0, 700)}`,
+            'Does this memory chunk contain information relevant to answering the query?'
+          )
+          return { ...x, laya: p }
+        }))
+        reranked.sort((a, b) => {
+          const ra = (a.laya ?? 0.5) * 0.6 + a.s * 0.4
+          const rb = (b.laya ?? 0.5) * 0.6 + b.s * 0.4
+          return rb - ra
+        })
+        scored.length = 0
+        scored.push(...reranked.slice(0, SEARCH_K))
+      } else {
+        scored.length = SEARCH_K
+      }
       const good = scored.filter(x => x.s > 0.3)
       if (!good.length) return ''
       return good.map(x =>

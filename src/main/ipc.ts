@@ -24,7 +24,8 @@ export function registerIpc(
   automations: AutomationScheduler | null = null,
   auth: AuthService | null = null,
   rag: RagService | null = null,
-  planner: Planner | null = null
+  planner: Planner | null = null,
+  laya: import('./services/laya').LayaService | null = null
 ) {
   // ── Config ──
   ipcMain.handle('config:get', () => store.get())
@@ -311,6 +312,25 @@ export function registerIpc(
     return rag?.stats ?? null
   })
   ipcMain.handle('rag:reindex', async () => rag ? rag.reindex() : null)
+
+  // ── Laya decision engine (fast ONNX System-1) ──
+  ipcMain.handle('laya:status', () => laya?.status() ?? { available: false, loaded: false, modelDir: '', downloaded: false })
+  ipcMain.handle('laya:download', async (e) => {
+    if (!laya) throw new Error('laya unavailable')
+    const win = BrowserWindow.fromWebContents(e.sender)
+    await laya.download((done, total, file) => {
+      win?.webContents.send('laya:progress', { done, total, file })
+    })
+    return laya.status()
+  })
+  ipcMain.handle('laya:test', async () => {
+    if (!laya) return null
+    return laya.choose('The user prefers dark mode and concise answers.', 'What does the user prefer?', {
+      dark: 'dark theme / dark mode',
+      light: 'light theme',
+      other: 'something else'
+    })
+  })
 
   // ── Window ──
   // ── Planner: notes / tasks / daily goals ──

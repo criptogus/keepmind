@@ -8,6 +8,7 @@ import { GitSync } from './services/sync'
 import { AutomationScheduler } from './services/automations'
 import { AuthService } from './services/auth'
 import { RagService } from './services/rag'
+import { LayaService } from './services/laya'
 import { Planner } from './services/planner'
 import { registerIpc, pushMcpLog } from './ipc'
 import { initUpdater } from './services/updater'
@@ -67,12 +68,17 @@ app.whenReady().then(() => {
   const auth = new AuthService(join(app.getPath('userData'), 'second-brain'))
   const rag = new RagService(localLlm, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
   brain.setRag(rag)
+  // Laya — fast System-1 decision engine (ONNX, local). Powers quick
+  // decisions: memory classification, dedup gates, RAG reranking.
+  const laya = new LayaService()
+  brain.setLaya(laya)
+  rag.setLaya(laya)
 
   mcp.on('log', (m: any) => pushMcpLog(`[${m.serverId}] ${m.message}`))
   mcp.on('serverExit', (e: any) => pushMcpLog(`server ${e.serverId} exited (${e.code})`))
 
   const planner = new Planner(brain.getMemory(), store, localLlm)
-  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner)
+  registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner, laya)
   initUpdater()
   if (!HEADLESS) createWindow()
   else console.log('[keepmind] headless mode — services only, no window')

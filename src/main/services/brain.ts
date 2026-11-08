@@ -9,6 +9,7 @@ import * as github from './github'
 import type { GitHubConfig, Store } from '../store'
 import type { GitSync } from './sync'
 import type { RagService } from './rag'
+import type { LayaService } from './laya'
 import { refreshEntities } from './entities'
 
 // ── Memory: markdown files in the local memory dir, mirrored to the GitHub repo ──
@@ -184,6 +185,7 @@ export class Brain {
   private localLlm: LocalLlm | null = null
   private gitSync: GitSync | null = null
   private rag: RagService | null = null
+  private laya: LayaService | null = null
 
   constructor(store: Store, mcp: McpManager | null, localLlm: LocalLlm | null = null) {
     this.store = store
@@ -199,6 +201,7 @@ export class Brain {
     this.memory.onWrite = (rel) => sync.markDirty(rel)
   }
   setRag(rag: RagService) { this.rag = rag }
+  setLaya(l: LayaService) { this.laya = l }
 
   getMemory() { return this.memory }
   setActivitySource(src: string) { this.memory.activitySource = src }
@@ -273,9 +276,26 @@ export class Brain {
     if (name === 'save_memory') {
       const title = String(args.title ?? 'note')
       const content = String(args.content ?? '')
-      const file = `long-term/notes/${slug(title)}.md`
-      this.memory.write(file, `# ${title}\n\n${content}\n\n---\nsaved ${new Date().toISOString()}\n`)
-      return `Saved to memory/${file} (long-term)`
+      // Laya fast decision: which long-term bucket does this belong to?
+      // ~33ms local ONNX — no LLM round-trip for a routing decision.
+      let kind = 'note'
+      const verdict = await this.laya?.choose(
+        `${title}\n\n${content.slice(0, 1500)}`,
+        'What kind of long-term memory is this?',
+        {
+          fact: 'a durable fact, preference, or piece of knowledge about the user or their work',
+          lesson: 'a lesson learned — something that went wrong and what to do differently',
+          skill: 'a reusable procedure or skill — "how we do X"',
+          decision: 'a decision that was made and its rationale',
+          note: 'anything else worth keeping'
+        }
+      ).catch(() => null)
+      if (verdict && verdict.confidence > 0.4) kind = verdict.choice
+      const file = kind === 'note'
+        ? `long-term/notes/${slug(title)}.md`
+        : `long-term/${kind}s.md` // facts.md / lessons.md / skills.md / decisions.md
+      this.memory.append(file, `\n\n## ${title}\n\n${content}\n`)
+      return `Saved to memory/${file} (long-term · classified as ${kind})`
     }
     if (name === 'get_memory') {
       const c = this.memory.read(String(args.path ?? ''))

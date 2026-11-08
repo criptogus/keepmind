@@ -18,6 +18,7 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
     "electron-updater": "^6.8.11",
+    "onnxruntime-node": "^1.31.1",
     "qrcode": "^1.5.4",
     "sql.js": "^1.12.0"
   },

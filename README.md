@@ -42,6 +42,7 @@ replaceable runtime, the repo is the brain:
 - **⚡ Natural-language automations** — "every day at 8am summarize my whatsapp" becomes a scheduled cron. Daily/interval/weekly, pause/resume/run-now.
 - **🔐 Local accounts + Google sign-in** — SQLite auth (scrypt), PKCE loopback Google OAuth, session tokens. Your data stays on your machine.
 - **🧮 Local semantic memory (RAG)** — optional embedding model (BGE/Nomic via llama.cpp) gives the brain meaning-based recall over everything it remembers — fully offline.
+- **⚡ Laya decision engine** — vendored [laya-ts](https://github.com/NandhaKishorM/laya) (Apache-2.0) runs typed System-1 decisions on-device via ONNX (~33ms): memory classification, dedup gates and RAG reranking — the brain's reflexes, no LLM round-trip.
 - **🤖 More AI providers** — bundled local model, **Codex/ChatGPT sign-in** (reuses `codex login`), **Claude Pro/Max** via `claude setup-token`, plus API keys for Anthropic, OpenAI, Gemini, Grok (xAI) and Ollama.
 - **💳 Pro plan** — $19/mo via Stripe Payment Link (configurable in Settings).
 - **📅 Today command center** — daily intentions, open tasks and quick notes on one screen. The app opens here every morning.

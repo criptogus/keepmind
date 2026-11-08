@@ -57,6 +57,16 @@ const api = {
   ragSetup: (modelId: string) => ipcRenderer.invoke('rag:setup', modelId),
   ragReindex: () => ipcRenderer.invoke('rag:reindex'),
 
+  // laya decision engine
+  layaStatus: () => ipcRenderer.invoke('laya:status'),
+  layaDownload: () => ipcRenderer.invoke('laya:download'),
+  layaTest: () => ipcRenderer.invoke('laya:test'),
+  onLayaProgress: (cb: (p: any) => void) => {
+    const handler = (_e: any, p: any) => cb(p)
+    ipcRenderer.on('laya:progress', handler)
+    return () => { ipcRenderer.removeListener('laya:progress', handler) }
+  },
+
   // sync
   syncStatus: () => ipcRenderer.invoke('sync:status'),
   syncNow: () => ipcRenderer.invoke('sync:now'),

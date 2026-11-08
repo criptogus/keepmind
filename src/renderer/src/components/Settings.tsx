@@ -233,6 +233,7 @@ export default function Settings({ onToast, onActivity }: Props) {
 
         {/* Semantic memory (RAG) */}
         <RagCard onToast={onToast} onActivity={onActivity} />
+        <LayaCard onToast={onToast} />
 
         {/* Auto-updates */}
         <UpdatesCard onToast={onToast} />
@@ -455,6 +456,78 @@ function RagCard({ onToast, onActivity }: { onToast: Props['onToast']; onActivit
               <div style={{ width: `${Math.min(100, ((progress.downloaded ?? 0) / progress.total) * 100)}%` }} />
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LayaCard({ onToast }: { onToast: Props['onToast'] }) {
+  const [st, setSt] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<any>(null)
+  const [test, setTest] = useState<any>(null)
+
+  const refresh = async () => setSt(await window.sb.layaStatus?.() ?? null)
+  useEffect(() => {
+    refresh()
+    const off = window.sb.onLayaProgress?.(setProgress)
+    return off
+  }, [])
+
+  const download = async () => {
+    setBusy(true)
+    try {
+      const s = await window.sb.layaDownload()
+      setSt(s)
+      onToast('Decision engine ready ⚡', 'success')
+    } catch (e: any) { onToast(String(e?.message ?? e), 'error') }
+    finally { setBusy(false); setProgress(null) }
+  }
+
+  const runTest = async () => {
+    setBusy(true)
+    try { setTest(await window.sb.layaTest()) }
+    catch (e: any) { onToast(String(e?.message ?? e), 'error') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card card-pad">
+      <h2 style={{ marginBottom: 6 }}>Decision engine (Laya)</h2>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
+        Fast System-1 decisions in a single ONNX forward pass (~33ms): memory classification,
+        dedup checks and RAG reranking — the brain's reflexes, fully local. ~520MB one-time download.
+      </p>
+      {st?.available ? (
+        <div>
+          <p style={{ fontSize: 13, marginBottom: 10 }}>
+            <span style={{ color: 'var(--green)' }}>● installed</span>
+            <span className="faint mono" style={{ fontSize: 11, marginLeft: 10 }}>
+              {st.loaded ? 'model loaded' : 'loads on first decision'}
+            </span>
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn" onClick={runTest} disabled={busy}>TEST DECISION</button>
+          </div>
+          {test && (
+            <p className="faint mono" style={{ fontSize: 11.5, marginTop: 8 }}>
+              test → {JSON.stringify(test.choice ?? test)} {test.confidence != null ? `(conf ${test.confidence.toFixed(2)})` : ''}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div>
+          <button className="btn btn--primary" onClick={download} disabled={busy}>
+            {busy ? 'DOWNLOADING…' : 'DOWNLOAD DECISION MODEL (~520MB)'}
+          </button>
+          {progress?.total > 0 && (
+            <div className="progress-bar" style={{ marginTop: 10 }}>
+              <div style={{ width: `${Math.min(100, (progress.done / progress.total) * 100)}%` }} />
+            </div>
+          )}
+          {progress?.file && <p className="faint mono" style={{ fontSize: 10.5, marginTop: 6 }}>{progress.file}</p>}
+          {st?.error && <p style={{ color: '#f87171', fontSize: 11.5, marginTop: 8 }}>{st.error}</p>}
         </div>
       )}
     </div>
