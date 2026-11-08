@@ -160,14 +160,18 @@ function defaultConfig(): AppConfig {
 // ── Secret sealing: sensitive fields are encrypted at rest via the OS
 // keychain (Electron safeStorage) before hitting config.json. Values are
 // stored as "enc:<base64>"; plaintext legacy values still load fine.
-// Falls back to plaintext when the OS offers no encryption (rare Linux).
+// Fail closed when OS encryption is unavailable.
 
 const SECRET_PREFIX = 'enc:'
 
 function sealValue(v: unknown): unknown {
-  if (typeof v !== 'string' || !v || v.startsWith(SECRET_PREFIX)) return v
-  if (!safeStorage.isEncryptionAvailable()) return v
-  try { return SECRET_PREFIX + safeStorage.encryptString(v).toString('base64') } catch { return v }
+  if (typeof v !== 'string' || !v) return v
+  if (!safeStorage.isEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') {
+    throw new Error('Secure OS storage is unavailable. Unlock or configure your system keyring before saving secrets.')
+  }
+  try { return SECRET_PREFIX + safeStorage.encryptString(v).toString('base64') } catch {
+    throw new Error('OS storage could not encrypt the secret; settings were not saved.')
+  }
 }
 
 function unsealValue(v: unknown): unknown {
@@ -246,8 +250,10 @@ export class Store {
   }
 
   set(patch: Partial<AppConfig>): AppConfig {
-    this.config = { ...this.config, ...patch }
-    writeFileSync(this.file, JSON.stringify(sealConfig(this.config), null, 2), 'utf8')
+    const next = { ...this.config, ...patch }
+    const sealed = sealConfig(next)
+    writeFileSync(this.file, JSON.stringify(sealed, null, 2), { encoding: 'utf8', mode: 0o600 })
+    this.config = next
     return this.config
   }
 
