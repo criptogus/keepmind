@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { PROVIDER_ACCENTS, CONNECTOR_ACCENTS } from '../lib/accents'
 
 interface Props {
   config: any
@@ -218,13 +219,13 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             </p>
             <div className="grid grid-2" style={{ marginBottom: 8 }}>
               {[
-                ['💾', 'Own memory', 'Everything lives in a private repo that is yours — portable, versioned.'],
-                ['🔌', 'Connectors', 'WhatsApp (QR), Telegram, Postgres and any MCP server.'],
-                ['🧠', 'Local AI', 'Bundled open-source model — works fully offline.'],
-                ['🎭', 'Agents', 'Chat with personas that think using your context.']
-              ].map(([e, t, d]) => (
+                ['💾', '#a3e635', 'Own memory', 'Everything lives in a private repo that is yours — portable, versioned.'],
+                ['🔌', '#22d3ee', 'Connectors', 'WhatsApp (QR), Telegram, Postgres and any MCP server.'],
+                ['🧠', '#a78bfa', 'Local AI', 'Bundled open-source model — works fully offline.'],
+                ['🎭', '#facc15', 'Agents', 'Chat with personas that think using your context.']
+              ].map(([e, c, t, d]) => (
                 <div key={t} className="card card-pad" style={{ padding: '16px 18px' }}>
-                  <div style={{ fontSize: 22, marginBottom: 8 }}>{e}</div>
+                  <div className="feat-emoji" style={{ fontSize: 22, marginBottom: 8, color: c }}>{e}</div>
                   <h3 style={{ fontSize: 13.5 }}>{t}</h3>
                   <p className="faint" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>{d}</p>
                 </div>
@@ -326,7 +327,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                   className={`provider-card ${provider === p.id ? 'is-selected' : ''}`}
                   onClick={() => setProvider(p.id)}
                 >
-                  <div className="p-emoji">{p.emoji}</div>
+                  <div className="p-emoji" style={{ color: PROVIDER_ACCENTS[p.id] ?? '#22d3ee' }}>{p.emoji}</div>
                   <div className="p-name">{p.name}</div>
                   <div className="p-desc">{p.desc}</div>
                 </button>
@@ -450,7 +451,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             </p>
 
             <div className="mcp-row">
-              <span className="m-emoji">🟢</span>
+              <span className="m-emoji" style={{ color: CONNECTOR_ACCENTS.whatsapp }}>🟢</span>
               <div className="m-info">
                 <div className="m-name">WhatsApp</div>
                 <div className="m-desc">QR-code connection (WhatsApp Web style). ⚠ Unofficial — use in moderation.</div>
@@ -468,7 +469,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             </div>
 
             <div className="mcp-row">
-              <span className="m-emoji">✈️</span>
+              <span className="m-emoji" style={{ color: CONNECTOR_ACCENTS.telegram }}>✈️</span>
               <div className="m-info">
                 <div className="m-name">Telegram</div>
                 <div className="m-desc">Official bot via BotFather. Chat with your second brain remotely.</div>
@@ -485,7 +486,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             </div>
 
             <div className="mcp-row">
-              <span className="m-emoji">🐘</span>
+              <span className="m-emoji" style={{ color: CONNECTOR_ACCENTS.postgres }}>🐘</span>
               <div className="m-info">
                 <div className="m-name">Postgres (read-only)</div>
                 <div className="m-desc">Talk to your data. postgres://user:pass@host:5432/db</div>

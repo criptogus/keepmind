@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { IconSparkle } from './icons'
+import { PROVIDER_ACCENTS } from '../lib/accents'
 
 interface Props {
   onToast: (m: string, k?: 'info' | 'error' | 'success') => void
@@ -109,7 +110,7 @@ export default function Settings({ onToast, onActivity }: Props) {
                 className={`provider-card ${provider === p.id ? 'is-selected' : ''}`}
                 onClick={() => { setProvider(p.id); setTest(null) }}
               >
-                <div className="p-emoji">{p.emoji}</div>
+                <div className="p-emoji" style={{ color: PROVIDER_ACCENTS[p.id] ?? '#22d3ee' }}>{p.emoji}</div>
                 <div className="p-name">{p.name}</div>
                 <div className="p-desc">{p.desc}</div>
               </button>

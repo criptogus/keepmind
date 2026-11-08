@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconMeeting, IconPlay } from './icons'
 import { mdToHtml } from '../lib/markdown'
+import { AGENT_ACCENTS } from '../lib/accents'
 
 interface MeetingMeta { id: string; path: string; title: string; date: string; participants: string }
 interface Agent { id: string; name: string; emoji: string }
@@ -110,7 +111,7 @@ export default function Meetings({ agents, onActivity, onToast }: {
                 onClick={() => toggleAgent(a.id)}
                 disabled={running}
               >
-                {a.emoji} {a.name}
+                <span style={{ color: AGENT_ACCENTS[a.id] ?? '#22d3ee' }}>{a.emoji}</span> {a.name}
               </button>
             ))}
           </div>
@@ -131,7 +132,7 @@ export default function Meetings({ agents, onActivity, onToast }: {
               const agent = agents.find(a => a.id === m.agentId)
               return (
                 <div key={i} className="meeting-msg">
-                  <span className="meeting-msg__who">{agent?.emoji} {agent?.name ?? m.agentId}</span>
+                  <span className="meeting-msg__who" style={{ color: AGENT_ACCENTS[m.agentId] ?? undefined }}>{agent?.emoji} {agent?.name ?? m.agentId}</span>
                   <p>{m.text}</p>
                 </div>
               )

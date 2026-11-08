@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { IconPlus, IconTrash } from './icons'
+import { CONNECTOR_ACCENTS } from '../lib/accents'
 
 interface Props {
   onActivity?: () => void
@@ -126,7 +127,7 @@ export default function Connectors({ onActivity, onToast }: Props) {
           return (
             <div key={srv.id} className="card card-pad">
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <span style={{ fontSize: 30 }}>{m.emoji}</span>
+                <span className="conn-emoji" style={{ fontSize: 30, color: CONNECTOR_ACCENTS[srv.id] ?? '#a78bfa' }}>{m.emoji}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <h3>{srv.name}</h3>

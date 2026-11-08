@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { IconPlus, IconTrash } from './icons'
 import Meetings from './Meetings'
+import { AGENT_ACCENTS } from '../lib/accents'
 
 interface Agent { id: string; name: string; emoji: string; persona: string; builtin?: boolean }
 
@@ -91,7 +92,7 @@ export default function Agents({ agents, onChanged, onToast, onActivity }: {
         {agents.map(a => (
           <div key={a.id} className="agent-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <span className="a-emoji">{a.emoji}</span>
+              <span className="a-emoji" style={{ color: AGENT_ACCENTS[a.id] ?? '#22d3ee' }}>{a.emoji}</span>
               <span className={`badge ${a.builtin ? 'badge--builtin' : 'badge--custom'}`}>
                 {a.builtin ? 'native' : 'custom'}
               </span>

@@ -1,19 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconSend } from './icons'
 import { mdToHtml } from '../lib/markdown'
+import { AGENT_ACCENTS } from '../lib/accents'
 
 interface Msg { role: 'user' | 'assistant'; content: string; agent?: string; streaming?: boolean }
 
 interface Agent { id: string; name: string; emoji: string; persona: string; builtin?: boolean }
-
-const AGENT_ACCENTS: Record<string, string> = {
-  brain: '#22d3ee',
-  warren: '#a3e635',
-  bill: '#38bdf8',
-  elon: '#facc15',
-  naval: '#a78bfa',
-  jobs: '#f1f5f9'
-}
 
 const storeKey = (agentId: string) => `sb-chat:${agentId}`
 const loadHistory = (agentId: string): Msg[] => {
@@ -122,7 +114,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
                 textShadow: `0 0 10px ${accent}aa`
               } : undefined}
             >
-              <span className="emoji" style={isActive ? { filter: `drop-shadow(0 0 6px ${accent})` } : undefined}>{a.emoji}</span>
+              <span className="emoji" style={{ color: accent, ...(isActive ? { filter: `drop-shadow(0 0 6px ${accent})` } : {}) }}>{a.emoji}</span>
               <span className="label">{a.name}</span>
             </button>
           )
@@ -133,6 +125,7 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
         <div className="chat-header">
           <div className="msg__avatar" style={{
             width: 38, height: 38, fontSize: 19,
+            color: AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee',
             borderColor: `${AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee'}88`,
             boxShadow: `0 0 16px ${AGENT_ACCENTS[agent?.id ?? ''] ?? '#22d3ee'}40`
           }}>{agent?.emoji}</div>
@@ -156,10 +149,13 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
               </p>
             </div>
           )}
-          {msgs.map((m, i) => (
+          {msgs.map((m, i) => {
+            const msgAgent = agents.find(a => a.name === m.agent)
+            const msgAccent = AGENT_ACCENTS[msgAgent?.id ?? activeAgent] ?? '#22d3ee'
+            return (
             <div key={i} className={`msg ${m.role === 'user' ? 'msg--user' : ''}`}>
-              <div className="msg__avatar">
-                {m.role === 'user' ? '🧑' : (agents.find(a => a.name === m.agent)?.emoji ?? agent?.emoji ?? '🧠')}
+              <div className="msg__avatar" style={m.role === 'assistant' ? { color: msgAccent } : undefined}>
+                {m.role === 'user' ? '🧑' : (msgAgent?.emoji ?? agent?.emoji ?? '🧠')}
               </div>
               <div>
                 <div className="msg__bubble msg__body">
@@ -177,7 +173,8 @@ export default function Chat({ agents, onActivity }: { agents: Agent[]; onActivi
                 </div>
               </div>
             </div>
-          ))}
+            )
+          })}
           <div ref={bottomRef} />
         </div>
 
