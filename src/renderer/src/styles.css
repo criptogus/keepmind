@@ -354,32 +354,22 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
   box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 26%, transparent),
               inset 0 0 26px color-mix(in srgb, var(--accent) 6%, transparent);
 }
-/* rotating ray sweep on the selected card */
+/* soft accent bloom on the selected card */
 .provider-card.is-selected::before {
-  content: ''; position: absolute; inset: -65%;
-  background: conic-gradient(from 0deg,
-    transparent 0deg, transparent 288deg,
-    color-mix(in srgb, var(--accent) 15%, transparent) 342deg,
-    color-mix(in srgb, var(--accent) 30%, transparent) 352deg,
-    transparent 360deg);
-  animation: nnray 9s linear infinite;
-  pointer-events: none;
-}
-@keyframes nnray { to { transform: rotate(360deg); } }
-.provider-card.is-selected::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(120% 90% at 50% -20%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%);
+  background: radial-gradient(130% 100% at 50% -30%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 65%);
 }
 
 /* neural net layer */
-.nn { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .45; transition: opacity .25s; pointer-events: none; }
-.provider-card:hover .nn, .provider-card.is-selected .nn { opacity: .95; }
-.nn-edge { stroke-width: .5; opacity: .45; stroke-dasharray: 4 5; animation: nnflow 5s linear infinite; }
-@keyframes nnflow { to { stroke-dashoffset: -36; } }
-.nn-node { animation: nntwinkle 3.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-@keyframes nntwinkle { 0%,100% { opacity: .4 } 50% { opacity: 1 } }
-.nn-pulse { opacity: 0; animation: nnpulse 3.4s linear infinite; }
-@keyframes nnpulse { 0% { opacity: 0 } 12% { opacity: .95 } 88% { opacity: .95 } 100% { opacity: 0 } }
+.nn { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .3; transition: opacity .25s; pointer-events: none; }
+.provider-card:hover .nn { opacity: .55; }
+.provider-card.is-selected .nn { opacity: .8; }
+.nn-edge { stroke-width: .45; opacity: .35; stroke-dasharray: 4 6; animation: nnflow 7s linear infinite; }
+@keyframes nnflow { to { stroke-dashoffset: -40; } }
+.nn-node { animation: nntwinkle 4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes nntwinkle { 0%,100% { opacity: .35 } 50% { opacity: .85 } }
+.nn-pulse { opacity: 0; animation: nnpulse 4.5s linear infinite; }
+@keyframes nnpulse { 0% { opacity: 0 } 15% { opacity: .7 } 85% { opacity: .7 } 100% { opacity: 0 } }
 
 .p-mark {
   width: 38px; height: 38px; border-radius: 10px;

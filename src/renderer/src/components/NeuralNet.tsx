@@ -41,7 +41,7 @@ export default function NeuralNet({ seed, color }: { seed: string; color: string
   })
 
   return (
-    <svg className="nn" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <svg className="nn" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       {edges.map(([a, b], i) => (
         <line key={i} className="nn-edge" x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y}
           style={{ stroke: color, animationDelay: `${(i % 7) * 0.9}s` }} />
@@ -51,10 +51,10 @@ export default function NeuralNet({ seed, color }: { seed: string; color: string
           style={{ fill: color, animationDelay: `${n.d}s` }} />
       ))}
       {/* signal pulses traveling along a few edges */}
-      {edges.slice(0, 6).map(([a, b], i) => (
-        <circle key={`p${i}`} className="nn-pulse" r="1.1" fill="#fff"
-          style={{ animationDelay: `${i * 1.3}s` }}>
-          <animateMotion dur="3.2s" repeatCount="indefinite" path={`M ${nodes[a].x} ${nodes[a].y} L ${nodes[b].x} ${nodes[b].y}`} />
+      {edges.slice(0, 4).map(([a, b], i) => (
+        <circle key={`p${i}`} className="nn-pulse" r="0.9" fill="#fff"
+          style={{ animationDelay: `${i * 1.7}s` }}>
+          <animateMotion dur="4.5s" repeatCount="indefinite" path={`M ${nodes[a].x} ${nodes[a].y} L ${nodes[b].x} ${nodes[b].y}`} />
         </circle>
       ))}
     </svg>
