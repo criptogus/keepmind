@@ -1,6 +1,9 @@
 import type { GitHubConfig } from '../store'
 
 const API = 'https://api.github.com'
+// Device flow endpoints live on github.com, NOT api.github.com —
+// api.github.com/login/* returns 404.
+const WEB = 'https://github.com'
 
 // GitHub OAuth App credentials.
 // For the open-source release we ship a public client_id for the device flow.
@@ -17,7 +20,7 @@ export interface DeviceCode {
 }
 
 export async function startDeviceFlow(): Promise<DeviceCode> {
-  const res = await fetch(`${API}/login/device/code`, {
+  const res = await fetch(`${WEB}/login/device/code`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: CLIENT_ID, scope: SCOPES })
@@ -27,7 +30,7 @@ export async function startDeviceFlow(): Promise<DeviceCode> {
 }
 
 export async function pollDeviceFlow(deviceCode: DeviceCode): Promise<{ accessToken: string; login?: string } | null> {
-  const res = await fetch(`${API}/login/oauth/access_token`, {
+  const res = await fetch(`${WEB}/login/oauth/access_token`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
