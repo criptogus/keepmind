@@ -1,7 +1,7 @@
 {
   "name": "keepmind",
   "version": "0.1.1",
-  "description": "KeepMind \u2014 open-source installable second brain. Connects your apps, remembers everything, learns while you sleep.",
+  "description": "KeepMind — open-source installable second brain. Connects your apps, remembers everything, learns while you sleep.",
   "license": "MIT",
   "main": "./out/main/index.js",
   "bin": {
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
+    "better-sqlite3-multiple-ciphers": "^13.0.3",
     "electron-updater": "^6.8.11",
     "libsodium-wrappers": "^0.8.4",
     "libsodium-wrappers-sumo": "^0.8.4",
@@ -27,6 +28,7 @@
     "sql.js": "^1.12.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

@@ -2,6 +2,7 @@ import { policy } from './security/classification'
 import { createHash } from 'node:crypto'
 import { HybridSearch } from './search/hybrid'
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import type { LocalLlm } from './local-llm'
 import type { Memory } from './brain'
 import type { LayaService } from './laya'
@@ -30,7 +31,7 @@ interface Index {
 
 const CHUNK_SIZE = 900
 const CHUNK_OVERLAP = 150
-const MAX_CHUNKS = 6000
+const MAX_CHUNKS = 40000
 const SEARCH_K = 6
 
 // Order matters: on MAX_CHUNKS truncation the most durable/valuable
@@ -43,25 +44,38 @@ const INDEX_DIRS = [
 const SKIP_FILES = new Set(['INDEX.md'])
 
 export class RagService {
-  private searchDb: Promise<HybridSearch>
+  private searchDb?: Promise<HybridSearch>
+  private stateDir: string
   private index: Index = { chunks: [] }
   private embedding = false
 
   constructor(private localLlm: LocalLlm, memory: Memory, stateDir: string) {
-    this.searchDb = HybridSearch.open(join(stateDir, 'memory-search.sqlite'), join(stateDir, 'memory-embeddings.json'), () => memory.keys, () => memory.encryptAll)
+    this.stateDir = stateDir
     this.memory = memory
-    void this.searchDb.then(db => { this.index = { modelId: db.modelId, chunks: db.chunks({ space: memory.currentSpace, grants: memory.grants }) } }).catch(error => console.warn('[rag] index load failed', error))
+    void this.database().catch(() => {})
   }
 
   private memory: Memory
   private laya: LayaService | null = null
 
-  database() { return this.searchDb }
+  database(): Promise<HybridSearch> {
+    if (existsSync(join(this.stateDir, 'security/memory-keys.json')) && !this.memory.keys) return Promise.reject(new Error('Index locked'))
+    if (!this.searchDb) {
+      this.searchDb = HybridSearch.open(join(this.stateDir, 'memory-search.sqlite'), join(this.stateDir, 'memory-embeddings.json'), () => this.memory.keys, () => this.memory.encryptAll).then(db => {
+        try {
+          this.index = { modelId: db.modelId, chunks: db.chunks({ space: this.memory.currentSpace, grants: this.memory.grants }) }
+          return db
+        } catch (error) { db.close(); throw error }
+      })
+      void this.searchDb.catch(() => { this.searchDb = undefined })
+    }
+    return this.searchDb
+  }
 
   setLaya(l: LayaService) { this.laya = l }
 
   private async save() {
-    const db = await this.searchDb
+    const db = await this.database()
     db.replace(this.index.chunks.filter(c => c.space === this.memory.currentSpace || this.memory.grants.includes(c.space ?? 'personal')),  { space: this.memory.currentSpace, grants: this.memory.grants })
     db.modelId = this.index.modelId
     db.save()
@@ -80,7 +94,7 @@ export class RagService {
   // Rebuild the chunk list from memory files (cheap — no embeddings).
   // Vectors are kept per chunk-hash, so unchanged text never re-embeds.
   private async ensureChunks(): Promise<number> {
-    await this.searchDb
+    await this.database()
     if (this.memory.keys) this.memory.protectExisting()
     const byKey = new Map(this.index.chunks.map(c => [c.key, c]))
     const next: Chunk[] = []
@@ -108,7 +122,7 @@ export class RagService {
 
   // Embed any chunks missing vectors. Safe to call repeatedly.
   async embedPending(): Promise<number> {
-    await this.searchDb
+    await this.database()
     if (this.embedding || !this.localLlm.embedReady) return 0
     if (this.index.modelId !== this.localLlm.embedModelId) {
       this.index.chunks.forEach(c => { c.vec = undefined })
@@ -152,7 +166,7 @@ export class RagService {
         void this.embedPending().catch(() => {})
       }
       const qv = this.localLlm.embedReady ? await this.localLlm.embed([query]).catch(() => null) : null
-      const db = await this.searchDb
+      const db = await this.database()
       const q = db.modelId === this.localLlm.embedModelId ? qv?.[0] : undefined
       const scored = db.search(query, q, SEARCH_K * 2, { space, grants })
       // Laya rerank (the vault's "Jev" slot): a calibrated yes/no relevance

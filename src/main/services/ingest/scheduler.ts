@@ -29,13 +29,18 @@ export class RefreshScheduler {
     const scope = { space: this.memory.currentSpace, grants: this.memory.grants }
     const files = this.memory.allRelFiles().filter(f => !f.startsWith('ingest/') && !f.startsWith('ops/'))
     const previous = this.db.chunks(scope)
+    const byFile = new Map<string, SearchChunk[]>()
+    for (const chunk of previous) {
+      const key = `${chunk.space}:${chunk.file}`, chunks = byFile.get(key) ?? []
+      chunks.push(chunk); byFile.set(key, chunks)
+    }
     const next: SearchChunk[] = [], live = new Set<string>()
     let changed = 0
     for (const file of files) {
       const text = this.memory.read(file); if (text === null) continue
       const p = policy(text), fileKey = `${p.space}:${file}`, hash = digest(text)
       live.add(fileKey)
-      const old = previous.filter(c => c.file === file && c.space === p.space)
+      const old = byFile.get(fileKey) ?? []
       if (this.hashes[fileKey] === hash && old.length) { next.push(...old); continue }
       changed++
       for (let offset = 0; offset < text.length; offset += 750) {
@@ -43,7 +48,7 @@ export class RefreshScheduler {
         next.push({ key: digest(`${fileKey}:${offset}:${hash}`), file, offset, text: part, ...p })
       }
     }
-    const removed = previous.some(c => !files.includes(c.file))
+    const removed = previous.some(c => !live.has(`${c.space}:${c.file}`))
     if (changed || removed) {
       this.db.replace(next, scope); this.db.save()
       // Only acknowledge hashes after the SQLite save succeeds.

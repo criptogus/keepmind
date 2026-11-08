@@ -63,5 +63,6 @@ export class SpaceKeys {
   encrypt(text: string, space: string, context: string) { const k = this.key(space); try { return seal(text, k, `${space}:${context}`) } finally { k.fill(0) } }
   decrypt(text: string, space: string, context: string) { const k = this.key(space); try { return unseal(text, k, `${space}:${context}`) } finally { k.fill(0) } }
   token(term: string, space: string) { const k = this.key(space); try { return createHmac('sha256', k).update('keyword:').update(term).digest('hex') } finally { k.fill(0) } }
+  databaseKey() { this.check(); return createHmac('sha256', this.master).update('keepmind:sqlcipher:v1').digest('hex') }
   lock() { this.locked = true; this.master.fill(0) }
 }

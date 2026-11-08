@@ -86,11 +86,15 @@ app.whenReady().then(async () => {
   ipcMain.handle('security:status', () => security.status)
   ipcMain.handle('security:setup', async (_e, passphrase: unknown) => {
     if (typeof passphrase !== 'string' || !passphrase || passphrase.length > 8192) throw new Error('Invalid passphrase')
-    return security.setup(passphrase)
+    const result = await security.setup(passphrase)
+    // Always deliver the one-time recovery key, even if index migration fails.
+    try { (await rag.database()).save(); await startRefresh() }
+    catch { pushMcpLog('Search index migration failed; retry after unlocking') }
+    return result
   })
   ipcMain.handle('security:unlock', async (_e, credential: { passphrase?: string; recoveryKey?: string } | undefined) => {
     if (credential && (Object.keys(credential).some(k => !['passphrase', 'recoveryKey'].includes(k)) || Object.values(credential).some(v => typeof v !== 'string' || v.length > 8192))) throw new Error('Invalid credential')
-    await security.unlock(credential); return security.status
+    await security.unlock(credential); await startRefresh(); return security.status
   })
   ipcMain.handle('security:lock', () => { security.lock(); consents.splice(0); return security.status })
   ipcMain.handle('security:configure', async (_e, space: string, grants: string[], encryptAll: boolean) => {
@@ -107,16 +111,23 @@ app.whenReady().then(async () => {
   const rag = new RagService(localLlm, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
   brain.setRag(rag)
   const refreshDir = join(app.getPath('userData'), 'second-brain')
-  const refreshDb = await rag.database()
-  const configuredInterval = Number(process.env.KEEPMIND_REFRESH_INTERVAL_MS ?? 60000)
-  const refresh = new RefreshScheduler(brain.getMemory(), refreshDb, refreshDir, configuredInterval)
-  refreshSchedulerGlobal = refresh
-  refresh.start()
-  ipcMain.handle('pipeline:status', () => refresh.status.snapshot())
-  ipcMain.handle('pipeline:refresh', () => refresh.refresh())
-  ipcMain.handle('pipeline:enqueue', (_e, job: { platform: string; url: string; space: string }) => {
+  let refresh: RefreshScheduler | undefined
+  async function startRefresh() {
+    if (refresh) return refresh
+    const refreshDb = await rag.database()
+    const configuredInterval = Number(process.env.KEEPMIND_REFRESH_INTERVAL_MS ?? 60000)
+    refresh = new RefreshScheduler(brain!.getMemory(), refreshDb, refreshDir, configuredInterval)
+    refreshSchedulerGlobal = refresh
+    refresh.start()
+    return refresh
+  }
+  if (!security.status.configured || security.status.unlocked) await startRefresh()
+  ipcMain.handle('pipeline:status', () => refresh?.status.snapshot() ?? { locked: true })
+  ipcMain.handle('pipeline:refresh', async () => (await startRefresh()).refresh())
+  ipcMain.handle('pipeline:enqueue', async (_e, job: { platform: string; url: string; space: string }) => {
     if (!job || typeof job.url !== 'string' || job.url.length > 4096 || !/^[a-z0-9_-]{1,50}$/.test(job.platform) || typeof job.space !== 'string') throw new Error('Invalid ingestion job')
-    refresh.enqueue(job); return { queued: true }
+    const scheduler = await startRefresh()
+    scheduler.enqueue(job); return { queued: true }
   })
   // Laya — fast System-1 decision engine (ONNX, local). Powers quick
   // decisions: memory classification, dedup gates, RAG reranking.
