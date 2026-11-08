@@ -19,6 +19,7 @@ export interface LocalLlmConfig {
 }
 
 export interface GitHubConfig {
+  encryptionEnabled?: boolean
   accessToken?: string
   refreshToken?: string
   login?: string

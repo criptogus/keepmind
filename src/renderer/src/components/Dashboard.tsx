@@ -224,8 +224,8 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
             </span>
           )}
           {sync?.connected && (
-            <span className="faint mono" style={{ fontSize: 10.5, fontWeight: 400, marginLeft: 10, color: sync.pending ? 'var(--amber)' : 'var(--lime)' }}>
-              {sync.syncing ? '↻ syncing…' : sync.pending ? `⇡ ${sync.pending} to push` : '✓ github synced'}
+            <span className="faint mono" style={{ fontSize: 10.5, fontWeight: 400, marginLeft: 10, color: sync.error ? 'var(--red)' : sync.pending ? 'var(--amber)' : 'var(--lime)' }}>
+              {sync.error ? `⚠ ${sync.error}` : sync.syncing ? '↻ syncing…' : sync.pending ? `⇡ ${sync.pending} to push` : '✓ github synced'}
             </span>
           )}
         </h2>

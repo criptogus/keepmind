@@ -20,6 +20,7 @@ import { ensureRepoScaffold } from './scaffold'
 
 interface SyncState {
   sha: Record<string, string>   // relPath -> last seen git blob sha
+  encryptionEnabled?: boolean
   lastPull?: string
   lastPush?: string
 }
@@ -39,6 +40,7 @@ export class GitSync {
   private pushing = false
   private pulling = false
   private lastPushAt = 0
+  private error: string | null = null
   private listeners = new Set<(s: SyncStatus) => void>()
 
   constructor(store: Store, memory: Memory, stateDir: string) {
@@ -62,7 +64,8 @@ export class GitSync {
       pending: this.dirty.size,
       lastPull: this.state.lastPull ?? null,
       lastPush: this.state.lastPush ?? null,
-      syncing: this.pushing || this.pulling
+      syncing: this.pushing || this.pulling,
+      error: this.error
     }
   }
 
@@ -112,8 +115,10 @@ export class GitSync {
   }
 
   async syncNow(): Promise<SyncStatus> {
+    this.error = null
     await this.pull()
     await this.pushDirty()
+    if (this.error) throw new Error(this.error)
     return this.status()
   }
 
@@ -151,6 +156,9 @@ export class GitSync {
     this.pushing = true
     this.emit()
     const gh = this.store.get().github
+    if (gh.encryptionEnabled && !this.state.encryptionEnabled) {
+      for (const rel of this.memory.allRelFiles()) this.dirty.add(rel)
+    }
     const batch = [...this.dirty]
     try {
       for (const rel of batch) {
@@ -166,9 +174,11 @@ export class GitSync {
         this.dirty.delete(rel)
         this.lastPushAt = Date.now()
       }
+      this.state.encryptionEnabled = !!gh.encryptionEnabled
       this.state.lastPush = new Date().toISOString()
       this.saveState()
     } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e)
       console.warn('[sync] push failed:', e)
       // keep dirty entries — will retry on next write/interval
     } finally {
@@ -181,10 +191,14 @@ export class GitSync {
   private async pull(): Promise<void> {
     if (this.pulling || !this.connected()) return
     this.pulling = true
+    this.error = null
     this.lastPullAttempt = Date.now()
     this.emit()
     const gh = this.store.get().github
     try {
+      if (gh.encryptionEnabled && !this.state.encryptionEnabled) {
+        for (const rel of this.memory.allRelFiles()) this.dirty.add(rel)
+      }
       const remote = await github.listTree(gh, 'memory/')
       const remoteMap = new Map(remote.map(r => [r.path, r.sha]))
 
@@ -192,11 +206,12 @@ export class GitSync {
       for (const { path: rel, sha } of remote) {
         if (this.dirty.has(rel)) continue // local write wins until pushed
         if (this.state.sha[rel] === sha) continue // unchanged
-        const file = await github.fetchMemoryFile(gh, rel)
+        const file = await github.fetchMemoryFile(gh, rel, !this.state.encryptionEnabled)
         if (!file) continue
         try {
           this.memory.quietWrite(rel, file.content)
           this.state.sha[rel] = file.sha
+          if (gh.encryptionEnabled && !this.state.encryptionEnabled) this.dirty.add(rel)
         } catch (e) {
           console.warn(`[sync] skipped unsafe remote path ${rel}:`, e)
         }
@@ -218,11 +233,12 @@ export class GitSync {
           this.dirty.add(rel)
         }
       }
-      if (this.dirty.size > 0) void this.pushDirty()
+      if (this.dirty.size > 0) await this.pushDirty()
 
       this.state.lastPull = new Date().toISOString()
       this.saveState()
     } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e)
       console.warn('[sync] pull failed:', e)
     } finally {
       this.pulling = false
@@ -252,4 +268,5 @@ export interface SyncStatus {
   lastPull: string | null
   lastPush: string | null
   syncing: boolean
+  error: string | null
 }

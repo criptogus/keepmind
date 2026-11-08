@@ -131,6 +131,7 @@ const demo = {
   ],
   brainMemoryTiers: async () => ({ shortTerm: 3, mediumTerm: 1, longTerm: 8, sleepCycles: 2 }),
 
+  unlockSync: async () => ({ unlocked: true }),
   syncStatus: async () => ({ connected: true, pending: 0, lastPull: '2026-11-05T12:00:00Z', lastPush: '2026-11-05T12:00:01Z', syncing: false }),
   syncNow: async () => ({ connected: true, pending: 0, lastPull: '2026-11-05T12:00:00Z', lastPush: '2026-11-05T12:00:01Z', syncing: false }),
 

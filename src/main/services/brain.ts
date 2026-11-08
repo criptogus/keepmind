@@ -33,7 +33,7 @@ export class Memory {
   private journalFile: string
   private journalAppends = 0
 
-  constructor(private dir: string, private gh: GitHubConfig | null) {
+  constructor(private dir: string, private gh: GitHubConfig | (() => GitHubConfig) | null) {
     mkdirSync(this.dir, { recursive: true })
     this.journalFile = join(this.dir, 'ops', 'activity.jsonl')
     this.loadJournal()
@@ -146,13 +146,14 @@ export class Memory {
   }
 
   async syncToGitHub(message: string) {
-    if (!this.gh?.accessToken || !this.gh.repoOwner) return
+    const gh = typeof this.gh === 'function' ? this.gh() : this.gh
+    if (!gh?.accessToken || !gh.repoOwner) return
     // Push a digest of memory state — the repo is the durable backup
     const files = this.allFiles('')
     for (const rel of files.slice(0, 200)) {
       const content = this.read(rel)
       if (content != null) {
-        try { await github.pushFile(this.gh, `memory/${rel}`, content, message) } catch { /* keep going */ }
+        try { await github.pushFile(gh, `memory/${rel}`, content, message) } catch { /* keep going */ }
       }
     }
   }
@@ -196,7 +197,7 @@ export class Brain {
     this.store = store
     this.mcp = mcp
     this.localLlm = localLlm
-    this.memory = new Memory(store.memoryDir, store.get().github.accessToken ? store.get().github : null)
+    this.memory = new Memory(store.memoryDir, () => store.get().github)
   }
 
   setMcp(mcp: McpManager) { this.mcp = mcp }

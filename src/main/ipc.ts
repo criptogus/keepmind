@@ -81,9 +81,10 @@ function validateAiPatch(p: any): void {
 function validateGithubPatch(p: any): void {
   if (!isPlainObject(p)) bad('github patch')
   for (const k of Object.keys(p)) {
-    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch'].includes(k)) bad(`github.${k}`)
+    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch', 'encryptionEnabled'].includes(k)) bad(`github.${k}`)
   }
-  for (const k of Object.keys(p)) optStr(p[k], `github.${k}`, 2048)
+  if (p.encryptionEnabled !== undefined && typeof p.encryptionEnabled !== 'boolean') bad('github.encryptionEnabled')
+  for (const k of Object.keys(p)) if (k !== 'encryptionEnabled') optStr(p[k], `github.${k}`, 2048)
 }
 
 function validateLocalLlmPatch(p: any): void {
@@ -126,6 +127,13 @@ export function registerIpc(
   laya: import('./services/laya').LayaService | null = null
 ) {
   // ── Config ──
+  ipcMain.handle('sync:unlock', async (_e, passphrase: unknown) => {
+    reqStr(passphrase, 'passphrase', 4096)
+    github.unlockSync(passphrase as string)
+    try { await github.verifySyncPassphrase(store.get().github) }
+    catch (error) { github.lockSync(); throw error }
+    return { unlocked: true }
+  })
   ipcMain.handle('config:get', () => store.get())
   ipcMain.handle('config:set', (_e, patch: any) => {
     if (!isPlainObject(patch)) bad('config patch')

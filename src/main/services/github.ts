@@ -1,3 +1,4 @@
+import { createCryptoHeader, deriveKey, encryptMemory, decryptMemory, isEncrypted, type CryptoHeader } from './sync-crypto'
 import type { GitHubConfig } from '../store'
 
 const API = 'https://api.github.com'
@@ -88,7 +89,7 @@ function repoCoords(cfg: GitHubConfig): { owner: string; repo: string; branch: s
   return { owner, repo, branch: cfg.defaultBranch ?? 'main' }
 }
 
-export async function pushFile(cfg: GitHubConfig, path: string, content: string, message: string) {
+async function pushRawFile(cfg: GitHubConfig, path: string, content: string, message: string, createOnly = false) {
   if (!cfg.accessToken) throw new Error('GitHub not connected')
   const { owner, repo, branch } = repoCoords(cfg)
   const encoded = encodeURIComponent(path)
@@ -99,7 +100,10 @@ export async function pushFile(cfg: GitHubConfig, path: string, content: string,
   try {
     const existing = await apiGet(`${apiPath}?ref=${branch}`, cfg.accessToken)
     sha = existing.sha
-  } catch { /* new file */ }
+  } catch (error) {
+    if (!(error instanceof Error) || !/: 404$/.test(error.message)) throw error
+  }
+  if (createOnly && sha) throw new Error('Encryption header was created concurrently; retry sync')
 
   await apiSend('PUT', apiPath, cfg.accessToken, {
     message,
@@ -126,15 +130,13 @@ export interface RemoteFile { path: string; sha: string }
 // Recursive git tree under `prefix` (e.g. 'memory/'). Returns blob entries only.
 export async function listTree(cfg: GitHubConfig, prefix = 'memory/'): Promise<RemoteFile[]> {
   if (!cfg.accessToken) return []
-  try {
-    const { owner, repo } = repoCoords(cfg)
-    const tree = await apiGet(`/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`, cfg.accessToken)
-    return ((tree.tree ?? []) as any[])
-      .filter(t => t.type === 'blob' && t.path?.startsWith(prefix))
-      .map(t => ({ path: t.path.slice(prefix.length), sha: t.sha }))
-  } catch {
-    return []
-  }
+  const { owner, repo, branch } = repoCoords(cfg)
+  const tree = await apiGet(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`, cfg.accessToken)
+  if (tree.truncated) throw new Error('GitHub tree is truncated; refusing incomplete sync')
+  return ((tree.tree ?? []) as any[])
+    .filter(t => t.type === 'blob' && t.path?.startsWith(prefix))
+    .map(t => ({ path: t.path.slice(prefix.length), sha: t.sha }))
+
 }
 
 // Delete a file under memory/ (relPath is relative to memory/).
@@ -153,14 +155,76 @@ export async function deleteMemoryFile(cfg: GitHubConfig, relPath: string) {
 }
 
 // Fetch a single file's content + blob sha (paths are relative to memory/).
-export async function fetchMemoryFile(cfg: GitHubConfig, relPath: string): Promise<{ content: string; sha: string } | null> {
+export async function fetchMemoryFile(cfg: GitHubConfig, relPath: string, allowPlaintext = false): Promise<{ content: string; sha: string } | null> {
   if (!cfg.accessToken) return null
   try {
     const { owner, repo, branch } = repoCoords(cfg)
     const data = await apiGet(`/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(relPath)}?ref=${branch}`, cfg.accessToken)
     const content = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8')
-    return { content, sha: data.sha }
-  } catch {
-    return null
+    if (!isEncrypted(content) && cfg.encryptionEnabled && !allowPlaintext) {
+      throw new Error('Encrypted sync received plaintext memory; refusing downgrade')
+    }
+    return { content: isEncrypted(content)
+      ? await withKey(cfg, false, key => decryptMemory(content, key))
+      : content, sha: data.sha }
+  } catch (error) {
+    if (error instanceof Error && /: 404$/.test(error.message)) return null
+    throw error
   }
+}
+
+// Passphrases and derived keys live only in this process, never in config or IPC responses.
+let sessionPassphrase = ''
+export function unlockSync(passphrase: string) { sessionPassphrase = passphrase }
+export function lockSync() { sessionPassphrase = '' }
+const CRYPTO_PATH = '.keepmind/crypto.json'
+async function remoteHeader(cfg: GitHubConfig): Promise<CryptoHeader | null> {
+  const { owner, repo, branch } = repoCoords(cfg)
+  const res = await fetch(`${API}/repos/${owner}/${repo}/contents/${CRYPTO_PATH}?ref=${encodeURIComponent(branch)}`, {
+    headers: { Authorization: `Bearer ${cfg.accessToken}`, Accept: 'application/vnd.github+json' }
+  })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Could not read encryption header: ${res.status}`)
+  const data = await res.json()
+  return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'))
+}
+async function withKey<T>(cfg: GitHubConfig, create: boolean, fn: (key: Uint8Array) => Promise<T>): Promise<T> {
+  if (!sessionPassphrase) throw new Error('Encrypted sync is locked. Enter your passphrase in Settings for this session.')
+  let header = await remoteHeader(cfg)
+  if (!header) {
+    if (!create) throw new Error('Missing KeepMind encryption header')
+    header = await createCryptoHeader()
+    // The sentinel authenticates the passphrase before any memory is overwritten.
+    const key = await deriveKey(sessionPassphrase, header)
+    try {
+      const check = await encryptMemory('KeepMind key verification', key)
+      await pushRawFile(cfg, CRYPTO_PATH, JSON.stringify({ ...header, check }), 'sync: initialize encryption', true)
+      return await fn(key)
+    } finally { key.fill(0) }
+  }
+  const key = await deriveKey(sessionPassphrase, header)
+  try {
+    const check = (header as CryptoHeader & { check?: string }).check
+    if (!check || await decryptMemory(check, key) !== 'KeepMind key verification') throw new Error('Invalid encryption header verification')
+    return await fn(key)
+  } finally { key.fill(0) }
+}
+async function uploadFile(cfg: GitHubConfig, path: string, content: string, message: string) {
+  if (!path.startsWith('memory/')) return pushRawFile(cfg, path, content, message)
+  const header = await remoteHeader(cfg)
+  if (header && !cfg.encryptionEnabled) throw new Error('This repository is encrypted. Enable encrypted sync to upload memory.')
+  if (cfg.encryptionEnabled) return withKey(cfg, true, async key => pushRawFile(cfg, path, await encryptMemory(content, key), message))
+  return pushRawFile(cfg, path, content, message)
+}
+
+// Serialize writes so independent manual/background uploads cannot race header initialization.
+let uploadQueue: Promise<unknown> = Promise.resolve()
+export function pushFile(cfg: GitHubConfig, path: string, content: string, message: string): Promise<void> {
+  const upload = uploadQueue.then(() => uploadFile(cfg, path, content, message))
+  uploadQueue = upload.catch(() => {})
+  return upload
+}
+export async function verifySyncPassphrase(cfg: GitHubConfig): Promise<void> {
+  if (!cfg.accessToken || !(cfg.repoOwner || cfg.repoUrl)) return
+  if (await remoteHeader(cfg)) await withKey(cfg, false, async () => {})
 }

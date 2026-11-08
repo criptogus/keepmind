@@ -68,6 +68,7 @@ const api = {
   },
 
   // sync
+  unlockSync: (passphrase: string) => ipcRenderer.invoke('sync:unlock', passphrase),
   syncStatus: () => ipcRenderer.invoke('sync:status'),
   syncNow: () => ipcRenderer.invoke('sync:now'),
 
