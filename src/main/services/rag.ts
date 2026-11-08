@@ -16,6 +16,7 @@ interface Chunk {
   offset: number
   text: string
   vec?: number[]
+  stale?: boolean    // file declares valido_ate/expires in the past
 }
 
 interface Index {
@@ -31,7 +32,7 @@ const SEARCH_K = 6
 // Order matters: on MAX_CHUNKS truncation the most durable/valuable
 // sources survive — entities & long-term first, raw logs last.
 const INDEX_DIRS = [
-  'entities', 'long-term', 'notes', 'tasks', 'daily',
+  'entities', 'long-term', 'notes', 'tasks', 'daily', 'skills', 'crm',
   'insights', 'summaries', 'sleep', 'review',
   'short-term', 'medium-term', 'agents', 'inbox', 'meetings'
 ]
@@ -86,12 +87,13 @@ export class RagService {
         if (SKIP_FILES.has(f)) continue
         const content = this.memory.read(`${dir}/${f}`) ?? ''
         if (!content.trim()) continue
+        const stale = isStale(content)
         for (const chunk of chunkText(content)) {
           if (next.length >= MAX_CHUNKS) { truncated = true; break }
           const file = `${dir}/${f}`
           const key = createHash('sha1').update(`${file}:${chunk.offset}:${chunk.text.slice(0, 80)}`).digest('hex').slice(0, 16)
           const prev = byKey.get(key)
-          next.push({ key, file, offset: chunk.offset, text: chunk.text, vec: prev?.vec })
+          next.push({ key, file, offset: chunk.offset, text: chunk.text, vec: prev?.vec, stale: stale || prev?.stale })
         }
         if (truncated) break
       }
@@ -143,15 +145,24 @@ export class RagService {
       const qv = await this.localLlm.embed([query])
       if (!qv?.[0]) return ''
       const q = qv[0]
+      const qTerms = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(t => t.length > 2)
       const scored = this.index.chunks
         .filter(c => c.vec && c.vec.length === q.length)
-        .map(c => ({ c, s: cosine(q, c.vec!) }))
+        .map(c => {
+          const vec = cosine(q, c.vec!)
+          // hybrid: vector similarity + lexical overlap (BM25-ish), stale demoted
+          const lower = c.text.toLowerCase()
+          const hits = qTerms.reduce((n, t) => n + (lower.includes(t) ? 1 : 0), 0)
+          const lex = qTerms.length ? hits / qTerms.length : 0
+          const stalePenalty = c.stale ? 0.55 : 1
+          return { c, s: (vec * 0.7 + lex * 0.3) * stalePenalty, vec, lex }
+        })
         .sort((a, b) => b.s - a.s)
         .slice(0, SEARCH_K)
-      const good = scored.filter(x => x.s > 0.35)
+      const good = scored.filter(x => x.s > 0.3)
       if (!good.length) return ''
       return good.map(x =>
-        `### ${x.c.file} (relevance ${x.s.toFixed(2)})\n${x.c.text.slice(0, 900)}`
+        `### ${x.c.file}${x.c.stale ? ' ⚠ stale' : ''} (score ${x.s.toFixed(2)})\n${x.c.text.slice(0, 900)}`
       ).join('\n\n')
     } catch { return '' }
   }
@@ -159,8 +170,21 @@ export class RagService {
   private lastChunkScan = 0
 }
 
+// A file is "stale" when its frontmatter declares an expiry date in the past
+// (valido_ate / expires / review_after — inspired by vault note_validity).
+const STALE_LINE = /^(valido_ate|expires|review_after|stale_after|valid_until)\s*:\s*['"]?(\d{4}-\d{2}-\d{2})/im
+function isStale(content: string): boolean {
+  if (!content.startsWith('---')) return false
+  const end = content.indexOf('\n---', 3)
+  const fm = end === -1 ? content.slice(0, 1500) : content.slice(0, end)
+  const m = fm.match(STALE_LINE)
+  return !!m && m[2] < new Date().toISOString().slice(0, 10)
+}
+
 function chunkText(text: string): { offset: number; text: string }[] {
   const clean = text.replace(/\r\n/g, '\n')
+  // heading index for section-aware context prefixes
+  const headings = [...clean.matchAll(/^#{1,3}\s+(.+?)\s*$/gm)]
   const chunks: { offset: number; text: string }[] = []
   let i = 0
   while (i < clean.length && chunks.length < 400) {
@@ -171,7 +195,11 @@ function chunkText(text: string): { offset: number; text: string }[] {
       const brk = Math.max(window.lastIndexOf('\n\n'), window.lastIndexOf('. '), window.lastIndexOf('\n'))
       if (brk > CHUNK_SIZE * 0.5) end = i + brk + 1
     }
-    chunks.push({ offset: i, text: clean.slice(i, end).trim() })
+    let body = clean.slice(i, end).trim()
+    // prefix nearest preceding heading so chunks keep section context
+    const h = [...headings].reverse().find(x => (x.index ?? 0) < i)
+    if (h && body && !body.startsWith('#')) body = `§ ${h[1]}\n${body}`
+    chunks.push({ offset: i, text: body })
     i = end - CHUNK_OVERLAP > i ? end - CHUNK_OVERLAP : end
     if (end >= clean.length) break
   }

@@ -35,6 +35,10 @@ long-term memory: read before answering, write what matters.
 | \`meetings/\` | legacy roundtable transcripts |
 | \`entities/\` | one page per person/project/topic, linked with \`[[Name]]\` |
 | \`review/\` | spaced-repetition flashcards (\`cards.md\`) + quiz sessions |
+| \`skills/\` | procedural skills — one Markdown page per reusable procedure |
+| \`crm/\` | \`people/\`, \`companies/\`, \`interactions/\` — relationship memory |
+| \`ops/\` | operational logs — \`search-gaps.md\` records unanswered queries |
+| \`long-term/decisions.md\` | decision ledger — append via \`sb_remember kind=decision\` |
 
 ## MCP server (recommended)
 
@@ -57,6 +61,8 @@ OpenCode or any MCP client can spawn the same command.
 - Markdown only. One fact per bullet in \`long-term/\` files.
 - Tasks: first line \`# Title\`, second line \`> status: open|done · priority: low|normal|high · due: YYYY-MM-DD · created: ISO\`.
 - Notes may carry YAML frontmatter (\`summary:\`, \`tags:\`, \`links:\`, \`enriched:\`) — preserve it when editing.
+- Notes may also declare freshness: \`valido_ate: YYYY-MM-DD\` (or \`expires:\`) — expired notes are demoted in search. Set \`review_after:\` for time-sensitive content.
+- Distinguish hypothesis from fact: prefix unverified claims with \`> proof: hypothesis\`; confirmed ones with \`> proof: confirmed\`.
 - Link recurring people/projects/topics with \`[[Name]]\` — entity pages live in \`memory/entities/\`.
 - Write in the user's language. Keep entries dated and concise.
 - Prefer \`sb_remember\` for durable facts — it lands in the right long-term file.

@@ -26,7 +26,7 @@ export class Memory {
     //   long-term   = durable facts, lessons, skills (never forgotten)
     //   sleep       = nightly learning reports
     //   inbox       = legacy dir kept for backward compatibility
-    for (const sub of ['short-term', 'medium-term', 'long-term', 'sleep', 'inbox', 'insights', 'summaries', 'agents', 'notes', 'tasks', 'daily', 'meetings', 'entities', 'review']) {
+    for (const sub of ['short-term', 'medium-term', 'long-term', 'sleep', 'inbox', 'insights', 'summaries', 'agents', 'notes', 'tasks', 'daily', 'meetings', 'entities', 'review', 'skills', 'crm', 'ops']) {
       mkdirSync(join(this.dir, sub), { recursive: true })
     }
   }
@@ -340,6 +340,9 @@ export class Brain {
       const c = this.memory.read(`insights/${f}`)
       if (c) parts.push(`### ${f}\n${c}`)
     }
+    // knowledge gaps: searches that returned nothing (logged by MCP/RAG clients)
+    const gaps = this.memory.read('ops/search-gaps.md')
+    if (gaps) parts.push(`### ops/search-gaps.md (unanswered queries)\n${gaps.slice(-3000)}`)
     const corpus = parts.join('\n\n').slice(-maxChars)
     return corpus
   }
@@ -582,6 +585,8 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
       const c = this.memory.read(`insights/${f}`)
       if (c) corpusParts.push(`### insights/${f}\n${c.slice(0, 2000)}`)
     }
+    const gaps = this.memory.read('ops/search-gaps.md')
+    if (gaps) corpusParts.push(`### unanswered queries (knowledge gaps)\n${gaps.slice(-3000)}`)
     const prior = this.memory.read('long-term/evolution.md')
     if (prior) corpusParts.push(`### prior evolution proposals\n${prior.slice(-4000)}`)
     const corpus = corpusParts.join('\n\n').slice(-24000)
@@ -786,6 +791,115 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
       '## Grading', '', grade.text, ''
     ].join('\n')
     this.memory.write(`review/session-${day}.md`, report)
+
+    try {
+      if (this.gitSync) await this.gitSync.syncNow()
+    } catch { /* offline ok */ }
+    void this.rag?.reindex().catch(() => {})
+    return report
+  }
+
+  // ── Security audit: scan memory for leaked secrets ──
+  // Deterministic pattern scan (no LLM needed) — reports file+line but
+  // NEVER prints the secret value itself.
+
+  async securityAudit(): Promise<string> {
+    const day = new Date().toISOString().slice(0, 10)
+    const PATTERNS: [string, RegExp][] = [
+      ['openai/generic api key', /\b(sk-[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,})\b/],
+      ['github token', /\b(ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|gho_[A-Za-z0-9]{30,})\b/],
+      ['slack token', /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/],
+      ['aws key', /\bAKIA[0-9A-Z]{16}\b/],
+      ['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
+      ['password assignment', /(?:password|passwd|pwd|secret|api[_-]?key|token)\s*[:=]\s*['"][^'"\s]{8,}['"]/i],
+      ['bearer token', /bearer\s+[A-Za-z0-9._~+/=-]{20,}/i]
+    ]
+    const hits: string[] = []
+    for (const rel of this.memory.allRelFiles()) {
+      const content = this.memory.read(rel)
+      if (!content) continue
+      const lines = content.split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        for (const [label, re] of PATTERNS) {
+          if (re.test(lines[i])) {
+            // redact: show only the key name/context, never the value
+            hits.push(`- \`${rel}:${i + 1}\` — ${label}`)
+            break
+          }
+        }
+      }
+    }
+    const report = hits.length
+      ? [`# Security audit — ${day}`, '', `⚠️ **${hits.length} potential secret(s) found in memory:**`, '', ...hits.slice(0, 100), '', '_Values redacted — review and rotate/remove the exposed credentials._', '']
+      : [`# Security audit — ${day}`, '', '✅ No secret patterns detected in memory files.', '']
+    const text = report.join('\n')
+    this.memory.write(`insights/security-${day}.md`, text)
+    return text
+  }
+
+  // ── Skills evolution: review + consolidate procedural memory ──
+  // Reviews long-term/skills.md and skills/*.md: dedupes, asks the LLM to
+  // consolidate, and appends a dated review section with proposals.
+  // Never deletes — everything becomes a reviewable proposal.
+
+  async evolveSkills(): Promise<string> {
+    const day = new Date().toISOString().slice(0, 10)
+    const skillsMd = this.memory.read('long-term/skills.md') ?? ''
+    const skillFiles = this.memory.list('skills').sort()
+    const skillDocs = skillFiles.map(f => `### skills/${f}\n${(this.memory.read(`skills/${f}`) ?? '').slice(0, 3000)}`)
+
+    if (!skillsMd.trim() && !skillDocs.length) {
+      const msg = '# Skills evolution — nothing to review yet\n\nNo skills recorded. They accumulate from sleep cycles and `sb_remember kind=skill`.\n'
+      this.memory.write(`insights/skills-${day}.md`, msg)
+      return msg
+    }
+
+    // 1) deterministic dedupe on skills.md bullets
+    let deduped = 0
+    if (skillsMd.trim()) {
+      const seen = new Set<string>()
+      const out: string[] = []
+      for (const line of skillsMd.split('\n')) {
+        const t = line.trim()
+        if (/^[-*•]/.test(t) || /^\d+\./.test(t)) {
+          const key = t.toLowerCase().replace(/\s+/g, ' ')
+          if (seen.has(key)) { deduped++; continue }
+          seen.add(key)
+        }
+        out.push(line)
+      }
+      const next = out.join('\n')
+      if (next !== skillsMd) this.memory.write('long-term/skills.md', next)
+    }
+
+    // 2) LLM consolidation review
+    const corpus = [
+      skillsMd.slice(-8000),
+      ...skillDocs.slice(-10)
+    ].join('\n\n').slice(-20000)
+
+    const res = await chat(this.store.get().ai as AiProviderConfig, [
+      {
+        role: 'system',
+        content: `You are the skills curator of a personal knowledge system. Review the procedural skills below and output a consolidation report:
+
+1. **Merge** — skills that are duplicates or should be one procedure
+2. **Prune** — skills that are stale, wrong, or superseded (say why)
+3. **Promote** — skills proven useful ≥2 times that deserve a dedicated page in skills/
+4. **Gap** — recurring tasks with NO skill yet that should get one
+
+Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every call in the text. Markdown, user's language, max ~400 words.`
+      },
+      { role: 'user', content: corpus }
+    ], [], this.localLlm?.endpoint)
+
+    const report = [
+      `# Skills evolution — ${day}`,
+      `_${deduped} duplicate bullet(s) removed from skills.md · ${skillFiles.length} skill page(s)_`,
+      '', res.text, ''
+    ].join('\n')
+    this.memory.write(`insights/skills-${day}.md`, report)
+    this.memory.append('long-term/skills.md', `\n\n## Evolution review ${day}\n\n${res.text}\n`)
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()

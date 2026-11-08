@@ -5,7 +5,7 @@ interface Automation {
   id: string
   name: string
   instruction: string
-  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review' | 'security' | 'skills'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string
   everyMinutes?: number
@@ -32,7 +32,9 @@ const KIND_LABEL: Record<string, string> = {
   librarian: 'librarian',
   evolve: 'evolution',
   enrich: 'enrichment',
-  review: 'review'
+  review: 'review',
+  security: 'security',
+  skills: 'skills'
 }
 
 // Ready-made self-learning crons — one click installs them.
@@ -43,7 +45,10 @@ const TEMPLATES: { emoji: string; name: string; desc: string; input: any }[] = [
   { emoji: '🧬', name: 'Weekly evolution', desc: 'Sun 18:00 — the brain reviews its own reports and proposes upgrades to itself.', input: { name: 'Weekly evolution', kind: 'evolve', schedule: 'weekly', weekday: 0, time: '18:00', instruction: 'Meta-learning: review sleep reports and insights, propose improvements to the memory system itself.' } },
   { emoji: '✨', name: 'Nightly enrichment', desc: '02:30 — adds summaries, tags and [[wikilinks]] to recent notes.', input: { name: 'Nightly note enrichment', kind: 'enrich', schedule: 'daily', time: '02:30', instruction: 'Enrich recent notes with summaries, topic tags and entity wikilinks.' } },
   { emoji: '🧠', name: 'Inbox triage', desc: 'Every 6h — sorts raw inbox captures into notes, tasks or memory.', input: { name: 'Inbox triage', kind: 'brain', schedule: 'interval', everyMinutes: 360, instruction: 'Triage the inbox: move valuable items into notes/tasks/long-term memory, discard noise, and report what you did.' } },
-  { emoji: '🃏', name: 'Spaced review', desc: 'Daily 20:00 — quizzes the brain on its own flashcards and grades retention.', input: { name: 'Spaced review', kind: 'review', schedule: 'daily', time: '20:00', instruction: 'Spaced-repetition review: quiz yourself on flashcards from long-term memory.' } }
+  { emoji: '🃏', name: 'Spaced review', desc: 'Daily 20:00 — quizzes the brain on its own flashcards and grades retention.', input: { name: 'Spaced review', kind: 'review', schedule: 'daily', time: '20:00', instruction: 'Spaced-repetition review: quiz yourself on flashcards from long-term memory.' } },
+  { emoji: '🛡️', name: 'Security audit', desc: 'Weekly Sun 07:00 — scans memory for leaked secrets, API keys and credentials.', input: { name: 'Security audit', kind: 'security', schedule: 'weekly', weekday: 0, time: '07:00', instruction: 'Scan all memory files for leaked secrets and credentials; report exposures without printing values.' } },
+  { emoji: '📈', name: 'Skills evolution', desc: 'Weekly Sat 10:00 — dedupes skills, consolidates procedures, proposes promotions to skills/.', input: { name: 'Skills evolution', kind: 'skills', schedule: 'weekly', weekday: 6, time: '10:00', instruction: 'Review procedural skills: dedupe, merge, prune stale ones, propose which deserve dedicated pages.' } },
+  { emoji: '🔍', name: 'Gap review', desc: 'Weekly Fri 18:00 — analyzes unanswered searches and writes the missing knowledge.', input: { name: 'Gap review', kind: 'brain', schedule: 'weekly', weekday: 5, time: '18:00', instruction: 'Review ops/search-gaps.md: for each repeated unanswered query, research the answer from memory + connectors and write it where it belongs (notes/long-term). Report what you filled.' } }
 ]
 
 function scheduleLabel(a: Automation): string {

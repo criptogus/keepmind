@@ -87,7 +87,15 @@ function search(query, limit = 8) {
     results.push({ rel, score, snippet: hit.trim().slice(0, 220) })
   }
   results.sort((a, b) => b.score - a.score)
-  if (!results.length) return `no matches for "${query}"`
+  if (!results.length) {
+    // zero-hit = a knowledge gap. Log it so sleep/evolve cycles can see
+    // what the brain fails to answer (inspired by vault evolve_lib gaps).
+    try {
+      writeMem('ops/search-gaps.md',
+        `\n- ${new Date().toISOString().slice(0, 16).replace('T', ' ')} — "${query.replace(/\n/g, ' ').slice(0, 120)}"\n`, true)
+    } catch { /* non-fatal */ }
+    return `no matches for "${query}"`
+  }
   return results.slice(0, limit).map(r =>
     `## ${r.rel} (score ${r.score})\n${r.snippet}`).join('\n\n')
 }
@@ -163,6 +171,20 @@ function queryMem(a = {}) {
     return out.length ? out.slice(0, limit).join('\n') : 'no matching notes'
   }
 
+  if (kind === 'crm') {
+    const files = allFiles().filter(f => f.startsWith('crm/'))
+    const out = []
+    for (const f of files) {
+      const c = readMem(f) ?? ''
+      const title = (c.split('\n').find(l => l.startsWith('# ')) ?? f).slice(2).trim()
+      const role = c.match(/^role:\s*(.+)$/m)?.[1]?.trim() ?? ''
+      const company = c.match(/^company:\s*(.+)$/m)?.[1]?.trim() ?? ''
+      if (!match(title) && !match(c.slice(0, 800))) continue
+      out.push(`${title}${role ? ` · ${role}` : ''}${company ? ` @ ${company}` : ''} · ${f}`)
+    }
+    return out.length ? out.slice(0, limit).join('\n') : 'no matching crm entries'
+  }
+
   if (kind === 'entities') {
     const idx = readMem('entities/index.md') ?? ''
     const rows = idx.split('\n').filter(l => l.includes('[['))
@@ -216,7 +238,7 @@ const TOOLS = [
     description: 'Save a durable fact/lesson/skill/note to long-term memory — the thing the brain should never forget. kind: fact|lesson|skill|note.',
     inputSchema: { type: 'object', properties: {
       content: { type: 'string', description: 'the thing to remember' },
-      kind: { type: 'string', enum: ['fact', 'lesson', 'skill', 'note'], description: 'default fact' }
+      kind: { type: 'string', enum: ['fact', 'lesson', 'skill', 'note', 'decision'], description: 'default fact' }
     }, required: ['content'] }
   },
   {
@@ -243,7 +265,7 @@ const TOOLS = [
     name: 'sb_query',
     description: 'Structured query over memory. kind: tasks|notes|entities|files. Filters: text (substring), tag (notes), status/priority/dueBefore/dueAfter/overdue (tasks), dir (files), limit.',
     inputSchema: { type: 'object', properties: {
-      kind: { type: 'string', enum: ['tasks', 'notes', 'entities', 'files'] },
+      kind: { type: 'string', enum: ['tasks', 'notes', 'entities', 'files', 'crm'] },
       text: { type: 'string' }, tag: { type: 'string' }, dir: { type: 'string' },
       status: { type: 'string' }, priority: { type: 'string' },
       dueBefore: { type: 'string', description: 'YYYY-MM-DD' },
@@ -264,8 +286,10 @@ function callTool(name, a = {}) {
     case 'sb_write': return `wrote ${writeMem(String(a.path ?? ''), String(a.content ?? ''))}`
     case 'sb_append': return `appended to ${writeMem(String(a.path ?? ''), String(a.content ?? ''), true)}`
     case 'sb_remember': {
-      const kind = ['fact', 'lesson', 'skill', 'note'].includes(a.kind) ? a.kind : 'fact'
-      const file = kind === 'note' ? `long-term/notes/${slug(String(a.content).split('\n')[0]).slice(0, 60)}.md` : `long-term/${kind}s.md`
+      const kind = ['fact', 'lesson', 'skill', 'note', 'decision'].includes(a.kind) ? a.kind : 'fact'
+      const file = kind === 'note' ? `long-term/notes/${slug(String(a.content).split('\n')[0]).slice(0, 60)}.md`
+        : kind === 'decision' ? 'long-term/decisions.md'
+        : `long-term/${kind}s.md`
       const entry = kind === 'note'
         ? `# ${String(a.content).split('\n')[0]}\n\n${a.content}\n\n---\nsaved ${new Date().toISOString()}\n`
         : `\n- ${String(a.content).replace(/\n+/g, ' ').trim()}\n`

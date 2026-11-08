@@ -16,6 +16,10 @@ The repo keeps memory in tiers under \`memory/\`:
 - \`notes/\`, \`tasks/\`, \`daily/\` — user notes, to-dos and daily goals
 - \`entities/\` — knowledge graph: one page per person/project/topic with [[wikilinks]]
 - \`review/\` — spaced-repetition flashcards and quiz sessions
+- \`skills/\` — procedural skills (reusable "how we do X" pages)
+- \`crm/\` — people/, companies/, interactions/ relationship memory
+- \`ops/\` — operational logs incl. search-gaps.md (queries that found nothing)
+- \`long-term/decisions.md\` — decision ledger (append via remember kind=decision)
 - Notes may have YAML frontmatter (\`summary:\`, \`tags:\`, \`links:\`) — preserve it when editing
 - \`tools/keepmind-mcp.mjs\` — zero-dep MCP server; if you support MCP, prefer it over raw file edits:
   \`node tools/keepmind-mcp.mjs --dir ./memory\` exposes sb_search / sb_read / sb_write / sb_remember / sb_tasks
