@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Second Brain — your memory, your repo, your AI</title>
-<meta name="description" content="Open-source local-first second brain for desktop. Markdown memory synced to your own GitHub repo, specialist AI agents, local LLM, sleep-mode learning. Free forever, MIT." />
-<meta property="og:title" content="Second Brain — your memory, your repo, your AI" />
-<meta property="og:description" content="Open-source local-first second brain for desktop. Markdown memory in YOUR GitHub repo, specialist AI agents, local LLM, sleep-mode learning." />
+<title>Second Brain — open-source memory for any LLM</title>
+<meta name="description" content="Open-source second brain that connects to ANY LLM — local llama.cpp, Claude, Codex, GPT, Gemini, Grok, Ollama. Your knowledge lives as Markdown in your own GitHub repo, independent of any model. Runs on your machine, a VPS, or a bot's VM. MIT." />
+<meta property="og:title" content="Second Brain — open-source memory for any LLM" />
+<meta property="og:description" content="Connect any LLM to persistent memory stored as Markdown in YOUR GitHub repo. LLM-agnostic, local-first, MCP connectors, specialist agents. Runs on desktop, VPS or a bot VM." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://criptogus.github.io/second-brain-app/" />
 <meta property="og:image" content="https://criptogus.github.io/second-brain-app/icon.png" />
@@ -266,25 +266,26 @@
 
 <header class="hero">
   <div class="wrap">
-    <span class="hud-tag">◈ open source · local-first · mit</span>
-    <h1>Your second brain,<br/><span class="glow-cyan">in your own repo.</span></h1>
+    <span class="hud-tag">◈ open source · llm-agnostic · mit</span>
+    <h1>Your knowledge.<br/><span class="glow-cyan">Any LLM.</span> <span class="glow-lime">Your repo.</span></h1>
     <p class="sub">
-      Second Brain remembers everything you tell it — as Markdown files in a private
-      GitHub repository <em>you</em> own. Chat with specialist AI agents, run nightly
-      learning cycles, automate your routine. Works fully offline with a local LLM.
+      Second Brain is a persistent memory layer that plugs into <strong>any</strong> LLM —
+      local llama.cpp, Claude, Codex, GPT, Gemini, Grok, Ollama — through MCP connectors.
+      Everything it learns is plain Markdown in a private GitHub repo <em>you</em> own:
+      swap models anytime, your knowledge stays. Runs on your machine, a VPS, or a bot's VM.
     </p>
     <div class="cta-row">
       <a class="btn btn--primary" href="https://github.com/criptogus/second-brain-app/releases/latest">⬇ Download free</a>
       <a class="btn btn--ghost" href="https://github.com/criptogus/second-brain-app#readme">Read the docs</a>
     </div>
-    <p class="fine">macOS · Windows · Linux — no account required, no subscription to start</p>
+    <p class="fine">macOS · Windows · Linux · VPS — a GitHub repo is the only requirement</p>
 
     <div class="stage">
       <canvas id="core"></canvas>
-      <div class="chip chip--1"><i></i>memory synced → github</div>
-      <div class="chip chip--2"><i style="background:var(--lime);box-shadow:0 0 8px var(--lime)"></i>3 memory tiers</div>
-      <div class="chip chip--3"><i style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></i>sleep cycle active</div>
-      <div class="chip chip--4"><i style="background:var(--violet);box-shadow:0 0 8px var(--violet)"></i>6 ai providers</div>
+      <div class="chip chip--1"><i></i>memory → your github repo</div>
+      <div class="chip chip--2"><i style="background:var(--lime);box-shadow:0 0 8px var(--lime)"></i>any llm · mcp</div>
+      <div class="chip chip--3"><i style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></i>runs on desktop · vps · bot vm</div>
+      <div class="chip chip--4"><i style="background:var(--violet);box-shadow:0 0 8px var(--violet)"></i>knowledge outlives models</div>
     </div>
   </div>
 </header>
@@ -300,8 +301,11 @@
       <div class="card"><div class="ic">📅</div><h3>Today command center</h3><p>Daily intentions, tasks with due dates, quick notes — one screen that opens every morning.</p></div>
       <div class="card"><div class="ic">⚡</div><h3>Natural automations</h3><p>"Every day at 8am summarize my WhatsApp" becomes a scheduled cron. Daily, interval or weekly — pause, resume, run now.</p></div>
       <div class="card"><div class="ic">🧮</div><h3>Local semantic search</h3><p>Optional RAG embeddings (BGE/Nomic via llama.cpp) give the brain meaning-based recall — fully offline.</p></div>
-      <div class="card"><div class="ic">🔌</div><h3>MCP connectors</h3><p>WhatsApp via QR, Telegram bot, Postgres read-only, and any custom MCP server you add.</p></div>
-      <div class="card"><div class="ic">🔐다</div><h3>Local accounts + Google</h3><p>SQLite auth with scrypt hashing, Google sign-in via PKCE. Your data never leaves your machine unless you want it to.</p></div>
+      <div class="card"><div class="ic">🔌</div><h3>MCP connectors</h3><p>Any MCP server over stdio — WhatsApp via QR, Telegram bot and Postgres bundled, plus whatever you add. LLMs call them as native tools.</p></div>
+      <div class="card"><div class="ic">🔀</div><h3>LLM-agnostic</h3><p>Bundled local llama.cpp, Codex/ChatGPT sign-in, Claude Pro/Max, OpenAI, Gemini, Grok, Ollama. Swap the runtime — keep the brain.</p></div>
+      <div class="card"><div class="ic">📦</div><h3>Knowledge outlives models</h3><p>Memory is Markdown in your repo, not weights in a provider. Retire GPT-4, adopt the next model — nothing is forgotten.</p></div>
+      <div class="card"><div class="ic">🖥️</div><h3>Runs anywhere</h3><p>Desktop app on macOS/Windows/Linux — or install it on a VPS, or let a bot (Grok, Claude, yours) set it up on its own VM and wake up with persistent memory.</p></div>
+      <div class="card"><div class="ic">🔐</div><h3>Local accounts + Google</h3><p>SQLite auth with scrypt hashing, Google sign-in via PKCE. Your data never leaves your machine unless you want it to.</p></div>
       <div class="card"><div class="ic">🔄</div><h3>Auto-updates</h3><p>Built-in updater checks GitHub Releases on launch. New versions install themselves in the background.</p></div>
     </div>
   </div>
@@ -310,8 +314,8 @@
 <section id="memory" style="background:rgba(15,23,42,.35);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="wrap">
     <div class="sec-tag">// your data, your repo</div>
-    <h2>Memory that lives in <em>your</em> GitHub.</h2>
-    <p class="sec-sub">Every note, insight, task and meeting is a plain Markdown file in a private repo only you control. Portable, versioned, greppable — and readable by Claude, Codex or any AI you plug in.</p>
+    <h2>The repo is the brain.<br/><em>LLMs are just runtimes.</em></h2>
+    <p class="sec-sub">Every note, insight, task and meeting is a plain Markdown file in a private repo only you control — synced both ways, before every chat. That's what makes Second Brain LLM-independent: Claude writes today, Grok answers tomorrow, a local model runs offline next week. Same memory, any engine. A GitHub repo is the one thing every LLM workflow already has.</p>
     <div class="tiers">
       <div class="tier tier--short"><i class="dot"></i><b>short-term</b><span>daily raw logs — working memory, last ~10 days in context</span></div>
       <div class="tier tier--med"><i class="dot"></i><b>medium-term</b><span>weekly consolidations — patterns emerge</span></div>
@@ -322,9 +326,9 @@
 
 <section id="agents">
   <div class="wrap">
-    <div class="sec-tag">// specialist agents</div>
-    <h2>Ask the greats.<br/><em>They've read your diary.</em></h2>
-    <p class="sec-sub">Each agent has a persona and full access to your second-brain context — past decisions, lessons learned, open tasks.</p>
+    <div class="sec-tag">// any model, any agent</div>
+    <h2>Not locked to one AI.<br/><em>Not locked to one machine.</em></h2>
+    <p class="sec-sub">Point Second Brain at whatever LLM you have — a frontier API, your Codex login, a free Gemini key, or a GGUF running on a VPS. External agents can also drive the same repo directly via MCP, so a bot on its own VM gets the same persistent memory you do.</p>
     <div class="agents-row">
       <div class="agent-pill"><i>🎩</i> Warren Buffett</div>
       <div class="agent-pill"><i>🖥️</i> Bill Gates</div>
@@ -334,8 +338,8 @@
       <div class="agent-pill"><i>🧠</i> + your own personas</div>
     </div>
     <div class="grid grid--2" style="max-width:860px;margin-left:auto;margin-right:auto">
-      <div class="card"><h3>6 AI providers</h3><p>Bundled local llama.cpp (fully offline) · Codex/ChatGPT sign-in · Claude Pro/Max · OpenAI · Gemini · Grok · Ollama.</p></div>
-      <div class="card"><h3>Plug in your other AIs</h3><p>One prompt teaches Claude, Codex, Grok or Gemini to read and write memory in your repo — emails sent, PDFs made, decisions remembered.</p></div>
+      <div class="card"><h3>Every major LLM</h3><p>Bundled local llama.cpp (fully offline) · Codex/ChatGPT sign-in · Claude Pro/Max · OpenAI · Gemini · Grok · Ollama — plus any MCP-compatible agent.</p></div>
+      <div class="card"><h3>Give any AI your memory</h3><p>One prompt teaches Claude, Codex, Grok or Gemini to read and write memory in your repo — emails sent, PDFs made, decisions remembered. Or let an agent install Second Brain on its own VM via MCP.</p></div>
     </div>
   </div>
 </section>
@@ -344,7 +348,7 @@
   <div class="wrap">
     <div class="sec-tag">// install</div>
     <h2>Free forever.<br/><em>MIT licensed.</em></h2>
-    <p class="sec-sub" style="margin-left:auto;margin-right:auto">Download the latest release — auto-updates are built in.</p>
+    <p class="sec-sub" style="margin-left:auto;margin-right:auto">Download the latest release — auto-updates are built in. Runs on your desktop, a VPS, or inside an agent's VM. All it needs is a GitHub repo to call home.</p>
     <div class="grid grid--3" style="margin-top:40px">
       <div class="card dl-card">
         <span class="os">macOS</span>

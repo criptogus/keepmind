@@ -4,9 +4,11 @@
 
 # 🧠 Second Brain
 
-**A local-first, open-source "second brain" for your desktop.**
-It connects your apps, remembers everything in *your own* GitHub repo,
-and thinks with you through specialist AI agents — running fully offline if you want.
+**An open-source, LLM-agnostic second brain.**
+Plug *any* LLM — local llama.cpp, Claude, Codex, GPT, Gemini, Grok, Ollama —
+into persistent memory stored as plain Markdown in **your own GitHub repo**.
+Your knowledge is independent of any model: swap providers anytime, nothing is forgotten.
+Runs on your desktop, a VPS, or a bot's own VM.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
@@ -24,12 +26,14 @@ and thinks with you through specialist AI agents — running fully offline if yo
 
 ## What it does
 
-Second Brain is a desktop app (Electron) that gives you a persistent, *yours-only* AI memory:
+Second Brain is a persistent memory layer that works with **any LLM** — the model is a
+replaceable runtime, the repo is the brain:
 
-- **🧠 Local AI, zero cloud required** — bundles [llama.cpp](https://github.com/ggml-org/llama.cpp) and downloads an open-source GGUF model (Qwen2.5, Llama 3.2, SmolLM2) on first run. Works fully offline. Claude / OpenAI / Gemini / Ollama also supported via BYOK.
-- **💾 Memory you own** — every conversation, insight and summary is stored as Markdown in a **private GitHub repo created for you** via OAuth device flow. Portable, versioned, yours.
-- **🔌 Connectors (MCP)** — WhatsApp via QR code (Baileys), Telegram bot, Postgres read-only, and *any* custom MCP server you add.
-- **🔁 Continuous GitHub sync** — the repo is the source of truth: every local memory write pushes in seconds, remote changes (written by Claude, Codex, Grok…) pull down automatically, before every chat.
+- **🔀 LLM-agnostic** — bundled [llama.cpp](https://github.com/ggml-org/llama.cpp) local model (fully offline), **Codex/ChatGPT sign-in**, **Claude Pro/Max** via `claude setup-token`, plus API keys for Anthropic, OpenAI, Gemini, Grok (xAI) and Ollama. Change providers whenever you want.
+- **📦 Knowledge outlives models** — every conversation, insight and summary is Markdown in a **private GitHub repo created for you** via OAuth device flow. Not weights in a provider's silo — files you own, versioned and portable. Any AI that can read a repo can use it.
+- **🖥️ Runs anywhere** — desktop app (Electron) on macOS/Windows/Linux, headless on a VPS, or installed by an agent on its own VM. A GitHub repo is the only hard requirement — it's the durable memory backend every LLM workflow already speaks.
+- **🔌 Connectors (MCP)** — a generic MCP stdio client plus bundled servers: WhatsApp via QR (Baileys), Telegram bot, Postgres read-only, and *any* custom MCP server. LLMs call connector tools natively.
+- **🔁 Continuous GitHub sync** — the repo is the source of truth: every local memory write pushes in seconds, remote changes (written by Claude, Codex, Grok, or a bot on a VPS…) pull down automatically, before every chat.
 - **🧠 Tiered memory + sleep cycles** — short/medium/long-term memory like a real brain. The nightly "sleep" cycle reviews the day (what works, what to fix, what to stop, what to start) and distills facts, lessons and reusable skills into long-term memory.
 - **⚡ Natural-language automations** — "every day at 8am summarize my whatsapp" becomes a scheduled cron. Daily/interval/weekly, pause/resume/run-now.
 - **🔐 Local accounts + Google sign-in** — SQLite auth (scrypt), PKCE loopback Google OAuth, session tokens. Your data stays on your machine.
