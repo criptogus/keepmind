@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { HybridSearch } from './search/hybrid'
 import { join } from 'node:path'
 import type { LocalLlm } from './local-llm'
 import type { Memory } from './brain'
@@ -7,8 +7,8 @@ import type { LayaService } from './laya'
 
 // ── Local RAG: semantic search over memory via llama.cpp embeddings ──
 // mem0-style memory layer, but fully local: chunks of every memory file are
-// embedded by the bundled embedding model and stored as vectors in a JSON
-// index. Chat queries embed the question and inject the top-k chunks into
+// embedded by the bundled embedding model and stored as vectors in a SQLite
+// hybrid index. Chat queries embed the question and inject the top-k chunks into
 // the system context — the brain "remembers" semantically, not just by recency.
 
 interface Chunk {
@@ -40,15 +40,14 @@ const INDEX_DIRS = [
 const SKIP_FILES = new Set(['INDEX.md'])
 
 export class RagService {
-  private indexFile: string
+  private searchDb: Promise<HybridSearch>
   private index: Index = { chunks: [] }
-  private indexing = false
   private embedding = false
 
   constructor(private localLlm: LocalLlm, memory: Memory, stateDir: string) {
-    this.indexFile = join(stateDir, 'memory-embeddings.json')
+    this.searchDb = HybridSearch.open(join(stateDir, 'memory-search.sqlite'), join(stateDir, 'memory-embeddings.json'))
     this.memory = memory
-    this.load()
+    void this.searchDb.then(db => { this.index = { modelId: db.modelId, chunks: db.chunks() } }).catch(error => console.warn('[rag] index load failed', error))
   }
 
   private memory: Memory
@@ -56,17 +55,11 @@ export class RagService {
 
   setLaya(l: LayaService) { this.laya = l }
 
-  private load() {
-    try {
-      if (existsSync(this.indexFile)) this.index = JSON.parse(readFileSync(this.indexFile, 'utf8'))
-    } catch { /* fresh index */ }
-  }
-
-  private save() {
-    try {
-      mkdirSync(join(this.indexFile, '..'), { recursive: true })
-      writeFileSync(this.indexFile, JSON.stringify(this.index), 'utf8')
-    } catch { /* non-fatal */ }
+  private async save() {
+    const db = await this.searchDb
+    db.replace(this.index.chunks)
+    db.modelId = this.index.modelId
+    db.save()
   }
 
   get stats() {
@@ -82,6 +75,7 @@ export class RagService {
   // Rebuild the chunk list from memory files (cheap — no embeddings).
   // Vectors are kept per chunk-hash, so unchanged text never re-embeds.
   private async ensureChunks(): Promise<number> {
+    await this.searchDb
     const byKey = new Map(this.index.chunks.map(c => [c.key, c]))
     const next: Chunk[] = []
     let truncated = false
@@ -95,22 +89,27 @@ export class RagService {
         for (const chunk of chunkText(content)) {
           if (next.length >= MAX_CHUNKS) { truncated = true; break }
           const file = `${dir}/${f}`
-          const key = createHash('sha1').update(`${file}:${chunk.offset}:${chunk.text.slice(0, 80)}`).digest('hex').slice(0, 16)
+          const key = createHash('sha256').update(`${file}:${chunk.offset}:${chunk.text}`).digest('hex')
           const prev = byKey.get(key)
-          next.push({ key, file, offset: chunk.offset, text: chunk.text, vec: prev?.vec, stale: stale || prev?.stale })
+          next.push({ key, file, offset: chunk.offset, text: chunk.text, vec: prev?.vec, stale })
         }
         if (truncated) break
       }
       if (truncated) break
     }
     this.index.chunks = next
-    this.save()
+    await this.save()
     return next.length
   }
 
   // Embed any chunks missing vectors. Safe to call repeatedly.
   async embedPending(): Promise<number> {
+    await this.searchDb
     if (this.embedding || !this.localLlm.embedReady) return 0
+    if (this.index.modelId !== this.localLlm.embedModelId) {
+      this.index.chunks.forEach(c => { c.vec = undefined })
+      this.index.modelId = this.localLlm.embedModelId
+    }
     const pending = this.index.chunks.filter(c => !c.vec)
     if (!pending.length) return 0
     this.embedding = true
@@ -122,7 +121,7 @@ export class RagService {
         if (!vecs) break
         batch.forEach((c, j) => { c.vec = vecs[j] })
         done += batch.length
-        this.save()
+        await this.save()
       }
     } finally {
       this.embedding = false
@@ -139,30 +138,17 @@ export class RagService {
 
   // Semantic recall for a user message → formatted context block (or '').
   async search(query: string): Promise<string> {
-    if (!this.localLlm.embedReady) return ''
     try {
       // lazy chunk refresh at most every 60s
       if (Date.now() - this.lastChunkScan > 60_000) {
         this.lastChunkScan = Date.now()
-        void this.ensureChunks().then(() => this.embedPending()).catch(() => {})
+        await this.ensureChunks()
+        void this.embedPending().catch(() => {})
       }
-      const qv = await this.localLlm.embed([query])
-      if (!qv?.[0]) return ''
-      const q = qv[0]
-      const qTerms = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(t => t.length > 2)
-      const scored = this.index.chunks
-        .filter(c => c.vec && c.vec.length === q.length)
-        .map(c => {
-          const vec = cosine(q, c.vec!)
-          // hybrid: vector similarity + lexical overlap (BM25-ish), stale demoted
-          const lower = c.text.toLowerCase()
-          const hits = qTerms.reduce((n, t) => n + (lower.includes(t) ? 1 : 0), 0)
-          const lex = qTerms.length ? hits / qTerms.length : 0
-          const stalePenalty = c.stale ? 0.55 : 1
-          return { c, s: (vec * 0.7 + lex * 0.3) * stalePenalty, vec, lex }
-        })
-        .sort((a, b) => b.s - a.s)
-        .slice(0, SEARCH_K * 2)
+      const qv = this.localLlm.embedReady ? await this.localLlm.embed([query]).catch(() => null) : null
+      const db = await this.searchDb
+      const q = this.index.modelId === this.localLlm.embedModelId ? qv?.[0] : undefined
+      const scored = db.search(query, q, SEARCH_K * 2)
       // Laya rerank (the vault's "Jev" slot): a calibrated yes/no relevance
       // verdict per candidate, blended with the hybrid score. ~33ms each,
       // only runs when the ONNX decision engine is installed.
@@ -182,9 +168,9 @@ export class RagService {
         scored.length = 0
         scored.push(...reranked.slice(0, SEARCH_K))
       } else {
-        scored.length = SEARCH_K
+        scored.splice(SEARCH_K)
       }
-      const good = scored.filter(x => x.s > 0.3)
+      const good = scored.filter(x => x.s > 0)
       if (!good.length) return ''
       return good.map(x =>
         `### ${x.c.file}${x.c.stale ? ' ⚠ stale' : ''} (score ${x.s.toFixed(2)})\n${x.c.text.slice(0, 900)}`
@@ -231,8 +217,3 @@ function chunkText(text: string): { offset: number; text: string }[] {
   return chunks.filter(c => c.text.length > 40)
 }
 
-function cosine(a: number[], b: number[]): number {
-  let dot = 0, na = 0, nb = 0
-  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
-  return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0
-}
