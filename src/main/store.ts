@@ -1,5 +1,5 @@
 import { app, safeStorage } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, cpSync } from 'node:fs'
 import { join } from 'node:path'
 
 export interface AiProviderConfig {
@@ -220,7 +220,24 @@ export class Store {
     const dir = join(app.getPath('userData'), 'second-brain')
     mkdirSync(dir, { recursive: true })
     this.file = join(dir, 'config.json')
+    this.migrateLegacy(dir)
     this.config = this.load()
+  }
+
+  // One-time migration for installs that ran before the KeepMind rename:
+  // those builds stored everything under the "second-brain" userData dir.
+  // If we have no config yet, adopt the legacy config, auth db and memory.
+  private migrateLegacy(dir: string) {
+    if (existsSync(this.file)) return
+    const legacy = join(app.getPath('userData'), '..', 'second-brain', 'second-brain')
+    if (legacy === dir || !existsSync(join(legacy, 'config.json'))) return
+    try {
+      copyFileSync(join(legacy, 'config.json'), this.file)
+      const legacyAuth = join(legacy, 'auth.db')
+      if (existsSync(legacyAuth)) copyFileSync(legacyAuth, join(dir, 'auth.db'))
+      const legacyMemory = join(legacy, 'memory')
+      if (existsSync(legacyMemory)) cpSync(legacyMemory, join(dir, 'memory'), { recursive: true })
+    } catch { /* migration is best-effort — fresh install is fine too */ }
   }
 
   private load(): AppConfig {
