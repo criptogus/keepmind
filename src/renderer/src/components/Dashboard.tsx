@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { IconSparkle, IconDoc, IconSync } from './icons'
+import { IconSparkle } from './icons'
 
 // Brain Health — meta-insights ABOUT the second brain: which crons should
 // run, what's idle, where intelligence leaks. Every card carries evidence
-// and an action you can apply. Below: the skill bank (vault skills +
-// registry suggestions installable into memory/skills/).
+// and an action you can apply. The skill bank lives on its own Skills page.
 
 const IMPACT_STYLE: Record<string, { label: string; color: string; bg: string }> = {
   high: { label: 'HIGH', color: '#fb7185', bg: 'rgba(251,113,133,.12)' },
@@ -20,16 +19,11 @@ const ACTION_LABEL: Record<string, string> = {
 
 export default function Dashboard({ onActivity, onToast }: { onActivity?: () => void; onToast?: (m: string, k?: 'info' | 'error' | 'success') => void }) {
   const [report, setReport] = useState<any>(null)
-  const [skills, setSkills] = useState<{ items: any[]; suggestions: any[] } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
   const refresh = async () => {
-    const [r, s] = await Promise.all([
-      window.sb.brainHealth().catch(() => null),
-      window.sb.brainSkills().catch(() => null)
-    ])
+    const r = await window.sb.brainHealth().catch(() => null)
     if (r) setReport(r)
-    if (s) setSkills(s)
   }
 
   useEffect(() => { refresh() }, [])
@@ -43,18 +37,6 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
       onToast?.('Applied — brain config updated', 'success')
     } catch (e: any) {
       onToast?.(`Apply failed: ${e?.message ?? e}`, 'error')
-    } finally { setBusy(null) }
-  }
-
-  const install = async (slug: string) => {
-    setBusy(`skill-${slug}`)
-    onActivity?.()
-    try {
-      await window.sb.brainSkillInstall(slug)
-      onToast?.(`Skill "${slug}" installed to skills/ — syncing to GitHub`, 'success')
-      await refresh()
-    } catch (e: any) {
-      onToast?.(`Install failed: ${e?.message ?? e}`, 'error')
     } finally { setBusy(null) }
   }
 
@@ -125,75 +107,12 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
         })}
       </div>
 
-      {/* skill bank */}
-      <div className="hud-tag" style={{ marginBottom: 10 }}>SKILL BANK</div>
-      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 980 }}>
-        {/* vault skills */}
-        <div className="card card-pad">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <IconDoc size={14} /> In your vault
-            {skills && <span className="faint" style={{ fontWeight: 400, fontSize: 11 }}>({skills.items.length})</span>}
-          </h2>
-          {!skills && <p className="faint" style={{ fontSize: 12.5 }}>Loading…</p>}
-          {skills?.items.length === 0 && (
-            <p className="faint" style={{ fontSize: 12.5 }}>
-              No skills yet — the evolve/skills crons write them here, or install one from the registry →
-            </p>
-          )}
-          {(skills?.items ?? []).map((s: any) => (
-            <div key={s.file} className="goal-row" style={{ cursor: 'default' }}>
-              <IconSparkle size={12} />
-              <span className="goal-text">{s.title}</span>
-              <span className="faint mono" style={{ fontSize: 10 }}>
-                {s.ageDays === 0 ? 'new' : `${s.ageDays}d`}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* registry suggestions */}
-        <div className="card card-pad">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <IconSync size={14} /> From superagentskill.com
-          </h2>
-          <p className="faint" style={{ fontSize: 11.5, marginBottom: 12 }}>
-            Installing writes the skill into <span className="mono">skills/</span> — it syncs to GitHub and every connected agent can use it.
-          </p>
-          {!skills && <p className="faint" style={{ fontSize: 12.5 }}>Querying registry…</p>}
-          {skills?.suggestions.length === 0 && (
-            <p className="faint" style={{ fontSize: 12.5 }}>Registry unreachable or no matches.</p>
-          )}
-          <div style={{ maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {(skills?.suggestions ?? []).map((s: any) => (
-              <div key={s.slug} style={{
-                border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px',
-                display: 'flex', gap: 10, alignItems: 'flex-start'
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</span>
-                    <span className="badge badge--custom" style={{ fontSize: 9 }}>{s.type}</span>
-                    {s.alreadyHave && <span className="chip chip--lime" style={{ fontSize: 9 }}>HAVE</span>}
-                  </div>
-                  <p className="faint" style={{ fontSize: 11.5, marginTop: 3, lineHeight: 1.45 }}>{s.description}</p>
-                  <div className="faint mono" style={{ fontSize: 9.5, marginTop: 4 }}>
-                    {s.installs > 0 ? `⬇ ${s.installs.toLocaleString()} installs` : s.slug}
-                  </div>
-                </div>
-                {!s.alreadyHave && (
-                  <button
-                    className="btn btn--sm"
-                    style={{ flexShrink: 0 }}
-                    disabled={busy === `skill-${s.slug}`}
-                    onClick={() => install(s.slug)}
-                  >
-                    {busy === `skill-${s.slug}` ? '…' : '+ add'}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* skill bank lives on its own page */}
+      <div className="card card-pad" style={{ maxWidth: 900, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <IconSparkle size={16} />
+        <p className="faint" style={{ fontSize: 12.5, margin: 0 }}>
+          Procedural memory — the skills your brain accumulated and can install new ones — lives on the <strong style={{ color: 'var(--text)' }}>Skills</strong> page.
+        </p>
       </div>
     </div>
   )
