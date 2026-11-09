@@ -125,6 +125,13 @@ export class Memory {
     return existsSync(p) ? readFileSync(p, 'utf8') : null
   }
 
+  fileMtime(relative: string): number | null {
+    try {
+      const p = this.path(relative)
+      return existsSync(p) ? statSync(p).mtimeMs : null
+    } catch { return null }
+  }
+
   remove(relative: string) {
     const p = this.path(relative)
     if (existsSync(p)) {
@@ -424,6 +431,27 @@ export class Brain {
     return this.chat(agentId, userMessage)
   }
 
+  // Recently touched vault notes across ALL directories — imported Obsidian
+  // vaults keep content outside the KeepMind-native dirs, so insights and
+  // summaries must look at real file activity, not just tasks/notes/.
+  private recentVaultNotes(days = 14, cap = 200) {
+    const cutoff = Date.now() - days * 864e5
+    const recent: { path: string; title: string; dir: string; mtime: number }[] = []
+    for (const f of this.memory.allRelFiles()) {
+      if (!f.endsWith('.md')) continue
+      if (f.split('/').slice(0, -1).some(s => s.startsWith('.'))) continue
+      const mt = this.memory.fileMtime(f)
+      if (mt == null || mt < cutoff) continue
+      recent.push({ path: f, title: '', dir: f.split('/')[0] ?? '', mtime: mt })
+    }
+    recent.sort((a, b) => b.mtime - a.mtime)
+    for (const n of recent.slice(0, cap)) {
+      const c = this.memory.read(n.path)
+      n.title = c?.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? n.path.split('/').pop()!.replace(/\.md$/, '')
+    }
+    return recent.slice(0, cap)
+  }
+
   // Deterministic insight engine — no LLM tokens. Surfaces real signals:
   // overdue/due tasks, stale notes, search gaps, pending approvals,
   // activity stats. Facts beat hallucinated fluff for a memory product.
@@ -481,6 +509,19 @@ export class Brain {
     const entities = this.memory.list('entities').length
     if (entities) lines.push(`🕸️ Knowledge graph: ${entities} entity page(s) with backlinks`)
 
+    // vault pulse — real activity across the whole imported brain
+    const recent = this.recentVaultNotes(14)
+    if (recent.length) {
+      const byDir = recent.reduce<Record<string, number>>((m, n) => ({ ...m, [n.dir]: (m[n.dir] ?? 0) + 1 }), {})
+      const topDirs = Object.entries(byDir).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([d, c]) => `${d} (${c})`).join(', ')
+      lines.push(`📡 ${recent.length} note(s) touched in the last 14 days — hottest areas: ${topDirs}`)
+      const hot = recent.slice(0, 3).map(n => `"${n.title}"`).join(' · ')
+      lines.push(`🧠 Most recent: ${hot}`)
+    } else {
+      const total = this.memory.allRelFiles().filter(f => f.endsWith('.md')).length
+      if (total > 50) lines.push(`🗂️ Vault holds ${total} notes — no edits in the last 2 weeks`)
+    }
+
     if (!lines.length) lines.push('🌱 Quiet day — no urgent signals. The brain kept consolidating in the background.')
     return lines.slice(0, 6)
   }
@@ -527,6 +568,16 @@ export class Brain {
 
     const pending = this.store.get().pendingApprovals.length
     if (pending) out.push(`- ⏳ ${pending} automation(s) awaiting approval`)
+
+    // vault pulse — activity across the whole imported brain, not just captures
+    const recent = this.recentVaultNotes(7, 60)
+    if (recent.length) {
+      const todayCount = recent.filter(n => new Date(n.mtime).toISOString().slice(0, 10) === day).length
+      const weekCount = recent.length
+      out.push(`- Vault pulse: ${todayCount} note(s) touched today · ${weekCount} in the last 7 days`)
+      const hot = recent.slice(0, 3).map(n => `"${n.title}"`).join(' · ')
+      out.push(`- Recently active: ${hot}`)
+    }
 
     const focus = next.find(t => t.priority === 'high') ?? next[0]
     out.push('', focus ? `**Suggested focus:** "${focus.title}"${focus.due ? ` — due ${focus.due}` : ''}.` : '**Suggested focus:** review open tasks in the planner.')
