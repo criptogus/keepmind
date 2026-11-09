@@ -138,11 +138,18 @@ input, textarea, select { font-family: inherit; }
 .status-pill {
   display: flex; align-items: center; gap: 9px;
   font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  font-weight: 400; text-align: left;
   color: var(--text-dim);
   padding: 7px 12px; border-radius: 999px; margin-bottom: 6px;
   border: 1px solid var(--line); background: rgba(2,10,24,.5);
+  min-width: 0; box-sizing: border-box;
 }
-.status-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+button.status-pill { width: 100%; appearance: none; }
+.status-pill__text {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.status-pill .dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
 .status-pill .dot.off { background: var(--text-faint); box-shadow: none; }
 
 .main { flex: 1; position: relative; overflow: hidden; }

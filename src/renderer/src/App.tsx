@@ -182,7 +182,7 @@ export default function App() {
     ? `Now: ${job.name}`
     : job?.summary
       ? `${job.name}: ${job.summary}`
-      : 'The brain is awake. No work in progress.'
+      : 'Brain awake · idle'
 
   return (
     <div className="app">
@@ -223,11 +223,11 @@ export default function App() {
         <div className="sidebar__foot">
           <div className="status-pill" title={jobLine}>
             <span className={`dot ${job?.phase === 'error' ? 'off' : ''}`} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{jobLine}</span>
+            <span className="status-pill__text">{jobLine}</span>
           </div>
           <div className="status-pill">
             <span className={`dot ${config?.github?.repoUrl ? '' : 'off'}`} />
-            <span>{config?.github?.repoUrl ? 'Repo connected' : 'Repo disconnected'}</span>
+            <span className="status-pill__text">{config?.github?.repoUrl ? 'Repo connected' : 'Repo disconnected'}</span>
           </div>
           <button
             className="status-pill"
@@ -242,7 +242,7 @@ export default function App() {
                 : !!config?.ai?.apiKey
               return <span className={`dot ${active ? '' : 'off'}`} />
             })()}
-            <span>Model · {config?.ai?.provider ?? '—'}</span>
+            <span className="status-pill__text">Model · {config?.ai?.provider ?? '—'}</span>
           </button>
         </div>
       </aside>

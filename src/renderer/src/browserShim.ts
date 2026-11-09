@@ -333,6 +333,32 @@ const demo = {
   updaterInstall: async () => false,
   onUpdaterEvent: () => () => {},
 
+  // stubs for APIs added after the shim — keep browser preview from crashing
+  aiCodexStatus: async () => ({ loggedIn: false }),
+  appLaunchAtLogin: async () => false,
+  appSetLaunchAtLogin: async () => false,
+  automationSetWebhook: async () => false,
+  brainActivity: async () => [],
+  brainExportConfig: async () => 'demo',
+  brainGraph: async () => ({ nodes: [], links: [] }),
+  brainHealth: async () => ({ stats: {}, recommendations: [] }),
+  brainHealthApply: async () => ({ applied: [] }),
+  brainMemoryFile: async () => '',
+  connectInfo: async () => ({ mcpScript: '', memoryDir: '', memoryRoot: 'memory/', repoUrl: null, repoOwner: null, repoName: null }),
+  layaDownload: async () => false,
+  layaStatus: async () => ({ ready: false }),
+  layaTest: async () => null,
+  modelsDelete: async () => false,
+  modelsList: async () => [],
+  onActivityPush: () => () => {},
+  onLayaProgress: () => () => {},
+  securityAiAlerts: async () => [],
+  securityConfigure: async () => ({}),
+  securityDecryptAll: async () => ({}),
+  securityEncryptAll: async () => ({}),
+  securityScan: async () => ({ hits: [], pii: [] }),
+  securityStatus: async () => ({ enabled: false, folders: [] }),
+
   openExternal: noopVoid
 }
 
