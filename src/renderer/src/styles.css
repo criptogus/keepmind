@@ -195,6 +195,7 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
 .neural-field {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   display: block; width: 100vw; height: 100vh;
+  opacity: .5; filter: blur(.7px) saturate(.85);
 }
 
 .orbit-chip {

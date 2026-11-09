@@ -43,14 +43,17 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
     let neighborAt = 0
 
     const resize = () => {
-      const dpr = Math.min(devicePixelRatio || 1, 2)
       const box = canvas.getBoundingClientRect()
       w = box.width >= 64 ? box.width : window.innerWidth
       h = box.height >= 64 ? box.height : window.innerHeight
-      canvas.width = Math.max(1, Math.floor(w * dpr))
-      canvas.height = Math.max(1, Math.floor(h * dpr))
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      const count = Math.min(160, Math.max(70, Math.floor((w * h) / 14000)))
+      // Render below native resolution and let CSS upscale — every mark comes
+      // out softly diffused, which is what makes the field read as background
+      // bokeh instead of sharp dots.
+      const scale = Math.min(devicePixelRatio || 1, 1.5) * 0.55
+      canvas.width = Math.max(1, Math.floor(w * scale))
+      canvas.height = Math.max(1, Math.floor(h * scale))
+      ctx.setTransform(scale, 0, 0, scale, 0, 0)
+      const count = Math.min(130, Math.max(60, Math.floor((w * h) / 16000)))
       neurons = Array.from({ length: count }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
@@ -124,8 +127,8 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
           const b = neurons[j]
           const hot = Math.max(a.charge, b.charge)
           ctx.strokeStyle = hot > 0.2
-            ? `rgba(125,211,252,${(0.18 + hot * 0.45).toFixed(3)})`
-            : 'rgba(56,189,248,0.13)'
+            ? `rgba(125,211,252,${(0.10 + hot * 0.30).toFixed(3)})`
+            : 'rgba(56,189,248,0.09)'
           ctx.beginPath()
           ctx.moveTo(a.x, a.y)
           ctx.lineTo(b.x, b.y)
@@ -151,7 +154,7 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
         const trail = Math.max(0, s.t - 0.12)
         const tx = A.x + (B.x - A.x) * trail
         const ty = A.y + (B.y - A.y) * trail
-        ctx.strokeStyle = s.chained ? 'rgba(224,242,254,0.85)' : 'rgba(103,232,249,0.75)'
+        ctx.strokeStyle = s.chained ? 'rgba(224,242,254,0.55)' : 'rgba(103,232,249,0.5)'
         ctx.lineWidth = s.chained ? 1.6 : 1.15
         ctx.beginPath()
         ctx.moveTo(tx, ty)
@@ -163,20 +166,25 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
         ctx.fill()
       }
 
+      // Neuron bodies stay dim and steady — brightness only swells when a
+      // charge arrives (a real spike), instead of every cell blinking on a
+      // sine wave like Christmas lights.
       for (const n of neurons) {
-        const breathe = 0.45 + 0.25 * Math.sin(now * 0.002 + n.phase)
-        const glow = Math.min(1, breathe * 0.35 + n.charge)
-        ctx.fillStyle = `rgba(125,211,252,${(0.08 + glow * 0.22).toFixed(3)})`
+        const breathe = 0.5 + 0.08 * Math.sin(now * 0.0012 + n.phase)
+        const glow = Math.min(1, n.charge)
+        if (glow > 0.12) {
+          ctx.fillStyle = `rgba(125,211,252,${(glow * 0.20).toFixed(3)})`
+          ctx.beginPath()
+          ctx.arc(n.x, n.y, n.r * (2 + glow * 2.4), 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.fillStyle = glow > 0.45 ? '#dbeafe' : `rgba(147,197,253,${(0.30 + breathe * 0.18 + glow * 0.35).toFixed(3)})`
         ctx.beginPath()
-        ctx.arc(n.x, n.y, n.r * (2.8 + n.charge * 2.2), 0, Math.PI * 2)
-        ctx.fill()
-        ctx.fillStyle = n.charge > 0.45 ? '#e0f2fe' : `rgba(186,230,253,${(0.55 + breathe * 0.4).toFixed(3)})`
-        ctx.beginPath()
-        ctx.arc(n.x, n.y, n.r + n.charge * 1.3, 0, Math.PI * 2)
+        ctx.arc(n.x, n.y, n.r * (0.85 + glow * 0.9), 0, Math.PI * 2)
         ctx.fill()
       }
 
-      const minSparks = 10 + Math.round(actRef.current * 8)
+      const minSparks = 7 + Math.round(actRef.current * 6)
       let guard = 0
       while (sparks.length < minSparks && neurons.length > 4 && guard < 24) {
         fire(Math.floor(Math.random() * neurons.length), false)
