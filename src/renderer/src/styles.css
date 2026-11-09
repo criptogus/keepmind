@@ -69,6 +69,43 @@ input, textarea, select { font-family: inherit; }
   gap: 16px; max-width: 1100px;
 }
 
+.sak-place { max-width: 1100px; margin-bottom: 16px; }
+.sak-place__head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 14px; }
+.sak-place__head p { margin-top: 4px; max-width: 560px; }
+.sak-board {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px;
+}
+.sak-score {
+  text-align: left; color: inherit; width: 100%;
+  border: 1px solid var(--line); border-radius: 16px; padding: 14px 14px 12px;
+  background: linear-gradient(180deg, rgba(34,211,238,.07), rgba(2,10,24,.2) 55%);
+}
+.sak-score.is-open { border-color: var(--line-bright); }
+.sak-score__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.sak-score__title { font-size: 13.5px; font-weight: 650; line-height: 1.3; }
+.sak-score__when { margin-top: 4px; font-size: 11px; }
+.sak-score__num {
+  font-family: var(--mono); font-size: 34px; font-weight: 700; line-height: .9; color: var(--cyan);
+}
+.sak-score__num small { display: block; margin-top: 4px; font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--text-dim); }
+.sak-score.is-high .sak-score__num, .sak-score__num.is-high { color: var(--lime); }
+.sak-score.is-low .sak-score__num, .sak-score__num.is-low { color: var(--amber); }
+.sak-score.is-risk .sak-score__num, .sak-score__num.is-risk { color: var(--red); }
+.sak-score.is-none .sak-score__num, .sak-score__num.is-none { color: var(--text-dim); }
+.sak-axis em { font-style: normal; font-weight: 600; }
+.sak-axes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.sak-axis span { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); }
+.sak-meter { height: 5px; margin-top: 6px; border-radius: 99px; background: rgba(224,242,254,.08); overflow: hidden; }
+.sak-meter i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--blue-deep), var(--cyan)); }
+.sak-sheet { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.sak-sheet__lead { display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: center; }
+.sak-pillars { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.sak-pillar span { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.sak-actions { margin: 10px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
+@media (max-width: 640px) {
+  .sak-sheet__lead { grid-template-columns: 1fr; }
+}
+
 .nav { display: flex; flex-direction: column; gap: 5px; flex: 1; }
 .nav__item {
   display: flex; align-items: center; gap: 12px;

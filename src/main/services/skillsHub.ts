@@ -77,6 +77,12 @@ export interface SkillSuggestion {
   alreadyHave: boolean
 }
 
+export interface SakPillar {
+  name: string
+  score: number | null
+  rationale: string
+}
+
 export interface SakNote {
   path: string
   at: string
@@ -85,6 +91,7 @@ export interface SakNote {
   substanceScore: number | null
   rationale: string
   actions: string[]
+  pillars: SakPillar[]
 }
 
 export interface EvolutionHint {
@@ -249,6 +256,9 @@ function renderNotes(notes: SakNote[]): string {
     if (n.formatScore != null) lines.push(`- formato: ${n.formatScore}`)
     if (n.substanceScore != null) lines.push(`- substância: ${n.substanceScore}`)
     if (n.rationale) lines.push('', n.rationale)
+    for (const p of n.pillars ?? []) {
+      lines.push(`- ${p.name}: ${p.score ?? 's/n'}${p.rationale ? ` — ${p.rationale}` : ''}`)
+    }
     if (n.actions.length) {
       lines.push('', 'Ações:')
       for (const a of n.actions) lines.push(`- ${a}`)
@@ -258,12 +268,22 @@ function renderNotes(notes: SakNote[]): string {
   return lines.join('\n')
 }
 
+function pillarsOf(review: any): SakPillar[] {
+  const raw = review?.substance?.pillars ?? review?.pillars
+  if (!Array.isArray(raw)) return []
+  return raw.slice(0, 8).map((p: any) => ({
+    name: String(p?.name ?? p?.pillar ?? p?.id ?? 'Pilar').slice(0, 80),
+    score: num(p?.score),
+    rationale: String(p?.rationale ?? '').slice(0, 280)
+  })).filter((p: SakPillar) => p.name.trim().length > 0)
+}
+
 function parseReview(path: string, review: any): SakNote {
   const at = new Date().toISOString()
   if (review?.text && review.overall_score == null && review.verdict_score == null) {
     return {
       path, at, score: null, formatScore: null, substanceScore: null,
-      rationale: String(review.text).slice(0, 800), actions: []
+      rationale: String(review.text).slice(0, 800), actions: [], pillars: []
     }
   }
   const actionsRaw = Array.isArray(review?.top_actions) ? review.top_actions : []
@@ -278,7 +298,8 @@ function parseReview(path: string, review: any): SakNote {
     formatScore: num(review?.format_score ?? review?.structural_score),
     substanceScore: num(review?.substance_score ?? review?.substance?.score),
     rationale: String(review?.substance?.rationale ?? review?.rationale ?? '').slice(0, 800),
-    actions
+    actions,
+    pillars: pillarsOf(review)
   }
 }
 

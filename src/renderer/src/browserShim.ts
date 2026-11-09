@@ -208,7 +208,15 @@ const demo = {
       path: 'skills/research.md', title: 'Pesquisar antes de responder', segment: 'KeepMind', kind: 'use' as const,
       sentence: 'Usada 5 vezes e ainda sem nota. Avalie no SuperagentSkill antes de reescrever.'
     }],
-    notes: [],
+    notes: [{
+      path: 'skills/research.md', at: new Date().toISOString(), score: 72, formatScore: 84, substanceScore: 61,
+      rationale: 'A estrutura está clara e o exemplo ainda é genérico.',
+      actions: ['Acrescente um exemplo com o vocabulário do usuário.'],
+      pillars: [
+        { name: 'Escopo', score: 80, rationale: 'Dá para ver onde a skill começa e termina.' },
+        { name: 'Exemplo', score: 58, rationale: 'O exemplo não usa o vocabulário da pessoa.' }
+      ]
+    }],
     segments: [{ id: 'KeepMind', count: 1 }],
     threats: []
   }),
@@ -232,7 +240,8 @@ const demo = {
   brainSkillReview: async (path: string) => ({
     path, at: new Date().toISOString(), score: 70, formatScore: 80, substanceScore: 60,
     rationale: 'A estrutura está clara e o exemplo ainda é genérico.',
-    actions: ['Acrescente um exemplo com o vocabulário do usuário.']
+    actions: ['Acrescente um exemplo com o vocabulário do usuário.'],
+    pillars: []
   }),
   brainSkillTrust: async (slug: string) => ({ slug, score: 80, summary: 'Confiança de demonstração, 80/100.' }),
   brainSkillEvolve: async () => ({ report: 'Evolução de demonstração.', hints: [] }),

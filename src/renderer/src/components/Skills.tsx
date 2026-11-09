@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { IconDoc, IconSparkle } from './icons'
+import SakScoreboard from './SakScoreboard'
 
 interface VaultSkill {
   file: string
@@ -32,6 +33,7 @@ interface SakNote {
   substanceScore: number | null
   rationale: string
   actions: string[]
+  pillars?: { name: string; score: number | null; rationale: string }[]
 }
 
 interface Hint {
@@ -239,6 +241,15 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
         </div>
       </div>
 
+      <SakScoreboard
+        skills={data?.items ?? []}
+        notes={data?.notes ?? []}
+        selectedPath={selected}
+        busy={busy === 'review'}
+        onSelect={path => { setSegment('todas'); setSelected(path); setTrust('') }}
+        onReview={review}
+      />
+
       <div className="card card-pad" style={{ maxWidth: 1100, marginBottom: 16 }}>
         <h2 style={{ marginBottom: 8 }}>Skills maliciosas</h2>
         <p className="faint" style={{ fontSize: 13, lineHeight: 1.5, marginTop: 0 }}>
@@ -331,6 +342,9 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
                   <span style={{ fontWeight: 600, fontSize: 13 }}>{s.title}</span>
                   <span className="chip">{s.segment}</span>
                   <span className="faint" style={{ fontSize: 11, marginLeft: 'auto' }}>
+                    {data?.notes.find(n => n.path === s.path)?.score != null
+                      ? `nota ${data.notes.find(n => n.path === s.path)?.score} · `
+                      : ''}
                     {s.uses + s.mentions} uso(s)
                     {data?.threats?.some(t => t.path === s.path && t.status !== 'clean')
                       ? ` · ${threatLabel(data.threats.find(t => t.path === s.path)!.status)}`
@@ -365,19 +379,9 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
                 </div>
               )}
               {note && (
-                <div style={{ marginTop: 10 }}>
-                  <div className="hud-tag" style={{ marginBottom: 6 }}>
-                    SuperagentSkill {note.score != null ? `· nota ${note.score}` : ''}
-                    {note.formatScore != null ? ` · formato ${note.formatScore}` : ''}
-                    {note.substanceScore != null ? ` · substância ${note.substanceScore}` : ''}
-                  </div>
-                  {note.rationale && <p style={{ fontSize: 13, lineHeight: 1.5 }}>{note.rationale}</p>}
-                  {note.actions.length > 0 && (
-                    <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13 }}>
-                      {note.actions.map(a => <li key={a}>{a}</li>)}
-                    </ul>
-                  )}
-                </div>
+                <p className="faint" style={{ fontSize: 12.5, marginTop: 8 }}>
+                  Nota {note.score ?? 'sem número'} no boletim do SuperagentSkill, acima.
+                </p>
               )}
               {hints.filter(h => h.path === current.path).map(h => (
                 <p key={h.sentence} className="faint" style={{ fontSize: 12.5, marginTop: 8 }}>{h.sentence}</p>
