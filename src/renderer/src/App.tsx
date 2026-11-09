@@ -17,17 +17,31 @@ type View = 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' 
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 
-const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }[] = [
-  { id: 'graph', label: 'Brain', Icon: IconSparkle },
-  { id: 'dashboard', label: 'Health', Icon: IconDashboard },
-  { id: 'skills', label: 'Skills', Icon: IconDoc },
-  { id: 'security', label: 'Security', Icon: IconShield },
-  { id: 'chat', label: 'Chat', Icon: IconChat },
-  { id: 'activity', label: 'Activity', Icon: IconSync },
-  { id: 'connectors', label: 'Agents', Icon: IconPlug },
-  { id: 'automations', label: 'Automations', Icon: IconClock },
-  { id: 'settings', label: 'Settings', Icon: IconSettings }
+type NavItem = { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }
+
+// Grouped nav — the brain's surfaces clustered by what they answer:
+// what it IS (brain/activity), how it IMPROVES (health/skills/security),
+// who works WITH it (chat/agents/automations), and SYSTEM.
+const NAV: { section: string; items: NavItem[] }[] = [
+  { section: 'Brain', items: [
+    { id: 'graph', label: 'Connectome', Icon: IconSparkle },
+    { id: 'activity', label: 'Activity', Icon: IconSync }
+  ]},
+  { section: 'Mind', items: [
+    { id: 'dashboard', label: 'Health', Icon: IconDashboard },
+    { id: 'skills', label: 'Skills', Icon: IconDoc },
+    { id: 'security', label: 'Security', Icon: IconShield }
+  ]},
+  { section: 'Agents', items: [
+    { id: 'chat', label: 'Chat', Icon: IconChat },
+    { id: 'connectors', label: 'Connect', Icon: IconPlug },
+    { id: 'automations', label: 'Crons', Icon: IconClock }
+  ]},
+  { section: 'System', items: [
+    { id: 'settings', label: 'Settings', Icon: IconSettings }
+  ]}
 ]
+const NAV_FLAT = NAV.flatMap(g => g.items)
 
 export default function App() {
   const [config, setConfig] = useState<any>(null)
@@ -110,15 +124,20 @@ export default function App() {
           <div className="brand__name">keep<em>mind</em></div>
         </div>
         <nav className="nav">
-          {NAV.map(n => (
-            <button
-              key={n.id}
-              className={`nav__item ${view === n.id ? 'is-active' : ''}`}
-              onClick={() => setView(n.id)}
-            >
-              <span className="ico"><n.Icon size={17} /></span>
-              <span className="nav__label">{n.label}</span>
-            </button>
+          {NAV.map(g => (
+            <div key={g.section} className="nav__group">
+              <div className="nav__section">{g.section}</div>
+              {g.items.map(n => (
+                <button
+                  key={n.id}
+                  className={`nav__item ${view === n.id ? 'is-active' : ''}`}
+                  onClick={() => setView(n.id)}
+                >
+                  <span className="ico"><n.Icon size={17} /></span>
+                  <span className="nav__label">{n.label}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar__foot">
@@ -135,7 +154,7 @@ export default function App() {
 
       {/* mobile bottom nav */}
       <nav className="mobile-nav">
-        {NAV.map(n => (
+        {NAV_FLAT.map(n => (
           <button
             key={n.id}
             className={`mobile-nav__item ${view === n.id ? 'is-active' : ''}`}
