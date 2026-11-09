@@ -178,7 +178,9 @@ export default function App() {
 
   return (
     <div className="app">
-      <NeuralField activity={activity} />
+      {/* The neural starfield stays out of the Brain view — two animated
+          networks fighting for attention reads as visual noise. */}
+      {view !== 'graph' && <NeuralField activity={activity} />}
 
       <aside className="sidebar">
         <div className="brand">
