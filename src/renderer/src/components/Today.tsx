@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { mdToHtml } from '../lib/markdown'
 import { IconToday, IconTasks, IconNotes, IconSparkle, IconSend, IconGithub, IconSettings } from './icons'
 
 const dateStr = (offsetDays = 0) => {
@@ -17,6 +18,9 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
   const [noteInput, setNoteInput] = useState('')
   const [suggesting, setSuggesting] = useState(false)
   const [aiStatus, setAiStatus] = useState<'unknown' | 'testing' | 'ok' | 'fail'>('unknown')
+  const [briefing, setBriefing] = useState<string | null>(null)
+  const [briefingLoading, setBriefingLoading] = useState(false)
+  const [briefingError, setBriefingError] = useState('')
   const date = dateStr()
 
   const refresh = async () => {
@@ -48,6 +52,23 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
       .then(r => { if (!dead) setAiStatus(r?.ok ? 'ok' : 'fail') })
       .catch(() => { if (!dead) setAiStatus('fail') })
     return () => { dead = true }
+  }, [config?.ai?.provider])
+
+  const loadBriefing = async (force = false) => {
+    setBriefingLoading(true); setBriefingError('')
+    try {
+      const b = await window.sb.brainBriefing(force)
+      setBriefing(b)
+    } catch (e: any) {
+      setBriefingError(String(e?.message ?? e))
+    } finally { setBriefingLoading(false) }
+  }
+
+  // Auto-load once config is known — cached briefing returns instantly,
+  // first-ever call generates via the configured AI provider.
+  useEffect(() => {
+    if (config?.ai?.provider) loadBriefing()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config?.ai?.provider])
 
   const addGoal = async () => {
@@ -138,6 +159,34 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
             {goals.length > 0 && <> · <span style={{ color: 'var(--lime)' }}>{doneGoals}/{goals.length} goals</span></>}
           </p>
         </div>
+      </div>
+
+      {/* AI briefing — generated from goals, tasks and vault activity */}
+      <div className="card card-pad" style={{ marginBottom: 16, borderColor: 'rgba(34,211,238,.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <IconSparkle size={14} /> Your briefing
+          </h2>
+          <button
+            className="btn btn--ghost btn--sm"
+            disabled={briefingLoading}
+            onClick={() => loadBriefing(true)}
+            title="Regenerate with the AI"
+          >
+            {briefingLoading ? '…' : '↻'}
+          </button>
+        </div>
+        {briefingLoading && !briefing && (
+          <p className="faint" style={{ fontSize: 12.5, marginTop: 10 }}>Reading your goals, tasks and vault activity…</p>
+        )}
+        {briefingError && (
+          <p className="faint" style={{ fontSize: 12.5, marginTop: 10, color: 'var(--amber)' }}>
+            Briefing unavailable: {briefingError} — check the AI provider in Settings.
+          </p>
+        )}
+        {briefing && (
+          <div className="msg__body" style={{ fontSize: 13, marginTop: 10 }} dangerouslySetInnerHTML={{ __html: mdToHtml(briefing) }} />
+        )}
       </div>
 
       {/* Progressive setup checklist — disappears as pieces get connected */}

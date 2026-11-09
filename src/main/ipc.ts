@@ -425,6 +425,7 @@ export function registerIpc(
     const memDir = store.memoryDir
     return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 1500) }))
   })
+  ipcMain.handle('brain:briefing', (_e, force?: boolean) => brain.briefing(!!force))
   ipcMain.handle('brain:graph', () => brain.memoryGraph())
   ipcMain.handle('brain:memoryFile', (_e, rel: string) => {
     if (typeof rel !== 'string' || rel.length > 500) return null

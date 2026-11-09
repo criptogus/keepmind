@@ -587,6 +587,54 @@ export class Brain {
     return text
   }
 
+  // AI briefing for the Today screen — the LLM reads the user's actual state
+  // (goals, open tasks, recent vault activity, latest insight) and writes a
+  // personalized digest. Cached per day in summaries/ so it syncs and costs
+  // tokens once. Pass force=true to regenerate.
+  async briefing(force = false): Promise<string> {
+    const day = new Date().toISOString().slice(0, 10)
+    const cachePath = `summaries/briefing-${day}.md`
+    const cached = this.memory.read(cachePath)
+    if (cached?.trim() && !force) return cached
+
+    const goalsRaw = this.memory.read(`daily/${day}.md`) ?? ''
+    const goals = goalsRaw.replace(/^#\s*Goals.*$/m, '').replace(/_No goals yet\._/, '').trim()
+    const openTasks = this.readTasks().filter(t => t.status === 'open')
+    const tasksTxt = openTasks.slice(0, 15)
+      .map(t => `- ${t.title}${t.due ? ` (due ${t.due})` : ''}${t.priority !== 'normal' ? ` [${t.priority}]` : ''}`).join('\n') || '(none)'
+    const overdue = openTasks.filter(t => t.due && t.due < day).length
+    const recent = this.recentVaultNotes(10, 12)
+      .map(n => `- ${n.title} — ${n.dir}/`).join('\n') || '(no recent edits)'
+    const insightFile = this.memory.list('insights').sort().pop()
+    const insight = insightFile ? (this.memory.read(`insights/${insightFile}`) ?? '').slice(0, 1500) : '(none yet)'
+    const vaultTotal = this.memory.allRelFiles().filter(f => f.endsWith('.md')).length
+
+    const context = [
+      `Today: ${day}`,
+      `Vault size: ${vaultTotal} notes`,
+      goals ? `## Today's goals\n${goals}` : '## Today\'s goals\n(none set — suggest some)',
+      `## Open tasks (${openTasks.length}${overdue ? `, ${overdue} overdue` : ''})\n${tasksTxt}`,
+      `## Recently active notes\n${recent}`,
+      `## Latest insight report\n${insight}`
+    ].join('\n\n')
+
+    const res = await chat(this.store.get().ai as AiProviderConfig, [
+      {
+        role: 'system',
+        content: `You are KeepMind — the user's persistent second brain. Write their daily briefing. Rules:
+- Warm, direct, concise. The user's language.
+- Structure: 2-3 sentence orientation → "Today" (what matters now: overdue/due tasks, goals) → "From your vault" (what recent notes suggest — themes, loose threads, things worth revisiting) → one concrete suggested focus.
+- Ground EVERYTHING in the provided data — never invent tasks, notes or facts. If data is thin, say so briefly.
+- Markdown, max ~250 words. No preamble.`
+      },
+      { role: 'user', content: context }
+    ], [], this.localLlm?.endpoint)
+
+    const text = `# Briefing — ${day}\n\n${res.text}\n`
+    this.memory.write(cachePath, text)
+    return text
+  }
+
   // ── Sleep mode: nightly learning cycle ──
   // 1) Reads recent short-term memory + insights
   // 2) Answers the 5 learning questions and writes a sleep report

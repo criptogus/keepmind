@@ -101,6 +101,7 @@ const api = {
   brainListSummaries: () => ipcRenderer.invoke('brain:listSummaries'),
   brainListMemory: () => ipcRenderer.invoke('brain:listMemory'),
   brainGraph: () => ipcRenderer.invoke('brain:graph'),
+  brainBriefing: (force?: boolean) => ipcRenderer.invoke('brain:briefing', force),
   brainMemoryFile: (rel: string) => ipcRenderer.invoke('brain:memoryFile', rel),
   brainActivity: (limit?: number) => ipcRenderer.invoke('brain:activity', limit),
   brainExportConfig: () => ipcRenderer.invoke('brain:exportConfig'),
