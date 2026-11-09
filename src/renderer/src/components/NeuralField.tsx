@@ -44,10 +44,11 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
 
     const resize = () => {
       const dpr = Math.min(devicePixelRatio || 1, 2)
-      w = canvas.clientWidth
-      h = canvas.clientHeight
-      canvas.width = Math.max(1, w * dpr)
-      canvas.height = Math.max(1, h * dpr)
+      const box = canvas.getBoundingClientRect()
+      w = box.width >= 64 ? box.width : window.innerWidth
+      h = box.height >= 64 ? box.height : window.innerHeight
+      canvas.width = Math.max(1, Math.floor(w * dpr))
+      canvas.height = Math.max(1, Math.floor(h * dpr))
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       const count = Math.min(160, Math.max(70, Math.floor((w * h) / 14000)))
       neurons = Array.from({ length: count }, () => ({
@@ -186,10 +187,13 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
     resize()
     const onResize = () => resize()
     window.addEventListener('resize', onResize)
+    const observer = new ResizeObserver(onResize)
+    observer.observe(canvas)
     raf = requestAnimationFrame(frame)
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', onResize)
+      observer.disconnect()
     }
   }, [])
 

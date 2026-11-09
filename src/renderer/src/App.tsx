@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import NeuralField from './components/NeuralField'
-import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconSparkle, IconSync, IconToday, IconSkill } from './components/icons'
-import Skills from './components/Skills'
+import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconSparkle, IconSync, IconToday, IconSkill, IconShield } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
@@ -11,25 +10,39 @@ import Settings from './components/Settings'
 import GraphView from './components/GraphView'
 import Activity from './components/Activity'
 import Today from './components/Today'
+import Skills from './components/Skills'
+import Security from './components/Security'
 import Login from './components/Login'
 
-type View = 'today' | 'graph' | 'dashboard' | 'chat' | 'skills' | 'activity' | 'connectors' | 'automations' | 'settings'
+type View = 'today' | 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 interface Job { phase: 'start' | 'done' | 'error'; name: string; summary?: string }
 interface Hit { path: string; title: string; snippet: string }
 
-const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }[] = [
-  { id: 'today', label: 'Hoje', Icon: IconToday },
-  { id: 'graph', label: 'Mapa', Icon: IconSparkle },
-  { id: 'chat', label: 'Conversar', Icon: IconChat },
-  { id: 'skills', label: 'Habilidades', Icon: IconSkill },
-  { id: 'dashboard', label: 'Saúde', Icon: IconDashboard },
-  { id: 'activity', label: 'Atividade', Icon: IconSync },
-  { id: 'connectors', label: 'Conectar', Icon: IconPlug },
-  { id: 'automations', label: 'Agenda', Icon: IconClock },
-  { id: 'settings', label: 'Ajustes', Icon: IconSettings }
+type NavItem = { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }
+
+const NAV: { section: string; items: NavItem[] }[] = [
+  { section: 'Brain', items: [
+    { id: 'today', label: 'Hoje', Icon: IconToday },
+    { id: 'graph', label: 'Brain', Icon: IconSparkle },
+    { id: 'activity', label: 'Activity', Icon: IconSync }
+  ]},
+  { section: 'Mind', items: [
+    { id: 'dashboard', label: 'Health', Icon: IconDashboard },
+    { id: 'skills', label: 'Skills', Icon: IconSkill },
+    { id: 'security', label: 'Security', Icon: IconShield }
+  ]},
+  { section: 'Agents', items: [
+    { id: 'chat', label: 'Chat', Icon: IconChat },
+    { id: 'connectors', label: 'Connect', Icon: IconPlug },
+    { id: 'automations', label: 'Crons', Icon: IconClock }
+  ]},
+  { section: 'System', items: [
+    { id: 'settings', label: 'Settings', Icon: IconSettings }
+  ]}
 ]
+const NAV_FLAT = NAV.flatMap(g => g.items)
 
 export default function App() {
   const [config, setConfig] = useState<any>(null)
@@ -176,16 +189,21 @@ export default function App() {
           </div>
         </div>
         <nav className="nav">
-          {NAV.map(n => (
-            <button
-              key={n.id}
-              className={`nav__item ${view === n.id ? 'is-active' : ''}`}
-              onClick={() => setView(n.id)}
-            >
-              <span className="ico"><n.Icon size={17} /></span>
-              <span className="nav__label">{n.label}</span>
-              {n.id === 'automations' && pendingCount > 0 && <span className="nav__badge">{pendingCount}</span>}
-            </button>
+          {NAV.map(g => (
+            <div key={g.section} className="nav__group">
+              <div className="nav__section">{g.section}</div>
+              {g.items.map(n => (
+                <button
+                  key={n.id}
+                  className={`nav__item ${view === n.id ? 'is-active' : ''}`}
+                  onClick={() => setView(n.id)}
+                >
+                  <span className="ico"><n.Icon size={17} /></span>
+                  <span className="nav__label">{n.label}</span>
+                  {n.id === 'automations' && pendingCount > 0 && <span className="nav__badge">{pendingCount}</span>}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <button className="status-pill" onClick={() => setPalette(true)} style={{ width: '100%', cursor: 'pointer' }}>
@@ -209,7 +227,7 @@ export default function App() {
       </aside>
 
       <nav className="mobile-nav">
-        {NAV.map(n => (
+        {NAV_FLAT.map(n => (
           <button
             key={n.id}
             className={`mobile-nav__item ${view === n.id ? 'is-active' : ''}`}
@@ -226,6 +244,7 @@ export default function App() {
       <main className="main" style={{ zIndex: 1 }}>
         {view === 'today' && <Today onToast={toast} />}
         {view === 'dashboard' && <Dashboard onActivity={pulse} onToast={toast} />}
+        {view === 'security' && <Security onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}
         {view === 'skills' && <Skills onActivity={pulse} onToast={toast} />}
         {view === 'graph' && <GraphView />}
@@ -288,6 +307,16 @@ export default function App() {
           </form>
         </div>
       )}
+
+      <footer className="app-footer">
+        powered by{' '}
+        <button
+          className="app-footer__link"
+          onClick={() => window.sb.openExternal('https://zeroagency.ai')}
+        >
+          Zero Agency
+        </button>
+      </footer>
 
       <ToastWrap toasts={toasts} onDismiss={id => setToasts(t => t.filter(x => x.id !== id))} />
     </div>

@@ -147,6 +147,12 @@ const api = {
   brainSkillTrust: (slug: string) => ipcRenderer.invoke('brain:skillTrust', slug),
   brainSkillThreatScan: () => ipcRenderer.invoke('brain:skillThreatScan'),
   brainSkillEvolve: () => ipcRenderer.invoke('brain:skillEvolve'),
+  securityStatus: () => ipcRenderer.invoke('security:status'),
+  securityScan: () => ipcRenderer.invoke('security:scan'),
+  securityConfigure: (patch: any) => ipcRenderer.invoke('security:configure', patch),
+  securityEncryptAll: () => ipcRenderer.invoke('security:encryptAll'),
+  securityDecryptAll: () => ipcRenderer.invoke('security:decryptAll'),
+  securityAiAlerts: () => ipcRenderer.invoke('security:aiAlerts'),
   appLaunchAtLogin: () => ipcRenderer.invoke('app:launchAtLogin'),
   appSetLaunchAtLogin: (enabled: boolean) => ipcRenderer.invoke('app:setLaunchAtLogin', enabled),
   onBrainDelta: (cb: (t: string) => void) => {

@@ -18,6 +18,7 @@ import { listModels, deleteModel } from './services/models'
 import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
 import { analyzeHealth, applyHealth } from './services/health'
 import { evolutionHints, installSkill, listVaultSkills, loadSakNotes, loadSkillThreats, reviewVaultSkill, scanSkillThreats, searchRegistry, skillTrust, skillsSnapshot } from './services/skillsHub'
+import { attachVaultCrypto, securityStatus, securityScan, securityConfigure, encryptAll, decryptAll, securityAiAlerts, type SecurityPatch } from './services/security'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
 import type { McpServerConfig } from './store'
 import type { HookServer } from './services/hooks'
@@ -535,6 +536,38 @@ export function registerIpc(
     const memory = brain.getMemory()
     return { report, hints: evolutionHints(listVaultSkills(memory), loadSakNotes(memory), loadSkillThreats(memory)) }
   })
+
+  // ── Security: at-rest vault encryption + risk alerts ──
+  ipcMain.handle('security:status', () => securityStatus(store, brain.getMemory()))
+  ipcMain.handle('security:scan', () => securityScan(store, brain.getMemory()))
+  ipcMain.handle('security:configure', async (_e, patch: any) => {
+    if (!isPlainObject(patch)) bad('security patch')
+    for (const k of Object.keys(patch)) {
+      if (!['enabled', 'categories', 'passphrase'].includes(k)) bad(`security.${k}`)
+    }
+    if (patch.enabled !== undefined && typeof patch.enabled !== 'boolean') bad('security.enabled')
+    if (patch.categories !== undefined && !Array.isArray(patch.categories)) bad('security.categories')
+    if (patch.passphrase !== undefined && (typeof patch.passphrase !== 'string' || patch.passphrase.length > 256)) bad('security.passphrase')
+    const p: SecurityPatch = {
+      enabled: patch.enabled,
+      categories: patch.categories?.map((c: any) => String(c)),
+      passphrase: patch.passphrase
+    }
+    const status = await securityConfigure(store, brain.getMemory(), p)
+    attachVaultCrypto(store, brain.getMemory())
+    return status
+  })
+  ipcMain.handle('security:encryptAll', async () => {
+    const n = await encryptAll(store, brain.getMemory())
+    attachVaultCrypto(store, brain.getMemory())
+    return { encrypted: n, status: await securityStatus(store, brain.getMemory()) }
+  })
+  ipcMain.handle('security:decryptAll', async () => {
+    const n = await decryptAll(store, brain.getMemory())
+    attachVaultCrypto(store, brain.getMemory())
+    return { decrypted: n, status: await securityStatus(store, brain.getMemory()) }
+  })
+  ipcMain.handle('security:aiAlerts', () => securityAiAlerts(store, brain.getMemory(), localLlm))
 
   ipcMain.handle('brain:activity', (_e, limit?: number) => brain.getMemory().activity(limit ?? 200))
 
