@@ -149,10 +149,8 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
           )}
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role === 'user' ? 'msg--user' : ''}`}>
-              <div className="msg__avatar">
-                <span className="feat-emoji" style={{ fontSize: 'inherit' }}>{m.role === 'user' ? 'Você' : 'Km'}</span>
-              </div>
-              <div>
+              <div className="msg__col">
+                <div className="msg__who">{m.role === 'user' ? 'Você' : 'KeepMind'}</div>
                 <div className="msg__bubble msg__body">
                   {m.streaming && !m.content ? (
                     <span className="typing"><span /><span /><span /></span>
