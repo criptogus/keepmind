@@ -85,6 +85,30 @@ function versionGt(a: string, b: string): boolean {
 
 // ── continuous channel ──
 
+function assetVersion(name: string): string {
+  return name.match(/(\d+\.\d+\.\d+)/)?.[1] ?? '0.0.0'
+}
+
+type ReleaseAsset = {
+  name: string
+  updated_at?: string
+  digest?: string
+  id?: number
+  browser_download_url?: string
+}
+
+function pickNewestAsset(assets: ReleaseAsset[], re: RegExp): ReleaseAsset | undefined {
+  const matches = assets.filter((a) => re.test(a.name))
+  matches.sort((a, b) => {
+    const va = assetVersion(a.name)
+    const vb = assetVersion(b.name)
+    if (versionGt(va, vb)) return -1
+    if (versionGt(vb, va)) return 1
+    return String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? ''))
+  })
+  return matches[0]
+}
+
 function assetNameForPlatform(): RegExp {
   if (process.platform === 'darwin') {
     // universal build preferred; fall back to arch-specific
@@ -102,8 +126,10 @@ async function findContinuousUpdate(): Promise<ContinuousUpdate | null> {
   if (!res.ok) throw new Error(`github api ${res.status}`)
   const rel = await res.json() as any
   const re = assetNameForPlatform()
-  const asset = (rel.assets ?? []).find((a: any) => re.test(a.name))
-  if (!asset) return null
+  // Older installers stay on the rolling release. The first name match is
+  // the stale 0.2.0 file, so pick the highest semver for this platform.
+  const asset = pickNewestAsset(rel.assets ?? [], re)
+  if (!asset?.browser_download_url) return null
   const m = asset.name.match(/(\d+\.\d+\.\d+)/)
   const version = m?.[1] ?? rel.tag_name
   const marker = `${rel.updated_at ?? rel.created_at}:${asset.digest ?? asset.id}`
