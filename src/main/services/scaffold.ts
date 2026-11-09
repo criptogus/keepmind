@@ -70,26 +70,18 @@ OpenCode or any MCP client can spawn the same command.
 - Prefer \`sb_remember\` for durable facts. The person accepts the proposal in Hoje before it becomes active.
 `
 
-const MCP_JSON = JSON.stringify({
+const mcpJsonFor = (dirArg: string) => JSON.stringify({
   mcpServers: {
     'keepmind': {
       command: 'node',
-      args: ['tools/keepmind-mcp.mjs', '--dir', './memory']
+      args: ['tools/keepmind-mcp.mjs', '--dir', dirArg]
     }
   }
 }, null, 2) + '\n'
 
 // Cursor reads .cursor/mcp.json; Gemini CLI reads .gemini/settings.json —
 // same mcpServers shape, so agents in those tools connect with zero config.
-const CURSOR_MCP_JSON = MCP_JSON
-const GEMINI_SETTINGS = JSON.stringify({
-  mcpServers: {
-    keepmind: {
-      command: 'node',
-      args: ['tools/keepmind-mcp.mjs', '--dir', './memory']
-    }
-  }
-}, null, 2) + '\n'
+const GEMINI_NOTE = 'Read AGENTS.md — it documents this KeepMind memory repo, its conventions, and the bundled MCP server (tools/keepmind-mcp.mjs).\n'
 
 function mcpServerSource(): string {
   // tools/keepmind-mcp.mjs ships inside the app bundle (and the repo)
@@ -121,13 +113,22 @@ export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
     github.listRepoFiles(gh, ''),
     github.listRepoFiles(gh, 'tools')
   ])
-  const files: Array<[string, string]> = [
+  // Whole-vault imports (syncRoot '') mirror the repo root — the MCP server
+  // must point there, not at a memory/ subdir that doesn't exist.
+  const memArg = gh.syncRoot === '' ? '.' : `./${(gh.syncRoot ?? 'memory/').replace(/\/$/, '')}`
+  const mcpJson = mcpJsonFor(memArg)
+  // Imported vaults (syncRoot '') have their own governance docs — never
+  // overwrite/impose the native memory/ layout guide on them.
+  const nativeDocs: Array<[string, string]> = gh.syncRoot === '' ? [] : [
     ['AGENTS.md', AGENTS_MD],
     ['CLAUDE.md', '@AGENTS.md\n'],
-    ['GEMINI.md', 'Read AGENTS.md — it documents this KeepMind memory repo, its layout under memory/, conventions, and the bundled MCP server (tools/keepmind-mcp.mjs).\n'],
-    ['.mcp.json', MCP_JSON],
-    ['.cursor/mcp.json', CURSOR_MCP_JSON],
-    ['.gemini/settings.json', GEMINI_SETTINGS],
+    ['GEMINI.md', GEMINI_NOTE],
+  ]
+  const files: Array<[string, string]> = [
+    ...nativeDocs,
+    ['.mcp.json', mcpJson],
+    ['.cursor/mcp.json', mcpJson],
+    ['.gemini/settings.json', mcpJson],
     ['tools/keepmind-mcp.mjs', mcpServerSource()]
   ]
 
@@ -150,10 +151,12 @@ export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
 // secrets: no API keys, tokens, env values or webhook tokens.
 
 export function brainConfigJson(cfg: AppConfig): string {
+  const memoryRoot = cfg.github.syncRoot ?? 'memory/'
   const doc = {
     $schema: 'keepmind/v1',
     generatedAt: new Date().toISOString(),
-    note: 'Declarative snapshot of this KeepMind brain. Secrets are never included. Memory lives under memory/.',
+    memoryRoot: memoryRoot === '' ? '.' : memoryRoot,
+    note: 'Declarative snapshot of this KeepMind brain. Secrets are never included. Repo governance docs (AGENTS.md, governance/) define the actual memory layout — this file only mirrors the sync root.',
     ai: { provider: cfg.ai.provider, model: cfg.ai.model ?? null, localModel: cfg.localLlm.modelId ?? null },
     agents: cfg.agents.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, builtin: !!a.builtin })),
     automations: cfg.automations.map(a => ({
