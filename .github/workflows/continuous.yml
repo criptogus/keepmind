@@ -37,6 +37,13 @@ jobs:
       - run: npm run build
       - name: Prune onnxruntime to target platform
         run: node scripts/prune-onnxruntime.mjs ${{ matrix.onnx }}
+      - name: Drop optional ws natives
+        # bufferutil and utf-8-validate are optional speed-ups for `ws`.
+        # They have no Electron prebuild here, so electron-builder rebuilds
+        # them with node-gyp: macOS runners (Python 3.12) lack distutils, and
+        # windows-latest has no Visual Studio that this node-gyp can find.
+        # `ws` falls back to pure JS. Removing them lets the installer publish.
+        run: node -e "const fs=require('fs'); for (const p of ['node_modules/bufferutil','node_modules/utf-8-validate']) fs.rmSync(p,{recursive:true,force:true})"
       - name: Build installers
         run: npx electron-builder ${{ matrix.args }} --publish never
         env:
