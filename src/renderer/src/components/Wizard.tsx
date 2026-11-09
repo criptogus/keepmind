@@ -6,7 +6,7 @@ interface Props {
   onToast: (msg: string, kind?: 'info' | 'error' | 'success') => void
 }
 
-const STEPS = ['Welcome', 'GitHub', 'AI', 'Connectors', 'Done']
+const STEPS = ['Welcome', 'GitHub', 'AI', 'Agents', 'Done']
 
 const PROVIDERS = [
   { id: 'local', mark: '⌂', accent: '#22d3ee', name: 'Local (recommended)', desc: 'Runs on your PC, offline, private. Downloads ~2GB once.' },
@@ -42,20 +42,10 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   const [aiTest, setAiTest] = useState<{ ok: boolean; msg: string } | null>(null)
   const [codexStatus, setCodexStatus] = useState<any>(null)
 
-  const [waQr, setWaQr] = useState<any>(null)
-  const [tgToken, setTgToken] = useState('')
-  const [pgUrl, setPgUrl] = useState('')
-  const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({})
-
   useEffect(() => {
     window.sb.localLlmStatus().then(setLocalStatus)
     window.sb.aiCodexStatus?.().then(setCodexStatus).catch(() => {})
     const off = window.sb.onLocalLlmProgress(setLocalProgress)
-    window.sb.mcpStatus().then(s => {
-      const map: Record<string, boolean> = {}
-      for (const id of ['whatsapp', 'telegram', 'postgres']) map[id] = s.running.includes(id)
-      setServerStatus(map)
-    })
     return off
   }, [])
 
@@ -95,16 +85,6 @@ export default function Wizard({ config, onDone, onToast }: Props) {
     }, Math.max(ghDevice.interval ?? 5, 5) * 1000)
     return () => clearInterval(pollRef.current)
   }, [ghDevice])
-
-  useEffect(() => {
-    if (step !== 3 || !serverStatus.whatsapp) return
-    const t = setInterval(async () => {
-      const qr = await window.sb.whatsappQr()
-      setWaQr(qr)
-      if (qr?.status === 'connected') onToast('WhatsApp connected!', 'success')
-    }, 2500)
-    return () => clearInterval(t)
-  }, [step, serverStatus.whatsapp])
 
   const startGithub = async () => {
     setBusy(true)
@@ -188,33 +168,6 @@ export default function Wizard({ config, onDone, onToast }: Props) {
     } finally { setBusy(false) }
   }
 
-  const toggleServer = async (id: string, kind: string) => {
-    const running = serverStatus[id]
-    if (running) {
-      await window.sb.mcpStop(id)
-      setServerStatus(s => ({ ...s, [id]: false }))
-      return
-    }
-    try {
-      if (kind === 'telegram') {
-        if (!tgToken.trim()) { onToast('Paste the bot token first', 'error'); return }
-        await window.sb.updateMcp(id, { env: { TELEGRAM_BOT_TOKEN: tgToken.trim() }, enabled: true })
-      }
-      if (kind === 'postgres') {
-        if (!pgUrl.trim()) { onToast('Paste the DATABASE_URL first', 'error'); return }
-        await window.sb.updateMcp(id, { env: { DATABASE_URL: pgUrl.trim() }, enabled: true })
-      }
-      if (kind === 'whatsapp') {
-        await window.sb.updateMcp(id, { enabled: true })
-      }
-      const res = await window.sb.mcpStart(id)
-      setServerStatus(s => ({ ...s, [id]: true }))
-      onToast(`${id} connected (${res.tools.length} tools)`, 'success')
-    } catch (e: any) {
-      onToast(`${id}: ${e?.message ?? e}`, 'error')
-    }
-  }
-
   const skipConnectors = async () => {
     await window.sb.setConfig({ onboardingDone: true })
     onDone()
@@ -257,19 +210,28 @@ export default function Wizard({ config, onDone, onToast }: Props) {
         {/* STEP 0 — welcome */}
         {step === 0 && (
           <div className="card wizard__card">
-            <h2>What KeepMind does</h2>
+            <h2>Your AI agents get a brain</h2>
             <p className="sub">
-              It connects your apps (GitHub, WhatsApp, Telegram, databases), stores memories in
-              <strong> your own GitHub repo</strong>, and learns while you sleep — nightly cycles
-              distill facts, lessons and skills — powered by any AI you plug in, local or cloud.
+              KeepMind is not a note app — it&apos;s the <strong>persistent memory engine your LLMs plug into</strong>.
+              Connect Codex, Claude, Cursor or any agent via MCP and it starts learning on its own:
+              reading, writing, organizing and consolidating knowledge in the background while you sleep.
             </p>
+            <div className="card card-pad" style={{ padding: '14px 18px', marginBottom: 16, borderColor: 'rgba(34,211,238,.35)' }}>
+              <p className="faint" style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                🔓 <strong style={{ color: 'var(--text)' }}>Never locked to one model.</strong>{' '}
+                Your entire knowledge base is plain Markdown in <em>your</em> GitHub repo — swap Codex for Claude,
+                Cursor for Grok, local for cloud, at any moment. Zero migration, zero export, zero loss.
+                The agents are replaceable. The brain is yours.
+              </p>
+            </div>
             <div className="grid grid-2" style={{ marginBottom: 8 }}>
               {[
-                ['💾', 'Own memory', 'Everything lives in a private repo that is yours — portable, versioned.'],
-                ['🔌', 'Connectors', 'WhatsApp (QR), Telegram, Postgres and any MCP server.'],
-                ['🧠', 'Local AI', 'Bundled open-source model — works fully offline.'],
-                ['🌙', 'Sleep learning', 'Nightly cycles review the day and distill durable memory.'],
-                ['🕸️', 'Entity graph', 'Recurring people and projects become linked knowledge pages.']
+                ['🧠', 'Agent-native memory', 'LLMs read & write via MCP tools — no copy-paste, no context loss between sessions.'],
+                ['🔁', 'Swap brains anytime', 'Change provider whenever you want. Same memory, same skills — knowledge never leaves your repo.'],
+                ['🌙', 'Sleep-cycle learning', 'Nightly cycles replay the day and distill durable facts, lessons and skills — like memory consolidation in a real brain.'],
+                ['🧬', 'Living synaptic map', 'A real-time 3D graph of how your memories connect — watch knowledge fire as agents write.'],
+                ['🗂️', 'Tiered memory + semantic search', 'Short → medium → long-term consolidation, embeddings-powered recall, entity graph linking people & projects.'],
+                ['⚙️', 'Self-improving brain', 'Automations, skill evolution, dedup and memory hygiene — the brain maintains itself and recommends what to run next.']
               ].map(([e, t, d]) => (
                 <div key={t} className="card card-pad" style={{ padding: '16px 18px' }}>
                   <div className="feat-emoji" style={{ fontSize: 22, marginBottom: 8 }}>{e}</div>
@@ -574,74 +536,39 @@ export default function Wizard({ config, onDone, onToast }: Props) {
           </div>
         )}
 
-        {/* STEP 3 — connectors */}
+        {/* STEP 3 — agents */}
         {step === 3 && (
           <div className="card wizard__card">
-            <h2>3 · Connectors (optional)</h2>
+            <h2>3 · Your agents, your brain</h2>
             <p className="sub">
-              Connect messengers and data now, or later in <strong>Connectors</strong>.
+              KeepMind exposes a local <strong>MCP server</strong> — any agent that speaks MCP can read and write
+              your memory. After setup, the <strong>Agents</strong> page has copy-paste configs and prompts for each one.
             </p>
-
-            <div className="mcp-row">
-              <span className="m-emoji">🟢</span>
-              <div className="m-info">
-                <div className="m-name">WhatsApp</div>
-                <div className="m-desc">QR-code connection (WhatsApp Web style). ⚠ Unofficial — use in moderation.</div>
-                {waQr?.status === 'qr' && (
-                  <div className="qr-box">
-                    <img src={waQr.dataUrl} alt="WhatsApp QR" />
-                    <p className="faint" style={{ color: '#333', fontSize: 12 }}>Scan with WhatsApp → Linked devices</p>
+            <div className="grid grid-2" style={{ marginBottom: 8 }}>
+              {[
+                ['◎', 'Codex / ChatGPT', 'TOML snippet for ~/.codex/config.toml — uses your existing CLI login.'],
+                ['✳', 'Claude Code', 'One command: claude mcp add keepmind. Also .mcp.json for repo work.'],
+                ['▣', 'Cursor / Gemini CLI', 'Drop-in JSON configs for .cursor/mcp.json and .gemini/settings.json.'],
+                ['𝕏', 'Grok & VPS bots', 'Same MCP server runs headless on any server — your brain travels with the repo.']
+              ].map(([e, t, d]) => (
+                <div key={t} className="card card-pad" style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 18 }}>{e}</span>
+                    <strong style={{ fontSize: 13 }}>{t}</strong>
                   </div>
-                )}
-                {waQr?.status === 'connected' && <div className="m-status on">● Connected</div>}
-              </div>
-              <button className="btn btn--sm" onClick={() => toggleServer('whatsapp', 'whatsapp')}>
-                {serverStatus.whatsapp ? 'Stop' : waQr?.status === 'qr' ? 'Waiting scan…' : 'Connect'}
-              </button>
+                  <p className="faint" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>{d}</p>
+                </div>
+              ))}
             </div>
 
-            <div className="mcp-row">
-              <span className="m-emoji">✈️</span>
-              <div className="m-info">
-                <div className="m-name">Telegram</div>
-                <div className="m-desc">Official bot via BotFather. Chat with your KeepMind remotely.</div>
-                {!serverStatus.telegram && (
-                  <input value={tgToken} onChange={e => setTgToken(e.target.value)}
-                    placeholder="Bot token (@BotFather)" className="mono"
-                    style={{ marginTop: 8, width: '100%', background: 'rgba(3,7,18,.7)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', color: 'var(--text)', fontSize: 12 }} />
-                )}
-                {serverStatus.telegram && <div className="m-status on">● Running</div>}
-              </div>
-              <button className="btn btn--sm" onClick={() => toggleServer('telegram', 'telegram')}>
-                {serverStatus.telegram ? 'Stop' : 'Connect'}
-              </button>
-            </div>
-
-            <div className="mcp-row">
-              <span className="m-emoji">🐘</span>
-              <div className="m-info">
-                <div className="m-name">Postgres (read-only)</div>
-                <div className="m-desc">Talk to your data. postgres://user:pass@host:5432/db</div>
-                {!serverStatus.postgres && (
-                  <input value={pgUrl} onChange={e => setPgUrl(e.target.value)}
-                    placeholder="postgres://…" className="mono"
-                    style={{ marginTop: 8, width: '100%', background: 'rgba(3,7,18,.7)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', color: 'var(--text)', fontSize: 12 }} />
-                )}
-                {serverStatus.postgres && <div className="m-status on">● Running</div>}
-              </div>
-              <button className="btn btn--sm" onClick={() => toggleServer('postgres', 'postgres')}>
-                {serverStatus.postgres ? 'Stop' : 'Connect'}
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button className="btn btn--ghost" onClick={() => setStep(2)}>← Back</button>
               <button className="btn btn--primary btn--lg" style={{ flex: 1 }} onClick={skipConnectors}>
                 Finish setup →
               </button>
             </div>
             <p className="faint" style={{ fontSize: 11.5, marginTop: 12, textAlign: 'center' }}>
-              You can connect more apps later — Gmail, Calendar, Notion etc. via Composio or other MCPs.
+              Everything syncs to your GitHub repo continuously — agents on other machines see the same brain.
             </p>
           </div>
         )}
@@ -654,8 +581,9 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             </div>
             <h2 style={{ fontSize: 22 }}>Your KeepMind is ready</h2>
             <p className="sub" style={{ margin: '10px auto 26px', maxWidth: 460 }}>
-              Start chatting — ask &quot;what do you know about me?&quot; Your brain learns every night.
-              Everything that happens is remembered in your repository.
+              Your brain is live. Connect an agent from the <strong>Agents</strong> page and it starts learning immediately —
+              every night it consolidates what happened, and every write syncs to your GitHub repo.
+              Change the AI whenever you want; the memory stays.
             </p>
             <button className="btn btn--primary btn--lg" style={{ width: '100%', maxWidth: 320 }} onClick={onDone}>
               Enter KeepMind →
