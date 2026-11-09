@@ -96,6 +96,9 @@ app.whenReady().then(() => {
 
   // Continuous GitHub sync — push local writes, pull remote memory
   gitSync.start()
+  // One-time vault triage: extract `- [ ]` checkboxes into planner tasks
+  // (no-op unless marker absent — safe on every boot)
+  setTimeout(() => { void brain.triageVaultTasks().catch(() => {}) }, 30_000)
   // Scheduled automations (natural-language crons)
   autoScheduler.start()
 

@@ -279,6 +279,25 @@ export class Brain {
         name: 'get_memory',
         description: 'Read a memory file by path (e.g. inbox/digest.md, insights/2026-11-05.md).',
         parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] }
+      },
+      {
+        name: 'list_tasks',
+        description: 'List open tasks from the planner (tasks/ dir) with id, title, due date and priority. Optionally filter by status.',
+        parameters: { type: 'object', properties: { status: { type: 'string', description: 'open (default) or done or all' } } }
+      },
+      {
+        name: 'add_task',
+        description: 'Create a task in the planner. Returns the task id.',
+        parameters: { type: 'object', properties: {
+          title: { type: 'string' },
+          due: { type: 'string', description: 'YYYY-MM-DD' },
+          priority: { type: 'string', description: 'low|normal|high' }
+        }, required: ['title'] }
+      },
+      {
+        name: 'complete_task',
+        description: 'Mark a task as done by id or title fragment.',
+        parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] }
       }
     ]
     if (this.mcp) {
@@ -321,6 +340,33 @@ export class Brain {
     if (name === 'get_memory') {
       const c = this.memory.read(String(args.path ?? ''))
       return c ?? 'Not found'
+    }
+    if (name === 'list_tasks') {
+      const status = String(args.status ?? 'open').toLowerCase()
+      const tasks = this.readTasks().filter(t => status === 'all' || t.status === status)
+      if (!tasks.length) return status === 'open' ? 'No open tasks.' : `No ${status} tasks.`
+      return tasks.map(t =>
+        `- [${t.status === 'done' ? 'x' : ' '}] ${t.id} · ${t.title}${t.due ? ` · due ${t.due}` : ''}${t.priority !== 'normal' ? ` · ${t.priority}` : ''}`
+      ).join('\n')
+    }
+    if (name === 'add_task') {
+      const title = String(args.title ?? '').trim()
+      if (!title) return 'Task title required'
+      const id = `${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${slug(title)}-${Math.random().toString(36).slice(2, 6)}`
+      const priority = ['low', 'normal', 'high'].includes(String(args.priority)) ? String(args.priority) : 'normal'
+      const due = /^\d{4}-\d{2}-\d{2}$/.test(String(args.due ?? '')) ? String(args.due) : ''
+      this.memory.write(`tasks/${id}.md`,
+        `# ${title}\n> status: open · priority: ${priority}${due ? ` · due: ${due}` : ''} · created: ${new Date().toISOString()}\n\n`)
+      return `Task created: ${id} — "${title}"${due ? ` (due ${due})` : ''}`
+    }
+    if (name === 'complete_task') {
+      const want = String(args.id ?? '').toLowerCase()
+      const task = this.readTasks().find(t => t.id === want || t.title.toLowerCase().includes(want))
+      if (!task) return `No task matching "${args.id}"`
+      const p = `tasks/${task.file}`
+      const c = this.memory.read(p) ?? ''
+      this.memory.write(p, c.replace(/status:\s*open/i, 'status: done'))
+      return `Completed: ${task.title}`
     }
     // MCP tool routing: mcp_<serverId>_<toolName>
     if (name.startsWith('mcp_') && this.mcp) {
@@ -1226,6 +1272,56 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
 
   readMemoryFile(rel: string): string | null {
     try { return this.memory.read(rel) } catch { return null }
+  }
+
+  // Planner tasks live in tasks/*.md — same meta-line format Planner writes.
+  private readTasks() {
+    return this.memory.list('tasks').map(f => {
+      const c = this.memory.read(`tasks/${f}`) ?? ''
+      const meta = c.match(/^>\s*(.+)$/m)?.[1] ?? ''
+      return {
+        file: f,
+        id: f.replace(/\.md$/, ''),
+        title: c.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? f.replace(/\.md$/, ''),
+        status: /status:\s*done/i.test(meta) ? 'done' : 'open',
+        priority: meta.match(/priority:\s*(\w+)/i)?.[1]?.toLowerCase() ?? 'normal',
+        due: meta.match(/due:\s*(\d{4}-\d{2}-\d{2})/)?.[1] ?? ''
+      }
+    })
+  }
+
+  // One-time import triage: extract markdown checkboxes `- [ ] …` from the
+  // whole vault into planner tasks. Deduped by normalized text; runs once
+  // (marker in ops/) after a whole-vault import.
+  async triageVaultTasks() {
+    const marker = 'ops/vault-tasks-triaged.md'
+    if (this.memory.read(marker)) return { skipped: true }
+    const seen = new Set<string>()
+    const out: { title: string; src: string }[] = []
+    const cbRe = /^\s*[-*+]\s+\[ \]\s+(.{3,200}?)\s*$/gm
+    for (const f of this.memory.allRelFiles()) {
+      if (!f.endsWith('.md')) continue
+      const segs = f.split('/')
+      if (segs[0] === 'tasks' || segs[0] === 'ops' || segs.slice(0, -1).some(s => s.startsWith('.'))) continue
+      const c = this.memory.read(f)
+      if (!c) continue
+      for (const m of c.matchAll(cbRe)) {
+        const title = m[1].replace(/\[\[([^\]|]+)\|?[^\]]*\]\]/g, '$1').trim()
+        const key = title.toLowerCase()
+        if (!key || seen.has(key)) continue
+        seen.add(key)
+        out.push({ title, src: f })
+        if (out.length >= 400) break
+      }
+      if (out.length >= 400) break
+    }
+    for (const t of out) {
+      const id = `${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${slug(t.title)}-${Math.random().toString(36).slice(2, 6)}`
+      this.memory.write(`tasks/${id}.md`,
+        `# ${t.title}\n> status: open · priority: normal · created: ${new Date().toISOString()}\n\n_source: ${t.src}_\n`)
+    }
+    this.memory.quietWrite(marker, `# Vault task triage\n\n_imported ${out.length} open checkbox items from vault markdown on ${new Date().toISOString()}_\n`)
+    return { imported: out.length }
   }
 
   // Wikilink graph of the whole vault — powers the 3D neural view.

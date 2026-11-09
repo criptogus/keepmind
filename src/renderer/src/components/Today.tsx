@@ -16,6 +16,7 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
   const [taskInput, setTaskInput] = useState('')
   const [noteInput, setNoteInput] = useState('')
   const [suggesting, setSuggesting] = useState(false)
+  const [aiStatus, setAiStatus] = useState<'unknown' | 'testing' | 'ok' | 'fail'>('unknown')
   const date = dateStr()
 
   const refresh = async () => {
@@ -35,6 +36,19 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
   }
 
   useEffect(() => { refresh() }, [])
+
+  // Real connectivity check — green means the provider actually answered,
+  // not just that a provider name is stored in config.
+  useEffect(() => {
+    const p = config?.ai?.provider
+    if (!p) { setAiStatus('unknown'); return }
+    let dead = false
+    setAiStatus('testing')
+    window.sb.aiTest({ provider: p })
+      .then(r => { if (!dead) setAiStatus(r?.ok ? 'ok' : 'fail') })
+      .catch(() => { if (!dead) setAiStatus('fail') })
+    return () => { dead = true }
+  }, [config?.ai?.provider])
 
   const addGoal = async () => {
     if (!goalInput.trim()) return
@@ -104,7 +118,11 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
   const aiReady = config?.ai?.provider === 'local' ? true : !!config?.ai?.apiKey || config?.ai?.provider === 'codex' || config?.ai?.provider === 'claude-oauth'
   const setupSteps = [
     { ok: !!config?.github?.repoUrl, label: 'Connect GitHub (memory sync)', go: 'settings' },
-    { ok: !!aiReady, label: `AI provider: ${config?.ai?.provider ?? 'none'}`, go: 'settings' },
+    {
+      ok: aiStatus === 'ok' ? true : aiStatus === 'fail' ? false : aiReady,
+      label: `AI provider: ${config?.ai?.provider ?? 'none'}${aiStatus === 'testing' ? ' · testing…' : aiStatus === 'fail' ? ' · not responding' : ''}`,
+      go: 'settings'
+    },
     { ok: true, label: 'Explore — notes, tasks and insights work offline', go: 'today' }
   ]
   const setupDone = setupSteps.filter(s => s.ok).length
