@@ -111,10 +111,6 @@ export default function GraphView() {
         .linkColor(() => 'rgba(96,165,250,0.15)')
         .linkWidth(() => 0.35)
         .linkDirectionalParticles(0)
-        // perpetual motion — the brain never "falls asleep": slow alpha decay
-        // + no cooldown keeps nodes drifting and re-firing forever
-        .d3AlphaDecay(0.006)
-        .cooldownTicks(0)
         .onNodeClick(async (n: any) => {
           const content = await window.sb.brainMemoryFile(`${n.id}.md`).catch(() => null)
           setSel({ node: n, content })
@@ -184,6 +180,7 @@ export default function GraphView() {
       }
 
       const tmp = new THREE.Vector3()
+      let breatheIdx = 0
       const tick = () => {
         if (dead) return
         rafRef.current = requestAnimationFrame(tick)
@@ -245,6 +242,19 @@ export default function GraphView() {
           ;(sprite.material.color as THREE.Color).setHex(p.hot ? 0xe0f2fe : 0x67e8f9)
         }
         for (let i = pulses.length; i < sprites.length; i++) sprites[i].material.opacity = 0
+
+        // ── neuron breathing: a rotating subset of nodes gently pulses ──
+        // (cheap JS scale on the Three object — no physics cost, always alive)
+        const BR = 28
+        for (let k = 0; k < BR; k++) {
+          breatheIdx = (breatheIdx + 1) % nodes3d.length
+          const n: any = nodes3d[breatheIdx]
+          const o = n.__threeObj
+          if (!o) continue
+          if (o.__baseScale === undefined) o.__baseScale = o.scale.x || 1
+          const w = 0.5 + 0.5 * Math.sin(now / 800 + breatheIdx * 2.39)
+          o.scale.setScalar(o.__baseScale * (1 + w * 0.16))
+        }
 
       }
       tick()
