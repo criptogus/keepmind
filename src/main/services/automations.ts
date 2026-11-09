@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { Store, Automation } from '../store'
 import type { Brain } from './brain'
+import { analyzeHealth, applyHealth } from './health'
 
 // ── Automations: cron-like jobs described in natural language ──
 //
@@ -118,6 +119,7 @@ export class AutomationScheduler {
   private running = new Set<string>()
   private listeners = new Set<(a: Automation) => void>()
   private payloads = new Map<string, string>()
+  private lastAutoHealthAt = 0
   onStatus: ((event: { phase: 'start' | 'done' | 'error'; name: string; summary?: string }) => void) | null = null
 
   constructor(private store: Store, private brain: Brain, private log: (m: string) => void) {}
@@ -140,7 +142,10 @@ export class AutomationScheduler {
   // tick AND by external webhook triggers. Approval-mode jobs are queued
   // for the user instead of executing. Returns what happened.
   async fire(auto: Automation, payload?: string): Promise<'ran' | 'queued' | 'busy' | 'error'> {
-    if (auto.mode === 'approval') {
+    // Global autonomy mode overrides the per-automation approval gate:
+    // supervised queues for user OK; autopilot/autonomous run directly.
+    const supervised = (this.store.get().autonomy ?? 'supervised') === 'supervised'
+    if (auto.mode === 'approval' && supervised) {
       const pending = this.store.get().pendingApprovals
       if (!pending.some(p => p.automationId === auto.id)) {
         this.store.set({
@@ -183,6 +188,15 @@ export class AutomationScheduler {
   private async tick() {
     if (!this.store.isConfigured) return
     const now = new Date()
+
+    // Autonomous mode: once a day, analyze brain health and apply every
+    // actionable recommendation — the brain improves itself without asking.
+    if ((this.store.get().autonomy ?? 'supervised') === 'autonomous' &&
+        now.getTime() - this.lastAutoHealthAt >= 86_400_000) {
+      this.lastAutoHealthAt = now.getTime()
+      void this.autoApplyHealth()
+    }
+
     for (const auto of this.store.get().automations) {
       if (!auto.enabled || this.running.has(auto.id)) continue
       if (!this.isDue(auto, now)) continue
@@ -195,6 +209,22 @@ export class AutomationScheduler {
         automations: this.store.get().automations.map(a =>
           a.id === auto.id ? { ...a, lastRunAt: new Date().toISOString() } : a)
       })
+    }
+  }
+
+  private async autoApplyHealth() {
+    try {
+      const memory = this.brain.getMemory()
+      const report = analyzeHealth(this.store, memory)
+      const actionable = report.recommendations.filter(r => r.action)
+      for (const rec of actionable) {
+        await applyHealth(this.store, memory, this, rec.id)
+      }
+      if (actionable.length) {
+        this.log(`autonomous health pass applied ${actionable.length} improvement(s)`)
+      }
+    } catch (e) {
+      this.log(`autonomous health pass failed: ${e}`)
     }
   }
 

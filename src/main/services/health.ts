@@ -283,6 +283,9 @@ export async function applyHealth(
     store.set({ automations: autos.map(a => a.id === action.automationId ? { ...a, enabled: true } : a) })
   } else if (action.type === 'create-automation' && action.automation) {
     const a = action.automation
+    // Idempotent: autonomous health passes run daily — never duplicate a cron
+    // that already exists under the same name+kind.
+    if (autos.some(x => x.name === a.name && x.kind === a.kind)) return analyzeHealth(store, memory)
     const auto: Automation = {
       ...a,
       id: `auto_health_${Date.now().toString(36)}`,

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
+import { createHmac, randomBytes } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import type { Store } from '../store'
 import type { Memory } from './brain'
@@ -19,7 +20,8 @@ import { ensureRepoScaffold, exportBrainConfig } from './scaffold'
 //   - Files deleted remotely are removed locally (unless dirty).
 
 interface SyncState {
-  sha: Record<string, string>   // relPath -> last seen git blob sha
+  sha: Record<string, string>   // relPath -> last seen git blob sha (canonical remote name)
+  plainSha?: Record<string, string> // relPath -> last seen sha on the plaintext remote path (obfuscation on)
   lastPull?: string
   lastPush?: string
 }
@@ -33,8 +35,11 @@ const TEXT_FILE_RE = /\.(md|markdown|txt|json|canvas|csv|org|base)$/i
 export class GitSync {
   private memory: Memory
   private store: Store
+  private stateDir: string
   private stateFile: string
   private state: SyncState = { sha: {} }
+  private pathKey: Buffer | null = null
+  private pathKeyLoaded = false
   private dirty = new Set<string>()
   private pushTimer: NodeJS.Timeout | null = null
   private pullTimer: NodeJS.Timeout | null = null
@@ -46,6 +51,7 @@ export class GitSync {
   constructor(store: Store, memory: Memory, stateDir: string) {
     this.store = store
     this.memory = memory
+    this.stateDir = stateDir
     this.stateFile = join(stateDir, 'sync-state.json')
     this.loadState()
   }
@@ -157,12 +163,19 @@ export class GitSync {
     const gh = this.store.get().github
     const batch = [...this.dirty]
     try {
+      const obf = this.obfuscate
+      const plainSha = (this.state.plainSha ??= {})
       for (const rel of batch) {
         const content = this.memory.read(rel)
+        const remoteRel = this.remoteName(rel)
         if (content == null) {
-          // local deletion → propagate to GitHub
-          try { await github.deleteMemoryFile(gh, rel, this.syncRoot) } catch { /* may already be gone */ }
+          // local deletion → propagate to GitHub (both namespaces when obfuscating)
+          try { await github.deleteMemoryFile(gh, remoteRel, this.syncRoot) } catch { /* may already be gone */ }
+          if (obf && remoteRel !== rel) {
+            try { await github.deleteMemoryFile(gh, rel, this.syncRoot) } catch { /* may already be gone */ }
+          }
           delete this.state.sha[rel]
+          delete plainSha[rel]
           this.dirty.delete(rel)
           continue
         }
@@ -170,12 +183,26 @@ export class GitSync {
         // untracked) while we hold unsynced local changes, preserve the remote
         // version under conflicts/ before overwriting — nothing is lost.
         const expected = this.state.sha[rel]
-        const remote = await github.fetchMemoryFile(gh, rel, this.syncRoot).catch(() => null)
+        const remote = await github.fetchMemoryFile(gh, remoteRel, this.syncRoot).catch(() => null)
         if (remote && remote.sha !== expected) {
           this.memory.syncWrite(`conflicts/${rel}`, `<!-- remote version preserved ${new Date().toISOString()} — local version won the push -->\n\n${remote.content}`)
           this.dirty.add(`conflicts/${rel}`)
         }
-        const newSha = await github.pushFile(gh, `${this.syncRoot}${rel}`, content, 'sync: keepmind update')
+        // Plaintext twin guard (obfuscation on): an external edit on the plain
+        // remote path would be pulled later and revert this push. Absorb it now
+        // — preserve the remote version and adopt its sha as the new baseline.
+        if (obf && remoteRel !== rel) {
+          const plain = await github.fetchMemoryFile(gh, rel, this.syncRoot).catch(() => null)
+          if (plain) {
+            if (plainSha[rel] === undefined) plainSha[rel] = plain.sha
+            else if (plain.sha !== plainSha[rel]) {
+              this.memory.syncWrite(`conflicts/${rel}`, `<!-- remote plaintext version preserved ${new Date().toISOString()} — local version won the push -->\n\n${plain.content}`)
+              this.dirty.add(`conflicts/${rel}`)
+              plainSha[rel] = plain.sha
+            }
+          }
+        }
+        const newSha = await github.pushFile(gh, `${this.syncRoot}${remoteRel}`, content, 'sync: keepmind update')
         if (newSha) this.state.sha[rel] = newSha
         this.dirty.delete(rel)
         this.lastPushAt = Date.now()
@@ -196,6 +223,77 @@ export class GitSync {
   // '' when an existing vault (Obsidian/PARA) is imported — its layout becomes ours.
   private get syncRoot(): string {
     return this.store.get().github.syncRoot ?? 'memory/'
+  }
+
+  // ── Path obfuscation (opt-in via github.obfuscatePaths) ──
+  //
+  // When enabled, our pushes go to opaque HMAC-derived names (h_<40hex>) so the
+  // GitHub repo doesn't disclose the vault's folder structure. The HMAC key
+  // lives only in the local state dir — remote hashed names can't be inverted
+  // or forged by anyone else.
+  //
+  // Plaintext remote paths stay fully supported: external agents (Grok, Codex
+  // bots…) keep writing notes/<name>.md and pulls still honor them. Files we
+  // pushed before enabling remain as frozen plaintext twins; state.plainSha
+  // records their sha so they aren't mistaken for external edits. An external
+  // edit to a plaintext path is downloaded AND re-pushed into the hashed
+  // namespace, converging both copies. Disabling re-pushes everything to
+  // plaintext names (resyncAll) so no local edit is lost to a stale revert.
+
+  private get obfuscate(): boolean {
+    return !!this.store.get().github.obfuscatePaths
+  }
+
+  private getPathKey(): Buffer | null {
+    if (this.pathKeyLoaded) return this.pathKey
+    this.pathKeyLoaded = true
+    const file = join(this.stateDir, '.sync-pathkey')
+    try {
+      if (existsSync(file)) {
+        const k = Buffer.from(readFileSync(file, 'utf8').trim(), 'hex')
+        if (k.length === 32) this.pathKey = k
+      }
+    } catch { /* regenerate below */ }
+    if (!this.pathKey) {
+      this.pathKey = randomBytes(32)
+      try { writeFileSync(file, this.pathKey.toString('hex'), { mode: 0o600 }) } catch { /* session-only key */ }
+    }
+    return this.pathKey
+  }
+
+  // Remote path (relative to syncRoot) for a local rel path.
+  private remoteName(rel: string): string {
+    if (!this.obfuscate) return rel
+    const key = this.getPathKey()
+    if (!key) return rel
+    return 'h_' + createHmac('sha256', key).update(`path:${rel}`).digest('hex').slice(0, 40)
+  }
+
+  // Hashed remote name → local rel, for every path we could have pushed.
+  private reverseNames(): Map<string, string> {
+    const map = new Map<string, string>()
+    if (!this.obfuscate) return map
+    const known = new Set<string>([
+      ...this.memory.allRelFiles(),
+      ...Object.keys(this.state.sha),
+      ...Object.keys(this.state.plainSha ?? {}),
+      ...this.dirty
+    ])
+    for (const rel of known) {
+      const rn = this.remoteName(rel)
+      if (rn !== rel) map.set(rn, rel)
+    }
+    return map
+  }
+
+  // Called when obfuscation is switched OFF: mark every local file dirty so the
+  // next push rewrites the plaintext remote names before a pull could download
+  // the stale pre-obfuscation versions over newer local edits.
+  resyncAll() {
+    for (const rel of this.memory.allRelFiles()) this.dirty.add(rel)
+    this.state.plainSha = {}
+    this.emit()
+    this.schedulePush()
   }
 
   private async pull(): Promise<void> {
@@ -223,43 +321,90 @@ export class GitSync {
         return
       }
 
-      // 1) Remote files that are new or changed → download & write locally
-      for (const { path: rel, sha } of remote) {
+      const obf = this.obfuscate
+      const rev = this.reverseNames()
+      const plainSha = (this.state.plainSha ??= {})
+
+      // 1) Remote files that are new or changed → download & write locally.
+      //    Two namespaces: hashed names (our pushes, canonical) and plaintext
+      //    paths (external agents). Plaintext entries are diffed against
+      //    plainSha — NOT state.sha, which tracks the hashed blob.
+      for (const { path: rpath, sha } of remote) {
+        let rel: string
+        let canonical: boolean
+        if (rpath.startsWith('h_')) {
+          if (!obf) continue // orphaned opaque file from a previous mode
+          const mapped = rev.get(rpath)
+          if (!mapped) continue // opaque file we didn't push — can't map safely
+          rel = mapped
+          canonical = true
+        } else {
+          rel = rpath
+          canonical = !obf
+        }
         if (this.dirty.has(rel)) continue // local write wins until pushed
-        if (this.state.sha[rel] === sha) continue // unchanged
         if (!TEXT_FILE_RE.test(rel)) continue // skip binaries/attachments on vault import
         if (rel.split('/').slice(0, -1).some(s => s.startsWith('.'))) continue // skip .obsidian/ etc.
-        const file = await github.fetchMemoryFile(gh, rel, root)
+
+        if (canonical) {
+          if (this.state.sha[rel] === sha) continue // unchanged
+          const file = await github.fetchMemoryFile(gh, rpath, root)
+          if (!file) continue
+          try {
+            this.memory.syncWrite(rel, file.content)
+            this.state.sha[rel] = file.sha
+          } catch (e) {
+            console.warn(`[sync] skipped unsafe remote path ${rel}:`, e)
+          }
+          continue
+        }
+
+        // Plaintext namespace while obfuscation is on.
+        const baseline = plainSha[rel] ?? this.state.sha[rel]
+        if (baseline === sha) { plainSha[rel] = sha; continue } // frozen twin / unchanged
+        const file = await github.fetchMemoryFile(gh, rpath, root)
         if (!file) continue
         try {
           this.memory.syncWrite(rel, file.content)
-          this.state.sha[rel] = file.sha
+          plainSha[rel] = file.sha
+          // A tracked file edited through the plaintext path converges into the
+          // hashed namespace on the next push; brand-new remote files stay
+          // plaintext-only until their first local write.
+          if (this.state.sha[rel] !== undefined) this.dirty.add(rel)
         } catch (e) {
           console.warn(`[sync] skipped unsafe remote path ${rel}:`, e)
         }
       }
 
       // 2) Remote deletions → remove locally (unless dirty).
-      //    Guard: never delete more than half the tracked files in one pull —
-      //    a truncated/wrong-prefix tree looks like mass deletion.
+      //    With obfuscation a file counts as deleted only when BOTH its hashed
+      //    and plaintext remote names are gone. Guard: never delete more than
+      //    half the tracked files in one pull — a truncated/wrong-prefix tree
+      //    looks like mass deletion.
       let deletions = 0
-      for (const rel of Object.keys(this.state.sha)) {
-        if (!remoteMap.has(rel) && !this.dirty.has(rel)) {
-          deletions++
-          if (deletions > Math.max(10, tracked / 2)) {
-            console.warn(`[sync] aborting pull: ${deletions} remote deletions exceeds safety threshold`)
-            break
-          }
-          try { this.memory.syncRemove(rel) } catch { /* unsafe path — skip */ }
-          delete this.state.sha[rel]
+      const trackedRels = new Set([...Object.keys(this.state.sha), ...Object.keys(plainSha)])
+      for (const rel of trackedRels) {
+        if (this.dirty.has(rel)) continue
+        const gone = obf
+          ? !remoteMap.has(this.remoteName(rel)) && !remoteMap.has(rel)
+          : !remoteMap.has(rel)
+        if (!gone) continue
+        deletions++
+        if (deletions > Math.max(10, tracked / 2)) {
+          console.warn(`[sync] aborting pull: ${deletions} remote deletions exceeds safety threshold`)
+          break
         }
+        try { this.memory.syncRemove(rel) } catch { /* unsafe path — skip */ }
+        delete this.state.sha[rel]
+        delete plainSha[rel]
       }
 
       // 3) Local files never seen remotely and not dirty → push them
       //    (covers files written while GitHub was offline/disconnected)
       const localFiles = this.memory.allRelFiles()
       for (const rel of localFiles) {
-        if (!remoteMap.has(rel) && !this.dirty.has(rel) && !this.state.sha[rel]) {
+        const seen = remoteMap.has(this.remoteName(rel)) || (obf && remoteMap.has(rel))
+        if (!seen && !this.dirty.has(rel) && !this.state.sha[rel] && !plainSha[rel]) {
           this.dirty.add(rel)
         }
       }

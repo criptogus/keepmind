@@ -31,7 +31,7 @@ import type { HookServer } from './services/hooks'
 
 const AI_PROVIDERS = new Set(['local', 'anthropic', 'claude-oauth', 'openai', 'codex', 'gemini', 'grok', 'ollama'])
 const MCP_KINDS = new Set(['whatsapp', 'telegram', 'postgres', 'custom'])
-const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone', 'background'])
+const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone', 'background', 'autonomy'])
 const MCP_PATCH_KEYS = new Set(['id', 'name', 'kind', 'enabled', 'command', 'args', 'env', 'sessionDir', 'permission'])
 const MCP_PERMISSIONS = new Set(['allow', 'ask', 'block'])
 const AUTOMATION_PATCH_KEYS = new Set(['name', 'instruction', 'kind', 'schedule', 'time', 'everyMinutes', 'weekday', 'enabled', 'mode'])
@@ -89,9 +89,13 @@ function validateAiPatch(p: any): void {
 function validateGithubPatch(p: any): void {
   if (!isPlainObject(p)) bad('github patch')
   for (const k of Object.keys(p)) {
-    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch', 'syncRoot'].includes(k)) bad(`github.${k}`)
+    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch', 'syncRoot', 'obfuscatePaths'].includes(k)) bad(`github.${k}`)
   }
-  for (const k of Object.keys(p)) optStr(p[k], `github.${k}`, 2048)
+  for (const k of Object.keys(p)) {
+    if (k === 'obfuscatePaths') {
+      if (typeof p[k] !== 'boolean') bad('github.obfuscatePaths')
+    } else optStr(p[k], `github.${k}`, 2048)
+  }
 }
 
 function validateLocalLlmPatch(p: any): void {
@@ -149,6 +153,7 @@ export function registerIpc(
     for (const k of Object.keys(patch)) if (!CONFIG_SET_KEYS.has(k)) bad(`config.${k}`)
     if (patch.onboardingDone !== undefined && typeof patch.onboardingDone !== 'boolean') bad('onboardingDone')
     if (patch.background !== undefined && typeof patch.background !== 'boolean') bad('background')
+    if (patch.autonomy !== undefined && !['supervised', 'autopilot', 'autonomous'].includes(patch.autonomy)) bad('autonomy')
     if (patch.mcpServers !== undefined) {
       if (!Array.isArray(patch.mcpServers) || patch.mcpServers.length > 32) bad('mcpServers')
       for (const s of patch.mcpServers) validateMcpServerShape(s, false)
@@ -157,7 +162,14 @@ export function registerIpc(
   })
   ipcMain.handle('config:updateAi', (_e, patch: any) => { validateAiPatch(patch); return store.updateAi(stripForbiddenKeys(patch)) })
   ipcMain.handle('config:updateLocalLlm', (_e, patch: any) => { validateLocalLlmPatch(patch); return store.updateLocalLlm(stripForbiddenKeys(patch)) })
-  ipcMain.handle('config:updateGithub', (_e, patch: any) => { validateGithubPatch(patch); return store.updateGithub(stripForbiddenKeys(patch)) })
+  ipcMain.handle('config:updateGithub', (_e, patch: any) => {
+    validateGithubPatch(patch)
+    const res = store.updateGithub(stripForbiddenKeys(patch))
+    // Switching obfuscation off requires re-pushing plaintext names before the
+    // next pull, or stale remote versions would revert newer local edits.
+    if (patch.obfuscatePaths === false) sync?.resyncAll()
+    return res
+  })
   ipcMain.handle('config:updateMcp', (_e, id: string, patch: any) => {
     reqStr(id, 'mcp id', 128)
     validateMcpServerShape(patch, true)

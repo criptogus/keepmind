@@ -15,7 +15,10 @@ interface Status {
   totalMdFiles: number
 }
 interface Hit { path: string; line: number; label: string; encrypted: boolean }
-interface Scan { hits: Hit[]; totalHits: number; byLabel: Record<string, number>; unencryptedHits: number }
+interface Scan {
+  hits: Hit[]; totalHits: number; byLabel: Record<string, number>; unencryptedHits: number
+  piiHits: Hit[]; piiTotal: number; piiByLabel: Record<string, number>
+}
 
 const SEV_STYLE: Record<string, { label: string; color: string; bg: string }> = {
   plain: { label: 'EXPOSED', color: '#fb7185', bg: 'rgba(251,113,133,.12)' },
@@ -29,6 +32,8 @@ export default function Security({ onActivity, onToast }: { onActivity?: () => v
   const [cats, setCats] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState<string | null>(null)
   const [aiText, setAiText] = useState<string | null>(null)
+  const [obfuscate, setObfuscate] = useState(false)
+  const [showPii, setShowPii] = useState(false)
 
   const refresh = async () => {
     const s = await window.sb.securityStatus().catch(() => null)
@@ -36,6 +41,8 @@ export default function Security({ onActivity, onToast }: { onActivity?: () => v
       setStatus(s)
       setCats(new Set(s.categories ?? []))
     }
+    const cfg = await window.sb.getConfig().catch(() => null)
+    if (cfg) setObfuscate(!!cfg.github?.obfuscatePaths)
   }
 
   useEffect(() => { refresh() }, [])
@@ -88,6 +95,15 @@ export default function Security({ onActivity, onToast }: { onActivity?: () => v
     return { status: null }
   })
 
+  const toggleObfuscate = () => run('obf', async () => {
+    const next = !obfuscate
+    await window.sb.updateGithub({ obfuscatePaths: next })
+    setObfuscate(next)
+    return { status: null }
+  }, obfuscate
+    ? 'Path obfuscation OFF — files re-push under their real names'
+    : 'Path obfuscation ON — new pushes use hashed remote names')
+
   const pct = status && status.totalMdFiles ? Math.round((status.encryptedFiles / status.totalMdFiles) * 100) : 0
   const sev = scan ? (scan.unencryptedHits > 0 ? 'plain' : 'enc') : null
 
@@ -114,7 +130,8 @@ export default function Security({ onActivity, onToast }: { onActivity?: () => v
               { k: 'files encrypted', v: `${status.encryptedFiles}/${status.totalMdFiles}`, sub: `${pct}% of vault` },
               { k: 'encryption', v: status.enabled ? 'ON' : 'OFF', sub: status.configured ? 'key configured' : 'no key set' },
               { k: 'folders covered', v: status.categories.length, sub: 'selected for encryption' },
-              { k: 'secret hits', v: scan ? scan.totalHits : '—', sub: scan ? `${scan.unencryptedHits} plaintext` : 'run a scan' }
+              { k: 'secret hits', v: scan ? scan.totalHits : '—', sub: scan ? `${scan.unencryptedHits} plaintext` : 'run a scan' },
+              { k: 'pii exposures', v: scan ? scan.piiTotal : '—', sub: scan ? 'cpf/cnpj/email/phone' : 'run a scan' }
             ].map(m => (
               <div key={m.k} className="card stat" style={{ padding: '12px 14px' }}>
                 <div className="stat__num" style={{ fontSize: 20 }}>{m.v}</div>
@@ -208,6 +225,31 @@ export default function Security({ onActivity, onToast }: { onActivity?: () => v
             </div>
           </div>
 
+          {/* ── GitHub sync privacy ── */}
+          <div className="hud-tag" style={{ marginBottom: 10 }}>GITHUB SYNC PRIVACY</div>
+          <div className="card card-pad" style={{ marginBottom: 26, maxWidth: 1000 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 260 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <IconSync size={15} />
+                  <span style={{ fontSize: 14, fontWeight: 650 }}>Obfuscate remote paths</span>
+                  <button
+                    className={`chip ${obfuscate ? 'chip--active' : ''}`}
+                    style={{ cursor: 'pointer', opacity: status.configured ? 1 : 0.45 }}
+                    disabled={busy === 'obf'}
+                    onClick={toggleObfuscate}
+                  >
+                    {obfuscate ? '● OBFUSCATED' : '○ PLAINTEXT PATHS'}
+                  </button>
+                </div>
+                <p className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
+                  Pushes files under HMAC-hashed names (<span className="mono">h_…</span>) so the repo doesn't reveal your vault's folder structure.
+                  External agents keep writing plaintext paths — both namespaces sync. The hash key never leaves this machine; files already on GitHub keep their history.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 1000 }}>
             {/* ── Secret scan ── */}
             <div>
@@ -238,6 +280,30 @@ export default function Security({ onActivity, onToast }: { onActivity?: () => v
                         <span key={k} className="badge badge--custom" style={{ fontSize: 9 }}>{k} ×{v}</span>
                       ))}
                     </div>
+                    {scan.piiTotal > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <button
+                          className="chip"
+                          style={{ cursor: 'pointer', fontSize: 9.5 }}
+                          onClick={() => setShowPii(v => !v)}
+                        >
+                          {showPii ? '▾' : '▸'} {scan.piiTotal} PII exposures ({Object.entries(scan.piiByLabel).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k}×${v}`).join(', ')})
+                        </button>
+                        {showPii && (
+                          <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 6, display: 'flex', flexDirection: 'column' }}>
+                            {scan.piiHits.map((h, i) => (
+                              <div key={i} className="goal-row" style={{ cursor: 'default', padding: '5px 4px' }}>
+                                <span className="mono faint" style={{ fontSize: 10 }}>{h.path}:{h.line}</span>
+                                <span className="faint" style={{ fontSize: 10, marginLeft: 'auto' }}>{h.label}{h.encrypted ? ' · enc' : ''}</span>
+                              </div>
+                            ))}
+                            {scan.piiTotal > scan.piiHits.length && (
+                              <p className="faint" style={{ fontSize: 11, textAlign: 'center', padding: '6px 0' }}>+{scan.piiTotal - scan.piiHits.length} more not shown</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {scan.totalHits === 0 && <p className="faint" style={{ fontSize: 12 }}>✅ No secret patterns detected.</p>}
                     <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                       {scan.hits.map((h, i) => {

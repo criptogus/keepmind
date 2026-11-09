@@ -28,6 +28,7 @@ export interface GitHubConfig {
   repoUrl?: string
   defaultBranch?: string
   syncRoot?: string // repo prefix mirrored into memory/ — 'memory/' default, '' = whole repo (imported vaults)
+  obfuscatePaths?: boolean // push memory files under HMAC-hashed remote names so the repo doesn't disclose vault structure
 }
 
 export interface McpServerConfig {
@@ -100,6 +101,7 @@ export interface AppConfig {
   memoryDir?: string
   background?: boolean       // keep services (sync/crons/MCP) alive when window closes
   launchAtLogin?: boolean    // open KeepMind at OS login
+  autonomy?: 'supervised' | 'autopilot' | 'autonomous' // supervised=approval queues; autopilot=crons run free; autonomous=+health self-applies daily
   security?: VaultSecurityConfig
 }
 

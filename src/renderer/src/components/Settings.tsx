@@ -266,14 +266,42 @@ export default function Settings({ onToast, onActivity }: Props) {
   )
 }
 
+const AUTONOMY_MODES = [
+  {
+    id: 'supervised', label: 'SUPERVISED',
+    desc: 'Crons set to "approval" queue for your OK. Health recommendations wait for you to apply them.'
+  },
+  {
+    id: 'autopilot', label: 'AUTOPILOT',
+    desc: 'Every cron runs on schedule — nothing waits for approval. You still review health suggestions manually.'
+  },
+  {
+    id: 'autonomous', label: 'AUTONOMOUS',
+    desc: 'Fully hands-off: crons run free AND the brain analyzes its own health daily, enabling crons and applying improvements by itself.'
+  }
+] as const
+
 function GeneralCard({ onToast }: { onToast: Props['onToast'] }) {
   const [background, setBackground] = useState(true)
   const [login, setLogin] = useState(false)
+  const [autonomy, setAutonomy] = useState<string>('supervised')
 
   useEffect(() => {
-    window.sb.getConfig?.().then((c: any) => setBackground(c?.background !== false)).catch(() => {})
+    window.sb.getConfig?.().then((c: any) => {
+      setBackground(c?.background !== false)
+      setAutonomy(c?.autonomy ?? 'supervised')
+    }).catch(() => {})
     window.sb.appLaunchAtLogin?.().then((s: any) => setLogin(!!s?.enabled)).catch(() => {})
   }, [])
+
+  const setMode = async (v: string) => {
+    const prev = autonomy
+    setAutonomy(v)
+    try {
+      await window.sb.setConfig({ autonomy: v })
+      onToast?.(`Autonomy: ${AUTONOMY_MODES.find(m => m.id === v)?.label}`, 'success')
+    } catch (e: any) { setAutonomy(prev); onToast?.(String(e?.message ?? e), 'error') }
+  }
 
   const toggleBackground = async (v: boolean) => {
     setBackground(v)
@@ -309,6 +337,34 @@ function GeneralCard({ onToast }: { onToast: Props['onToast'] }) {
             <div className="faint" style={{ fontSize: 12 }}>Start KeepMind automatically when this computer boots.</div>
           </span>
         </label>
+        <div>
+          <strong style={{ color: 'var(--text)', fontSize: 13 }}>Autonomy mode</strong>
+          <div className="faint" style={{ fontSize: 12, margin: '4px 0 10px' }}>How much the brain does without asking you first.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {AUTONOMY_MODES.map(m => (
+              <button
+                key={m.id}
+                onClick={() => setMode(m.id)}
+                style={{
+                  textAlign: 'left', cursor: 'pointer', padding: '10px 14px', borderRadius: 10,
+                  border: `1px solid ${autonomy === m.id ? 'var(--cyan)' : 'var(--line)'}`,
+                  background: autonomy === m.id ? 'rgba(103,232,249,.06)' : 'transparent',
+                  display: 'flex', gap: 12, alignItems: 'flex-start'
+                }}
+              >
+                <span style={{
+                  width: 9, height: 9, borderRadius: '50%', marginTop: 4, flexShrink: 0,
+                  background: autonomy === m.id ? 'var(--cyan)' : 'var(--line)',
+                  boxShadow: autonomy === m.id ? '0 0 8px var(--cyan)' : 'none'
+                }} />
+                <span>
+                  <strong className="mono" style={{ fontSize: 11, letterSpacing: '.08em', color: autonomy === m.id ? 'var(--cyan)' : 'var(--text)' }}>{m.label}</strong>
+                  <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>{m.desc}</div>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )

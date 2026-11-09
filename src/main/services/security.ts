@@ -118,14 +118,30 @@ export interface SecurityScan {
   totalHits: number
   byLabel: Record<string, number>
   unencryptedHits: number
+  piiHits: SecretHit[]
+  piiTotal: number
+  piiByLabel: Record<string, number>
 }
+
+// PII detectors ported from the KeepMind security model (PR #1): CPF, CNPJ,
+// email and phone formats. Lower severity than credentials — reported
+// separately so a contact-heavy vault doesn't drown real secret hits.
+const PII_PATTERNS: [string, RegExp][] = [
+  ['cpf', /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g],
+  ['cnpj', /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g],
+  ['email', /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi],
+  ['phone', /(?:\+\d{1,3}[ .-]?)?(?:\(\d{2,3}\)[ .-]?|\b\d{2,3}[ .-])\d{4,5}[ .-]?\d{4}\b/g]
+]
 
 // Deterministic secret scan — returns file+line+pattern label but NEVER
 // the secret value. Same patterns as the outbound redactor.
 export async function securityScan(store: Store, memory: Memory): Promise<SecurityScan> {
   const hits: SecretHit[] = []
+  const piiHits: SecretHit[] = []
   let totalHits = 0
+  let piiTotal = 0
   const byLabel: Record<string, number> = {}
+  const piiByLabel: Record<string, number> = {}
   let unencryptedHits = 0
   for (const rel of memory.allRelFiles()) {
     if (!rel.endsWith('.md')) continue
@@ -134,9 +150,10 @@ export async function securityScan(store: Store, memory: Memory): Promise<Securi
     const encrypted = isEncryptedAtRest(memory, rel)
     const lines = content.split('\n')
     for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
       for (const [label, re] of SECRET_PATTERNS) {
         re.lastIndex = 0
-        if (re.test(lines[i])) {
+        if (re.test(line)) {
           totalHits++
           byLabel[label] = (byLabel[label] ?? 0) + 1
           if (!encrypted) unencryptedHits++
@@ -144,9 +161,18 @@ export async function securityScan(store: Store, memory: Memory): Promise<Securi
           break
         }
       }
+      for (const [label, re] of PII_PATTERNS) {
+        re.lastIndex = 0
+        const n = line.match(re)?.length ?? 0
+        for (let j = 0; j < n; j++) {
+          piiTotal++
+          piiByLabel[label] = (piiByLabel[label] ?? 0) + 1
+          if (piiHits.length < MAX_HITS) piiHits.push({ path: rel, line: i + 1, label, encrypted })
+        }
+      }
     }
   }
-  return { hits, totalHits, byLabel, unencryptedHits }
+  return { hits, totalHits, byLabel, unencryptedHits, piiHits, piiTotal, piiByLabel }
 }
 
 // ── Bulk transforms ──
@@ -273,6 +299,7 @@ export async function securityAiAlerts(
     `Vault: ${status.totalMdFiles} markdown files, ${status.encryptedFiles} encrypted at rest.`,
     `Encryption: ${status.enabled ? 'ON' : 'OFF'}${status.configured ? '' : ' (no key set)'}. Categories: ${(status.categories ?? []).join(', ') || 'none'}.`,
     `Secret scan: ${scan.totalHits} hits across ${Object.keys(scan.byLabel).length} pattern types; ${scan.unencryptedHits} in plaintext files.`,
+    `PII scan: ${scan.piiTotal} exposures (${Object.entries(scan.piiByLabel).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}×${v}`).join(', ') || 'none'}).`,
     `Top patterns: ${Object.entries(scan.byLabel).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `${k}×${v}`).join(', ') || 'none'}.`,
     scan.hits.slice(0, 15).map(h => `- ${h.path}:${h.line} [${h.label}] ${h.encrypted ? '(encrypted)' : '(PLAINTEXT)'}`).join('\n')
   ].join('\n')
