@@ -99,6 +99,17 @@ export interface AppConfig {
   memoryDir?: string
   background?: boolean       // keep services (sync/crons/MCP) alive when window closes
   launchAtLogin?: boolean    // open KeepMind at OS login
+  security?: VaultSecurityConfig
+}
+
+// At-rest vault encryption. `sealedKey` is the scrypt-derived AES-256 key,
+// sealed by the local keyfile (never synced, never leaves userData).
+// `salt` exists for auditability/rotation; the passphrase itself is never stored.
+export interface VaultSecurityConfig {
+  enabled?: boolean
+  categories?: string[]      // top-level vault dirs whose .md files are encrypted
+  salt?: string              // hex — scrypt salt used to derive sealedKey
+  sealedKey?: string         // hex key, sealed via enc2: envelope
 }
 
 export interface AgentPersona {
@@ -245,6 +256,9 @@ function sealConfig(c: AppConfig, key: Buffer | null): AppConfig {
   for (const s of out.mcpServers ?? []) {
     if (s.env) for (const k of Object.keys(s.env)) s.env[k] = sealValue(s.env[k], key) as string
   }
+  if (out.security?.sealedKey) {
+    out.security = { ...out.security, sealedKey: sealValue(out.security.sealedKey, key) as string | undefined }
+  }
   return out
 }
 
@@ -258,6 +272,9 @@ function unsealConfig(c: AppConfig, key: Buffer | null): AppConfig {
   out.pro.key = unsealValue(out.pro.key, key) as string | undefined
   for (const s of out.mcpServers ?? []) {
     if (s.env) for (const k of Object.keys(s.env)) s.env[k] = unsealValue(s.env[k], key) as string
+  }
+  if (out.security?.sealedKey) {
+    out.security = { ...out.security, sealedKey: unsealValue(out.security.sealedKey, key) as string | undefined }
   }
   return out
 }

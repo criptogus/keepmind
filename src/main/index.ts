@@ -12,6 +12,7 @@ import { RagService } from './services/rag'
 import { LayaService } from './services/laya'
 import { Planner } from './services/planner'
 import { registerIpc, pushMcpLog } from './ipc'
+import { attachVaultCrypto } from './services/security'
 import { initUpdater } from './services/updater'
 import { TRAY_ICON_B64 } from './tray-icon'
 
@@ -122,6 +123,7 @@ app.whenReady().then(() => {
   localLlmGlobal = localLlm
   brain = new Brain(store, mcp, localLlm)
   brain.setMcp(mcp)
+  attachVaultCrypto(store, brain.getMemory())
   const gitSync = new GitSync(store, brain.getMemory(), join(app.getPath('userData'), 'second-brain'))
   brain.attachSync(gitSync)
   gitSyncGlobal = gitSync

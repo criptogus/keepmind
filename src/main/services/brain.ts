@@ -31,6 +31,15 @@ export class Memory {
   activitySource = 'system'
   // Live hook — fired on every journaled change so the UI can react in real time
   onJournal: ((entry: ActivityEntry) => void) | null = null
+  // At-rest encryption hook — set by the security service. encryptsPath decides
+  // per-file; isBlob/encrypt/decrypt handle the KMS1 blob format. Reads always
+  // decrypt blobs transparently when a key exists, regardless of `enabled`.
+  vaultCrypto: {
+    encryptsPath(rel: string): boolean
+    isBlob(text: string): boolean
+    encrypt(text: string): string
+    decrypt(text: string): string
+  } | null = null
   private quiet = false
   private journal: ActivityEntry[] = []
   private journalFile: string
@@ -57,10 +66,15 @@ export class Memory {
     return resolveInside(this.dir, ...parts)
   }
 
+  // Absolute path inside the vault — used by the security service for
+  // bulk encrypt/decrypt passes that bypass journaling.
+  resolve(relative: string): string { return this.path(relative) }
+
   write(relative: string, content: string) {
     const p = this.path(relative)
     mkdirSync(join(p, '..'), { recursive: true })
-    writeFileSync(p, content, 'utf8')
+    const out = this.vaultCrypto?.encryptsPath(relative) ? this.vaultCrypto.encrypt(content) : content
+    writeFileSync(p, out, 'utf8')
     if (!this.quiet) {
       this.onWrite?.(relative)
       this.journalPush('write', relative)
@@ -70,7 +84,14 @@ export class Memory {
   append(relative: string, content: string) {
     const p = this.path(relative)
     mkdirSync(join(p, '..'), { recursive: true })
-    appendFileSync(p, content, 'utf8')
+    if (this.vaultCrypto?.encryptsPath(relative)) {
+      // ciphertext can't be appended — decrypt, concat, re-encrypt
+      const prev = existsSync(p) ? readFileSync(p, 'utf8') : ''
+      const plain = this.vaultCrypto.isBlob(prev) ? this.vaultCrypto.decrypt(prev) : prev
+      writeFileSync(p, this.vaultCrypto.encrypt(plain + content), 'utf8')
+    } else {
+      appendFileSync(p, content, 'utf8')
+    }
     if (!this.quiet) {
       this.onWrite?.(relative)
       this.journalPush('append', relative)
@@ -144,7 +165,12 @@ export class Memory {
 
   read(relative: string): string | null {
     const p = this.path(relative)
-    return existsSync(p) ? readFileSync(p, 'utf8') : null
+    if (!existsSync(p)) return null
+    const raw = readFileSync(p, 'utf8')
+    if (this.vaultCrypto?.isBlob(raw)) {
+      try { return this.vaultCrypto.decrypt(raw) } catch { return raw }
+    }
+    return raw
   }
 
   fileMtime(relative: string): number | null {

@@ -43,6 +43,15 @@ export function IconSparkle({ size = 14 }: { size?: number }) {
   )
 }
 
+export function IconShield({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3Z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  )
+}
+
 export function IconDoc({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...base}>

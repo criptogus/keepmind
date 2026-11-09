@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import NeuralField from './components/NeuralField'
-import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconSparkle, IconSync, IconDoc } from './components/icons'
+import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconSparkle, IconSync, IconDoc, IconShield } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
@@ -10,9 +10,10 @@ import Settings from './components/Settings'
 import GraphView from './components/GraphView'
 import Activity from './components/Activity'
 import Skills from './components/Skills'
+import Security from './components/Security'
 import Login from './components/Login'
 
-type View = 'graph' | 'dashboard' | 'skills' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
+type View = 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 
@@ -20,6 +21,7 @@ const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Elemen
   { id: 'graph', label: 'Brain', Icon: IconSparkle },
   { id: 'dashboard', label: 'Health', Icon: IconDashboard },
   { id: 'skills', label: 'Skills', Icon: IconDoc },
+  { id: 'security', label: 'Security', Icon: IconShield },
   { id: 'chat', label: 'Chat', Icon: IconChat },
   { id: 'activity', label: 'Activity', Icon: IconSync },
   { id: 'connectors', label: 'Agents', Icon: IconPlug },
@@ -149,6 +151,7 @@ export default function App() {
       <main className="main" style={{ zIndex: 1 }}>
         {view === 'dashboard' && <Dashboard onActivity={pulse} onToast={toast} />}
         {view === 'skills' && <Skills onActivity={pulse} onToast={toast} />}
+        {view === 'security' && <Security onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}
         {view === 'graph' && <GraphView />}
         {view === 'activity' && <Activity />}
