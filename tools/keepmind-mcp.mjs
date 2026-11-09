@@ -51,6 +51,36 @@ function writeMem(rel, content, append = false) {
   return rel
 }
 
+function isFactsPath(rel) {
+  return String(rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '') === 'long-term/facts.md'
+}
+
+function proposeFact(text, source, supersedes = '') {
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim()
+  if (clean.length < 3) return 'proposta vazia'
+  const today = new Date().toISOString().slice(0, 10)
+  const id = `p-${Math.random().toString(36).slice(2, 8)}`
+  const block = [
+    `### ${id}`,
+    `- since: ${today}`,
+    `- until:`,
+    `- source: ${source}`,
+    `- origin: mcp`,
+    `- supersedes: ${supersedes}`,
+    `- superseded-by:`,
+    '',
+    clean,
+    ''
+  ].join('\n')
+  const current = readMem('long-term/facts.md') ?? ''
+  const base = /^## Propostas\s*$/m.test(current)
+    ? current
+    : `# Fatos\n\n## Legado\n\n${current.trim()}\n\n## Ativos\n\n## Arquivo\n\n## Propostas\n`
+  const next = `${base.replace(/\s*$/, '')}\n${block}`
+  writeMem('long-term/facts.md', next.endsWith('\n') ? next : `${next}\n`)
+  return id
+}
+
 // ── lexical search (BM25-ish, no deps) ──
 
 const STOP = new Set(('the a an and or of to in on for with is are was were be been it its this that you your we our they their he she i me my not no do does did have has had will would can could should about as at by from into over after before between under again further then once here there when where why how all any both each few more most other some such only own same so than too very just also').split(' '))
@@ -221,7 +251,7 @@ const TOOLS = [
   },
   {
     name: 'sb_write',
-    description: 'Write (create or overwrite) a memory file. Use for notes/, long-term/, tasks/, daily/ etc. Path relative to memory root.',
+    description: 'Write (create or overwrite) a memory file. Use for notes/, long-term/, tasks/, daily/ etc. Path relative to memory root. long-term/facts.md cannot be overwritten.',
     inputSchema: { type: 'object', properties: {
       path: { type: 'string' }, content: { type: 'string' }
     }, required: ['path', 'content'] }
@@ -234,8 +264,16 @@ const TOOLS = [
     }, required: ['path', 'content'] }
   },
   {
+    name: 'sb_supersede',
+    description: 'Propose a replacement for an active fact id (f-…). The proposal waits for the person. It does not overwrite long-term/facts.md.',
+    inputSchema: { type: 'object', properties: {
+      id: { type: 'string', description: 'active fact id, f-…' },
+      content: { type: 'string', description: 'the replacement fact' }
+    }, required: ['id', 'content'] }
+  },
+  {
     name: 'sb_remember',
-    description: 'Save a durable fact/lesson/skill/note to long-term memory — the thing the brain should never forget. kind: fact|lesson|skill|note.',
+    description: 'Propose a durable fact, lesson, skill or decision. It waits in Hoje until the person accepts it. kind note still writes a file immediately. kind: fact|lesson|skill|note|decision.',
     inputSchema: { type: 'object', properties: {
       content: { type: 'string', description: 'the thing to remember' },
       kind: { type: 'string', enum: ['fact', 'lesson', 'skill', 'note', 'decision'], description: 'default fact' }
@@ -283,10 +321,19 @@ function callTool(name, a = {}) {
       const c = readMem(String(a.path ?? ''))
       return c ?? `not found: ${a.path}`
     }
-    case 'sb_write': return `wrote ${writeMem(String(a.path ?? ''), String(a.content ?? ''))}`
-    case 'sb_append': return `appended to ${writeMem(String(a.path ?? ''), String(a.content ?? ''), true)}`
+    case 'sb_write': {
+      const rel = String(a.path ?? '')
+      if (isFactsPath(rel)) return 'refused: long-term/facts.md is not overwritten. Use sb_remember or sb_supersede; the person accepts it in Hoje.'
+      return `wrote ${writeMem(rel, String(a.content ?? ''))}`
+    }
+    case 'sb_append': {
+      const rel = String(a.path ?? '')
+      if (isFactsPath(rel)) return `proposal ${proposeFact(String(a.content ?? ''), 'mcp append')} waiting in Hoje`
+      return `appended to ${writeMem(rel, String(a.content ?? ''), true)}`
+    }
     case 'sb_remember': {
       const kind = ['fact', 'lesson', 'skill', 'note', 'decision'].includes(a.kind) ? a.kind : 'fact'
+      if (kind !== 'note') return `proposal ${proposeFact(String(a.content ?? ''), `mcp remember · ${kind}`)} waiting in Hoje`
       const file = kind === 'note' ? `long-term/notes/${slug(String(a.content).split('\n')[0]).slice(0, 60)}.md`
         : kind === 'decision' ? 'long-term/decisions.md'
         : `long-term/${kind}s.md`
@@ -294,6 +341,11 @@ function callTool(name, a = {}) {
         ? `# ${String(a.content).split('\n')[0]}\n\n${a.content}\n\n---\nsaved ${new Date().toISOString()}\n`
         : `\n- ${String(a.content).replace(/\n+/g, ' ').trim()}\n`
       return `remembered → ${writeMem(file, entry, kind !== 'note')}`
+    }
+    case 'sb_supersede': {
+      const id = String(a.id ?? '')
+      if (!/^f-[a-z0-9]+$/i.test(id)) return 'invalid fact id'
+      return `proposal ${proposeFact(String(a.content ?? ''), 'mcp supersede', id)} waiting in Hoje`
     }
     case 'sb_recent': {
       const days = a.days ?? 7

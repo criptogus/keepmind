@@ -29,21 +29,27 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
   const [briefingState, setBriefingState] = useState('Preparando o briefing de hoje…')
   const [policy, setPolicy] = useState<{ active: string; proposals: string[] } | null>(null)
   const [sleepLine, setSleepLine] = useState('')
+  const [facts, setFacts] = useState<{ id: string; text: string; since: string; origin: string; source: string; previous: string }[]>([])
+  const [evalScore, setEvalScore] = useState<{ day: string; hit: number; total: number } | null>(null)
 
   const load = useCallback(async () => {
-    const [led, taskList, pend, due, pol, sleeps] = await Promise.all([
+    const [led, taskList, pend, due, pol, sleeps, queue, scored] = await Promise.all([
       window.sb.brainLedger(40).catch(() => []),
       window.sb.tasksList().catch(() => []),
       window.sb.automationPending().catch(() => []),
       window.sb.brainCards().catch(() => []),
       window.sb.brainPolicy().catch(() => null),
-      window.sb.brainListSleep().catch(() => [])
+      window.sb.brainListSleep().catch(() => []),
+      window.sb.brainFacts().catch(() => []),
+      window.sb.brainEval().catch(() => null)
     ])
     setLedger(led ?? [])
     setTasks((taskList ?? []).filter((t: Task) => !t.done).slice(0, 8))
     setPending(pend ?? [])
     setCards(due ?? [])
     setPolicy(pol)
+    setFacts(queue ?? [])
+    setEvalScore(scored?.last ?? null)
     const last = (sleeps ?? [])[0]
     if (last) {
       const line = String(last.content ?? '').split('\n').map((l: string) => l.trim()).find((l: string) => l && !l.startsWith('#') && !l.startsWith('_'))
@@ -112,6 +118,11 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
             <div className="msg__body" style={{ marginTop: 10, fontSize: 14, lineHeight: 1.55 }} dangerouslySetInnerHTML={{ __html: mdToHtml(briefing) }} />
           )}
           {sleepLine && <p className="dim" style={{ marginTop: 12, fontSize: 13 }}>Último sono — {sleepLine}</p>}
+          {evalScore && (
+            <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>
+              Placar de {evalScore.day}: {evalScore.hit} de {evalScore.total}.
+            </p>
+          )}
         </div>
         <div className="card card-pad">
           <h2>Tarefas abertas</h2>
@@ -145,6 +156,28 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
           </div>
         )
       })}
+
+      {facts.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 16 }}>
+          <h2>Fatos para aceitar ({facts.length})</h2>
+          <p className="dim" style={{ fontSize: 13, margin: '6px 0 10px' }}>
+            Sono, conversa, webhook e agente deixam propostas. Só o que você aceita passa a valer.
+          </p>
+          {facts.map(f => (
+            <div key={f.id} style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontSize: 14 }}>{f.text}</div>
+              <p className="faint" style={{ fontSize: 12, marginTop: 4 }}>{f.since} · {f.origin} · {f.source}</p>
+              {f.previous && (
+                <p className="dim" style={{ fontSize: 13, marginTop: 6 }}>No lugar de: {f.previous}</p>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <button className="btn btn--primary btn--sm" onClick={async () => { await window.sb.brainFactAccept(f.id); onToast?.('Fato aceito.', 'success'); await load() }}>Aceitar</button>
+                <button className="btn btn--ghost btn--sm" onClick={async () => { await window.sb.brainFactDiscard(f.id); await load() }}>Descartar</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 16 }}>

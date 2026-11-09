@@ -42,7 +42,10 @@ export default function App() {
   const [palette, setPalette] = useState(false)
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<Hit[]>([])
+  const [searchNotice, setSearchNotice] = useState('')
   const [opened, setOpened] = useState<{ path: string; content: string } | null>(null)
+  const [capture, setCapture] = useState(false)
+  const [captureText, setCaptureText] = useState('')
 
   const toast = useCallback((msg: string, kind: Toast['kind'] = 'info') => {
     const id = Date.now() + Math.random()
@@ -89,18 +92,25 @@ export default function App() {
         e.preventDefault()
         setPalette(v => !v)
       }
-      if (e.key === 'Escape') setPalette(false)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault()
+        setCapture(true)
+      }
+      if (e.key === 'Escape') { setPalette(false); setCapture(false) }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const offCapture = window.sb.onCapture?.(() => setCapture(true))
+    return () => { window.removeEventListener('keydown', onKey); offCapture?.() }
   }, [])
 
   useEffect(() => {
     if (!palette) return
     const handle = setTimeout(async () => {
-      if (query.trim().length < 2) { setHits([]); return }
-      const found = await window.sb.brainSearch(query).catch(() => [])
-      setHits(found ?? [])
+      if (query.trim().length < 2) { setHits([]); setSearchNotice(''); return }
+      const found = await window.sb.brainSearch(query).catch(() => ({ hits: [], notice: '', semantic: false, asOf: null }))
+      const pack = Array.isArray(found) ? { hits: found, notice: '' } : (found ?? { hits: [], notice: '' })
+      setHits(pack.hits ?? [])
+      setSearchNotice(pack.notice ?? '')
     }, 180)
     return () => clearTimeout(handle)
   }, [query, palette])
@@ -232,12 +242,14 @@ export default function App() {
               autoFocus
               value={query}
               onChange={e => { setQuery(e.target.value); setOpened(null) }}
-              placeholder="Buscar nota, fato, tarefa, relatório…"
+              placeholder="Buscar nota, fato, tarefa, relatório… ou o que valia em março"
             />
+            {searchNotice && <p className="dim" style={{ padding: '8px 12px 0', fontSize: 13 }}>{searchNotice}</p>}
             <div className="palette__list">
-              {hits.map(h => (
-                <button key={h.path} className="palette__hit" onClick={() => openHit(h)}>
+              {hits.map((h, i) => (
+                <button key={`${h.path}-${i}`} className="palette__hit" onClick={() => openHit(h)}>
                   <strong>{h.title}</strong>
+                  {h.snippet && <span className="dim" style={{ display: 'block', fontSize: 12 }}>{h.snippet}</span>}
                   <span className="mono faint">{h.path}</span>
                 </button>
               ))}
@@ -250,6 +262,30 @@ export default function App() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {capture && (
+        <div className="palette-back" onClick={() => setCapture(false)}>
+          <form
+            className="palette"
+            onClick={e => e.stopPropagation()}
+            onSubmit={async e => {
+              e.preventDefault()
+              const text = captureText.trim()
+              if (!text) return
+              const msg = await window.sb.brainCapture(text).catch(() => 'Não deu para guardar.')
+              toast(String(msg), 'success')
+              setCaptureText('')
+              setCapture(false)
+            }}
+          >
+            <p className="dim" style={{ margin: '0 0 8px', fontSize: 13 }}>Guardar um fato. Ele já vale.</p>
+            <input autoFocus value={captureText} onChange={e => setCaptureText(e.target.value)} placeholder="Uma frase que deve ser lembrada" />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: 12 }}>
+              <button className="btn btn--primary btn--sm" type="submit">Guardar</button>
+            </div>
+          </form>
         </div>
       )}
 

@@ -9,6 +9,7 @@ interface Msg {
   steps?: string[]
   memories?: string[]
   saved?: string[]
+  corrected?: boolean
 }
 
 const STORE_KEY = 'sb-chat:brain'
@@ -25,6 +26,8 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
   const [messages, setMessages] = useState<Msg[]>(loadHistory)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [fixing, setFixing] = useState<number | null>(null)
+  const [fixText, setFixText] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const unsubRef = useRef<(() => void) | null>(null)
@@ -65,6 +68,19 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
     return () => unsubRef.current?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const correct = async (index: number) => {
+    const claim = messages[index]?.content ?? ''
+    const correction = fixText.trim()
+    if (!correction) return
+    setBusy(true)
+    try {
+      await window.sb.brainCorrect(claim, correction)
+      setMessages(prev => prev.map((m, i) => i === index ? { ...m, corrected: true } : m))
+      setFixing(null)
+      setFixText('')
+    } finally { setBusy(false) }
+  }
 
   const send = async () => {
     const text = input.trim()
@@ -153,10 +169,28 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
                   </div>
                 ) : null}
                 <div className="msg__meta" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {m.role === 'assistant' && m.content && (
+                  {m.role === 'assistant' && m.content && !m.streaming && (
                     <button className="msg__copy" onClick={() => copyMsg(m.content)} title="Copiar" aria-label="Copiar mensagem">Copiar</button>
                   )}
+                  {m.role === 'assistant' && m.content && !m.streaming && !m.corrected && (
+                    <button className="msg__copy" onClick={() => { setFixing(i); setFixText('') }}>Isto está errado</button>
+                  )}
+                  {m.corrected && <span className="faint" style={{ fontSize: 12 }}>Correção gravada. Ela já vale.</span>}
                 </div>
+                {fixing === i && (
+                  <form
+                    onSubmit={e => { e.preventDefault(); void correct(i) }}
+                    style={{ display: 'flex', gap: 8, marginTop: 8 }}
+                  >
+                    <input
+                      value={fixText}
+                      onChange={e => setFixText(e.target.value)}
+                      placeholder="Como deveria ser?"
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
+                    <button className="btn btn--sm" type="submit" disabled={busy}>Guardar</button>
+                  </form>
+                )}
               </div>
             </div>
           ))}

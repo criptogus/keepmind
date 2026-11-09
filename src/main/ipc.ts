@@ -451,7 +451,13 @@ export function registerIpc(
     }
   })
   ipcMain.handle('brain:ledger', (_e, limit?: number) => brain.ledger(typeof limit === 'number' ? limit : 40))
-  ipcMain.handle('brain:search', (_e, query: string) => brain.searchVault(String(query ?? '')))
+  ipcMain.handle('brain:search', (_e, query: string) => brain.hybridSearch(String(query ?? '')))
+  ipcMain.handle('brain:facts', () => brain.factQueue())
+  ipcMain.handle('brain:factAccept', (_e, id: string) => brain.acceptFact(String(id ?? '')))
+  ipcMain.handle('brain:factDiscard', (_e, id: string) => brain.discardFact(String(id ?? '')))
+  ipcMain.handle('brain:capture', (_e, text: string) => brain.captureFact(String(text ?? '')))
+  ipcMain.handle('brain:correct', (_e, claim: string, correction: string) => brain.correctFact(String(claim ?? ''), String(correction ?? '')))
+  ipcMain.handle('brain:eval', () => brain.evalStatus())
   ipcMain.handle('brain:cards', () => brain.dueCards(5))
   ipcMain.handle('brain:gradeCard', (_e, question: string, rating: string) => {
     const allowed = ['again', 'hard', 'good', 'easy'] as const

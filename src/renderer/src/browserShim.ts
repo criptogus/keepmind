@@ -190,7 +190,20 @@ const demo = {
     { ts: Date.now() - 1800_000, verb: 'discovered', sentence: 'A conversa guardou 1 item na memória longa.', path: 'long-term/facts.md' },
     { ts: Date.now() - 600_000, verb: 'needs-you', sentence: 'Uma evolução deixou uma proposta na política do cérebro.', path: 'ops/policy.md' }
   ],
-  brainSearch: async (query: string) => demoMemory.filter(m => m.content.toLowerCase().includes(String(query).toLowerCase())).map(m => ({ path: m.path, title: m.path, snippet: m.content.slice(0, 120) })),
+  brainSearch: async (query: string) => {
+    const q = String(query)
+    const temporal = /o que valia|valia em|valiam|na [eé]poca|as of|no dia|na data/i.test(q)
+    const hits = demoMemory.filter(m => m.content.toLowerCase().includes(q.toLowerCase())).map(m => ({ path: m.path, title: m.path, snippet: m.content.slice(0, 120) }))
+    if (temporal) return { hits: [], semantic: false, notice: 'Não há fato datado que valesse nessa data. Texto sem data não entra nessa consulta.', asOf: '2026-03-31' }
+    return { hits, semantic: false, notice: hits.length ? 'A busca semântica está parada. Estes resultados são só por texto.' : 'A busca semântica está parada. Nada casou por texto.', asOf: null }
+  },
+  brainFacts: async () => [{ id: 'p-demo', text: 'O repositório privado é a fonte da memória.', since: todayStr(), origin: 'sleep', source: 'sono', previous: '' }],
+  brainFactAccept: async () => 'Fato aceito. O próximo prompt já pode usá-lo.',
+  brainFactDiscard: async () => 'Proposta descartada.',
+  brainCapture: async () => 'Frase guardada. Ela já vale.',
+  brainCorrect: async () => 'Correção gravada. Ela já vale, e a avaliação vai conferir isso no próximo sono.',
+  brainEval: async () => ({ questions: [{ q: 'Onde a memória durável fica?', source: 'gap' }], last: { day: todayStr(), hit: 1, total: 1 } }),
+  onCapture: () => () => {},
   brainCards: async () => [{ q: 'Onde a memória durável fica?', a: 'Em long-term/, dentro do repositório.' }],
   brainGradeCard: async () => ({ due: Date.now() + 86_400_000 }),
   brainPolicy: async () => ({ active: 'Sem instruções extras ainda.', proposals: ['- 2026-11-08: Separar fatos de pessoas em páginas de entidade.'] }),

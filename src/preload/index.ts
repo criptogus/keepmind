@@ -107,6 +107,17 @@ const api = {
   brainActivity: (limit?: number) => ipcRenderer.invoke('brain:activity', limit),
   brainLedger: (limit?: number) => ipcRenderer.invoke('brain:ledger', limit),
   brainSearch: (query: string) => ipcRenderer.invoke('brain:search', query),
+  brainFacts: () => ipcRenderer.invoke('brain:facts'),
+  brainFactAccept: (id: string) => ipcRenderer.invoke('brain:factAccept', id),
+  brainFactDiscard: (id: string) => ipcRenderer.invoke('brain:factDiscard', id),
+  brainCapture: (text: string) => ipcRenderer.invoke('brain:capture', text),
+  brainCorrect: (claim: string, correction: string) => ipcRenderer.invoke('brain:correct', claim, correction),
+  brainEval: () => ipcRenderer.invoke('brain:eval'),
+  onCapture: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('brain:capture', handler)
+    return () => { ipcRenderer.removeListener('brain:capture', handler) }
+  },
   brainCards: () => ipcRenderer.invoke('brain:cards'),
   brainGradeCard: (question: string, rating: string) => ipcRenderer.invoke('brain:gradeCard', question, rating),
   brainPolicy: () => ipcRenderer.invoke('brain:policy'),

@@ -39,7 +39,7 @@ long-term memory: read before answering, write what matters.
 | \`skills/\` | procedural skills — one Markdown page per reusable procedure |
 | \`crm/\` | \`people/\`, \`companies/\`, \`interactions/\` — relationship memory |
 | \`ops/\` | operational logs — \`search-gaps.md\` records unanswered queries |
-| \`long-term/decisions.md\` | decision ledger — append via \`sb_remember kind=decision\` |
+| \`long-term/decisions.md\` | decision ledger — \`sb_remember kind=decision\` vira proposta em \`long-term/facts.md\` |
 
 ## MCP server (recommended)
 
@@ -50,7 +50,7 @@ node tools/keepmind-mcp.mjs --dir ./memory
 \`\`\`
 
 Tools: \`sb_search\` (search memory first!), \`sb_read\`, \`sb_write\`,
-\`sb_append\`, \`sb_remember\` (durable fact/lesson/skill), \`sb_recent\`,
+\`sb_append\`, \`sb_remember\` (proposta de fato, lição, skill ou decisão), \`sb_supersede\`, \`sb_recent\`,
 \`sb_list\`, \`sb_tree\`, \`sb_tasks\`, \`sb_query\` (structured filters:
 tasks by status/priority/due, notes by tag, entities by text).
 
@@ -67,7 +67,7 @@ OpenCode or any MCP client can spawn the same command.
 - Distinguish hypothesis from fact: prefix unverified claims with \`> proof: hypothesis\`; confirmed ones with \`> proof: confirmed\`.
 - Link recurring people/projects/topics with \`[[Name]]\` — entity pages live in \`memory/entities/\`.
 - Write in the user's language. Keep entries dated and concise.
-- Prefer \`sb_remember\` for durable facts — it lands in the right long-term file.
+- Prefer \`sb_remember\` for durable facts. The person accepts the proposal in Hoje before it becomes active.
 `
 
 const MCP_JSON = JSON.stringify({

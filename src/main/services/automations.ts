@@ -232,6 +232,8 @@ export class AutomationScheduler {
     await this.brain.ensureProviderReady()
     const payload = this.payloads.get(auto.id)
     this.payloads.delete(auto.id)
+    const quarantine = Boolean(payload?.trim())
+    if (quarantine) this.brain.setQuarantine(true)
     let summary = 'Concluído.'
     try {
       summary = await this.execute(auto, payload)
@@ -241,6 +243,7 @@ export class AutomationScheduler {
       this.onStatus?.({ phase: 'error', name: auto.name, summary })
       throw e
     } finally {
+      if (quarantine) this.brain.setQuarantine(false)
       this.store.set({
         automations: this.store.get().automations.map(a =>
           a.id === auto.id ? { ...a, lastSummary: summary } : a)

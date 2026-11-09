@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, shell, Tray, Menu, nativeImage, globalShortcut } from 'electron'
 import { join } from 'node:path'
 import { Store } from './store'
 import { Brain } from './services/brain'
@@ -143,7 +143,15 @@ app.whenReady().then(() => {
   const planner = new Planner(brain.getMemory(), store, localLlm)
   registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner, laya, hookServer)
   initUpdater()
-  if (!HEADLESS) { createWindow(); setupTray() }
+  if (!HEADLESS) {
+    createWindow()
+    setupTray()
+    globalShortcut.register('CommandOrControl+Shift+M', () => {
+      showWindow()
+      const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed())
+      win?.webContents.send('brain:capture')
+    })
+  }
   else console.log('[keepmind] headless mode — services only, no window')
 
   // Continuous GitHub sync — push local writes, pull remote memory
@@ -208,6 +216,10 @@ app.whenReady().then(() => {
 })
 
 let quitting = false
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
+
 app.on('before-quit', () => {
   quitting = true
   stopServices()

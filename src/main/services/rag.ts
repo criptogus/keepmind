@@ -137,6 +137,20 @@ export class RagService {
     return { chunks, embedded }
   }
 
+  semanticReady(): boolean {
+    return this.localLlm.embedReady
+  }
+
+  async semanticHits(query: string): Promise<{ path: string; title: string; snippet: string }[]> {
+    const block = await this.search(query)
+    if (!block) return []
+    return [...block.matchAll(/### (\S+)[^\n]*\n([\s\S]*?)(?=\n### |$)/g)].map(m => ({
+      path: m[1],
+      title: m[1].split('/').pop() ?? m[1],
+      snippet: m[2].replace(/\s+/g, ' ').trim().slice(0, 180)
+    }))
+  }
+
   // Semantic recall for a user message → formatted context block (or '').
   async search(query: string): Promise<string> {
     if (!this.localLlm.embedReady) return ''

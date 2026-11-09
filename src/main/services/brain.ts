@@ -14,6 +14,8 @@ import type { LayaService } from './laya'
 import { refreshEntities } from './entities'
 import { SECRET_PATTERNS } from './redact'
 import { evolutionHints, listVaultSkills, loadSakNotes, loadSkillThreats } from './skillsHub'
+import { acceptProposal, activeForPrompt, addActive, addProposal, compactLegacy, discardProposal, factById, factsAsOf, monthLabel, parseAsOf, proposalsOf, readFacts, type FactOrigin } from './facts'
+import { addEvalQuestion, readEval, scoreEval } from './evalset'
 
 // Long-term files are append-only, so the durable signal is at the end.
 // Reading the head drops everything the brain just learned.
@@ -318,6 +320,9 @@ export class Brain {
   setLaya(l: LayaService) { this.laya = l }
   onJob: ((event: JobEvent) => void) | null = null
   private turnSaved: string[] = []
+  private quarantined = false
+
+  setQuarantine(on: boolean) { this.quarantined = on }
 
   getMemory() { return this.memory }
 
@@ -347,7 +352,7 @@ export class Brain {
     ]
     // ── Tiered memory context (like human memory) ──
     // Long-term: durable facts, lessons and skills — always injected.
-    const facts = this.memory.read('long-term/facts.md')
+    const facts = activeForPrompt(this.memory.read('long-term/facts.md') ?? '')
     if (facts) parts.push('', '## Long-term memory — facts & preferences', tail(facts, 3000))
     const skills = this.memory.read('long-term/skills.md')
     if (skills) parts.push('', '## Learned skills (from nightly sleep cycles)', tail(skills, 2500))
@@ -444,9 +449,15 @@ export class Brain {
         }
       ).catch(() => null)
       if (verdict && verdict.confidence > 0.4) kind = verdict.choice
+      if (kind === 'fact' || this.quarantined) {
+        const origin: FactOrigin = this.quarantined ? 'webhook' : 'chat'
+        const saved = this.proposeFact(`${title}\n\n${content}`.trim(), origin, kind === 'fact' ? 'conversa' : `conversa · ${kind}`)
+        this.turnSaved.push('long-term/facts.md')
+        return `Proposta ${saved} em long-term/facts.md. Ela só entra na memória ativa depois do aceite em Hoje.`
+      }
       const file = kind === 'note'
         ? `long-term/notes/${slug(title)}.md`
-        : `long-term/${kind}s.md` // facts.md / lessons.md / skills.md / decisions.md
+        : `long-term/${kind}s.md` // lessons.md / skills.md / decisions.md
       this.memory.append(file, `\n\n## ${title}\n\n${content}\n`)
       this.turnSaved.push(file)
       return `Saved to memory/${file} (long-term · classified as ${kind})`
@@ -871,7 +882,15 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
         }
         this.memory.append(`long-term/${file}`, `\n\n## ${day}\n\n${clean}\n`)
       }
-      await appendIf('facts.md', '', grab('===FACTS===', '===LESSONS==='))
+      const factLines = grab('===FACTS===', '===LESSONS===')
+        .split('\n')
+        .map(l => l.replace(/^[-*•]\s*/, '').trim())
+        .filter(l => l && l !== '(none)')
+      let proposed = 0
+      for (const line of factLines) {
+        if (this.proposeFact(line, 'sleep', 'sono', false)) proposed++
+      }
+      if (proposed) this.note('needs-you', `${proposed} fato(s) do sono esperam você em Hoje.`, 'long-term/facts.md')
       await appendIf('lessons.md', '', grab('===LESSONS===', '===SKILLS==='))
       await appendIf('skills.md', '', grab('===SKILLS===', '$'))
     } catch (e) {
@@ -907,7 +926,11 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     //    semantically searchable immediately instead of waiting for lazy scan
     void this.rag?.reindex().catch(() => {})
 
-    const summary = `Sono de ${day}: consolidou ${consolidated} log(s) e gravou o relatório.`
+    this.harvestGapQuestions()
+    const scored = this.scoreQuestions(day)
+    const summary = scored.total
+      ? `Sono de ${day}: consolidou ${consolidated} log(s). Placar da avaliação: ${scored.hit} de ${scored.total}.`
+      : `Sono de ${day}: consolidou ${consolidated} log(s) e gravou o relatório.`
     this.note('processed', summary, `sleep/${day}.md`)
     return { report: res.text, consolidated, summary }
   }
@@ -987,7 +1010,7 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
 
   private dedupeLongTerm(): number {
     let removed = 0
-    for (const file of ['facts.md', 'lessons.md', 'skills.md']) {
+    for (const file of ['lessons.md', 'skills.md']) {
       const rel = `long-term/${file}`
       const content = this.memory.read(rel)
       if (!content) continue
@@ -1192,10 +1215,11 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
 
   private async generateFlashcards(): Promise<number> {
     // source: recent long-term learnings
-    const src = ['facts.md', 'lessons.md', 'skills.md']
-      .map(f => this.memory.read(`long-term/${f}`) ?? '')
-      .join('\n')
-      .slice(-12000)
+    const src = [
+      activeForPrompt(this.memory.read('long-term/facts.md') ?? ''),
+      this.memory.read('long-term/lessons.md') ?? '',
+      this.memory.read('long-term/skills.md') ?? ''
+    ].join('\n').slice(-12000)
     if (src.trim().length < 200) return 0
 
     const res = await chat(this.store.get().ai as AiProviderConfig, [
@@ -1252,6 +1276,14 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
     for (const [file, budget] of Object.entries(budgets)) {
       const raw = this.memory.read(`long-term/${file}`)
       if (!raw) continue
+      if (file === 'facts.md') {
+        const next = compactLegacy(raw)
+        if (next !== raw) {
+          this.memory.write(`long-term/${file}`, next)
+          trimmed++
+        }
+        continue
+      }
       const seen = new Set<string>()
       const kept: string[] = []
       for (const line of raw.split('\n')) {
@@ -1308,6 +1340,7 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
       const hit = this.searchVault(q)[0]
       if (!hit) return line
       closed++
+      this.rememberQuestion(q, hit.snippet || hit.title, 'gap')
       return `${line} → ${hit.path}`
     })
     if (closed) this.memory.write('ops/search-gaps.md', next.join('\n'))
@@ -1542,6 +1575,9 @@ Se não houver nota do SuperagentSkill, diga isso. Menos skills afiadas vencem u
       } else if (dest === 'crm') {
         this.memory.append(`crm/interactions/triage-${day}.md`,
           `\n## ${day}\n\n` + items.map(t => `- ${t}`).join('\n') + '\n')
+      } else if (dest === 'fact') {
+        for (const item of items) this.proposeFact(item, 'agent', 'triagem', false)
+        this.note('needs-you', `${items.length} fato(s) da triagem esperam você em Hoje.`, 'long-term/facts.md')
       } else {
         this.memory.append(`long-term/${dest}s.md`,
           `\n\n## ${day} (inbox triage)\n\n` + items.map(t => `- ${t}`).join('\n') + '\n')
@@ -1699,6 +1735,158 @@ Se não houver nota do SuperagentSkill, diga isso. Menos skills afiadas vencem u
     this.memory.write('ops/policy.md', next)
     this.note('improved', 'A política ativa do cérebro foi atualizada com a última proposta.', 'ops/policy.md')
     return 'Política ativa atualizada. O próximo sono vai seguir este texto.'
+  }
+
+  private factsRaw(): string {
+    return this.memory.read('long-term/facts.md') ?? ''
+  }
+
+  private writeFacts(raw: string) {
+    this.memory.write('long-term/facts.md', raw.endsWith('\n') ? raw : `${raw}\n`)
+  }
+
+  private proposeFact(text: string, origin: FactOrigin, source: string, announce = true): string {
+    const clean = text.replace(/\s+/g, ' ').trim()
+    if (clean.length < 3) return ''
+    const next = addProposal(this.factsRaw(), clean, source, origin)
+    this.writeFacts(next.raw)
+    if (announce) this.note('needs-you', 'Uma proposta de fato espera você em Hoje.', 'long-term/facts.md')
+    return next.id
+  }
+
+  captureFact(text: string): string {
+    const clean = text.replace(/\s+/g, ' ').trim()
+    if (clean.length < 3) return 'Escreva uma frase para guardar.'
+    const next = addActive(this.factsRaw(), clean, 'atalho', 'user')
+    this.writeFacts(next.raw)
+    this.note('discovered', 'A frase capturada já vale como fato ativo.', 'long-term/facts.md')
+    return 'Frase guardada. Ela já vale.'
+  }
+
+  correctFact(claim: string, correction: string): string {
+    const nextText = correction.replace(/\s+/g, ' ').trim()
+    const wrong = claim.replace(/\s+/g, ' ').trim()
+    if (nextText.length < 3) return 'Escreva a correção.'
+    const current = this.factsRaw()
+    const needle = wrong.slice(0, 80).toLowerCase()
+    const match = needle.length < 12 ? '' : (readFacts(current).facts.find(f =>
+      f.status === 'active' && (f.text.toLowerCase().includes(needle.slice(0, 40)) || needle.includes(f.text.toLowerCase().slice(0, 40)))
+    )?.id ?? '')
+    const next = addActive(current, nextText, 'isto está errado', 'user', match)
+    this.writeFacts(next.raw)
+    const evalRaw = this.memory.read('ops/eval.md') ?? ''
+    this.memory.write('ops/eval.md', addEvalQuestion(evalRaw, wrong.slice(0, 240) || 'Qual é a correção?', nextText, 'correction'))
+    this.note('improved', 'A correção já vale. A resposta anterior saiu da memória ativa.', 'long-term/facts.md')
+    return 'Correção gravada. Ela já vale, e a avaliação vai conferir isso no próximo sono.'
+  }
+
+  factQueue(): { id: string; text: string; since: string; origin: string; source: string; previous: string }[] {
+    const raw = this.factsRaw()
+    return proposalsOf(raw).map(p => ({
+      id: p.id,
+      text: p.text,
+      since: p.since,
+      origin: p.origin,
+      source: p.source,
+      previous: p.supersedes ? (factById(raw, p.supersedes)?.text ?? '') : ''
+    }))
+  }
+
+  acceptFact(id: string): string {
+    const next = acceptProposal(this.factsRaw(), id)
+    if (!next.ok) return 'Essa proposta não está mais na fila.'
+    this.writeFacts(next.raw)
+    this.note('improved', 'Você aceitou um fato. Ele entra na memória ativa.', 'long-term/facts.md')
+    return 'Fato aceito. O próximo prompt já pode usá-lo.'
+  }
+
+  discardFact(id: string): string {
+    const next = discardProposal(this.factsRaw(), id)
+    if (!next.ok) return 'Essa proposta não está mais na fila.'
+    this.writeFacts(next.raw)
+    this.note('processed', 'Você descartou uma proposta de fato.', 'long-term/facts.md')
+    return 'Proposta descartada.'
+  }
+
+  private rememberQuestion(q: string, a: string, source: 'gap' | 'correction') {
+    const raw = this.memory.read('ops/eval.md') ?? ''
+    const next = addEvalQuestion(raw, q, a, source)
+    if (next !== raw) this.memory.write('ops/eval.md', next)
+  }
+
+  private harvestGapQuestions() {
+    const raw = this.memory.read('ops/search-gaps.md') ?? ''
+    for (const line of raw.split('\n')) {
+      if (!line.includes('→')) continue
+      const q = line.match(/"([^"]+)"/)?.[1]
+      const answer = line.split('→').slice(1).join('→').trim()
+      if (q && answer) this.rememberQuestion(q, answer, 'gap')
+    }
+  }
+
+  private scoreQuestions(day: string): { hit: number; total: number } {
+    const raw = this.memory.read('ops/eval.md') ?? ''
+    if (!raw.trim()) return { hit: 0, total: 0 }
+    const corpus = [
+      activeForPrompt(this.factsRaw()),
+      this.memory.read('long-term/lessons.md') ?? ''
+    ].join('\n')
+    const scored = scoreEval(raw, corpus, day)
+    this.memory.write('ops/eval.md', scored.raw)
+    return { hit: scored.hit, total: scored.total }
+  }
+
+  evalStatus(): { questions: { q: string; source: string }[]; last: { day: string; hit: number; total: number } | null } {
+    const doc = readEval(this.memory.read('ops/eval.md') ?? '')
+    return {
+      questions: doc.questions.map(item => ({ q: item.q, source: item.source })),
+      last: doc.scores[doc.scores.length - 1] ?? null
+    }
+  }
+
+  async hybridSearch(query: string): Promise<{
+    hits: { path: string; title: string; snippet: string }[]
+    semantic: boolean
+    notice: string
+    asOf: string | null
+  }> {
+    const asOf = parseAsOf(query)
+    if (asOf) {
+      const raw = this.factsRaw()
+      const dated = factsAsOf(raw, asOf)
+      const hits = dated.map(f => ({
+        path: 'long-term/facts.md',
+        title: f.text.split('\n')[0].slice(0, 80),
+        snippet: `${f.since}${f.until ? ` até ${f.until}` : ' em diante'} · ${f.text}`
+      }))
+      const undated = readFacts(raw).legacy.trim() ? ' Texto sem data não entra nessa consulta.' : ''
+      const notice = hits.length
+        ? `O que valia em ${monthLabel(asOf)}.${undated}`
+        : `Não há fato datado que valesse em ${monthLabel(asOf)}. Texto sem data não entra nessa consulta.`
+      return { hits: hits.slice(0, 12), semantic: false, notice, asOf }
+    }
+    const lexical = this.searchVault(query)
+    const ready = this.rag?.semanticReady() ?? false
+    if (!ready) {
+      return {
+        hits: lexical,
+        semantic: false,
+        notice: lexical.length
+          ? 'A busca semântica está parada. Estes resultados são só por texto.'
+          : 'A busca semântica está parada. Nada casou por texto.',
+        asOf: null
+      }
+    }
+    const semanticHits = await this.rag?.semanticHits(query).catch(() => []) ?? []
+    const seen = new Set(lexical.map(h => h.path))
+    const hits = [...lexical]
+    for (const hit of semanticHits) {
+      if (seen.has(hit.path)) continue
+      seen.add(hit.path)
+      hits.push(hit)
+      if (hits.length >= 12) break
+    }
+    return { hits, semantic: true, notice: '', asOf: null }
   }
 
   searchVault(query: string): { path: string; title: string; snippet: string }[] {
