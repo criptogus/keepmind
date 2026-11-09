@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { IconSparkle } from './icons'
-import NeuralNet from './NeuralNet'
 
 interface Props {
   onToast: (m: string, k?: 'info' | 'error' | 'success') => void
@@ -126,7 +125,6 @@ export default function Settings({ onToast, onActivity }: Props) {
                   setModel(next?.models?.length ? next.models[0] : '')
                 }}
               >
-                <NeuralNet seed={p.id} color={p.accent} />
                 <div className="p-mark" style={{ color: p.accent, borderColor: `${p.accent}55`, background: `${p.accent}14` }}>{p.mark}</div>
                 <div className="p-name">{p.name}</div>
                 <div className="p-desc">{p.desc}</div>

@@ -288,7 +288,7 @@ async function callCodex(cfg: AiProviderConfig, messages: ChatMessage[], tools: 
     tool_choice: tools.length ? 'auto' : undefined,
     parallel_tool_calls: false,
     store: false,
-    stream: false
+    stream: true // the Codex backend requires streaming
   }
   const res = await fetch('https://chatgpt.com/backend-api/codex/responses', {
     method: 'POST',
@@ -297,7 +297,8 @@ async function callCodex(cfg: AiProviderConfig, messages: ChatMessage[], tools: 
       'Authorization': `Bearer ${token}`,
       'chatgpt-account-id': auth!.tokens!.account_id ?? '',
       'OpenAI-Beta': 'responses=experimental',
-      'originator': 'codex_cli_rs'
+      'originator': 'codex_cli_rs',
+      'accept': 'text/event-stream'
     },
     body: JSON.stringify(body)
   })
@@ -305,14 +306,50 @@ async function callCodex(cfg: AiProviderConfig, messages: ChatMessage[], tools: 
     if (await refreshCodexToken(auth)) return callCodex(cfg, messages, tools, true)
   }
   if (!res.ok) throw new Error(`Codex API -> ${res.status}: ${(await res.text()).slice(0, 300)}`)
-  const data = await res.json()
+  if (!res.body) throw new Error('Codex API returned no body')
+
+  // SSE stream of Responses API events
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
   let text = ''
   const toolCalls: ToolCall[] = []
-  for (const item of data.output ?? []) {
-    if (item.type === 'message') {
-      for (const c of item.content ?? []) if (c.type === 'output_text') text += c.text
-    } else if (item.type === 'function_call') {
-      toolCalls.push({ id: item.call_id ?? item.id, name: item.name, arguments: safeJson(item.arguments) })
+  const seenCalls = new Set<string>()
+  const handleEvent = (ev: any) => {
+    if (ev?.type === 'response.output_text.delta' && ev.delta) text += ev.delta
+    else if (ev?.type === 'response.output_item.done' && ev.item?.type === 'function_call') {
+      const id = ev.item.call_id ?? ev.item.id
+      if (!seenCalls.has(id)) {
+        seenCalls.add(id)
+        toolCalls.push({ id, name: ev.item.name, arguments: safeJson(ev.item.arguments) })
+      }
+    } else if (ev?.type === 'response.completed') {
+      for (const item of ev.response?.output ?? []) {
+        if (item.type === 'message') {
+          for (const c of item.content ?? []) if (c.type === 'output_text' && !text.includes(c.text)) text += c.text
+        } else if (item.type === 'function_call' && !seenCalls.has(item.call_id ?? item.id)) {
+          const id = item.call_id ?? item.id
+          seenCalls.add(id)
+          toolCalls.push({ id, name: item.name, arguments: safeJson(item.arguments) })
+        }
+      }
+    } else if (ev?.type === 'response.failed' || ev?.type === 'error') {
+      throw new Error(`Codex stream error: ${JSON.stringify(ev).slice(0, 200)}`)
+    }
+  }
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const parts = buf.split('\n\n')
+    buf = parts.pop() ?? ''
+    for (const part of parts) {
+      for (const line of part.split('\n')) {
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        try { handleEvent(JSON.parse(payload)) } catch (e) { if (e instanceof SyntaxError) continue; throw e }
+      }
     }
   }
   return { text, toolCalls }

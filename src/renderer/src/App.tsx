@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import BrainCore from './components/BrainCore'
+import NeuralField from './components/NeuralField'
 import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconToday, IconNotes, IconTasks } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
@@ -91,7 +91,7 @@ export default function App() {
   if (!config.onboardingDone) {
     return (
       <>
-        <BrainCore activity={0.4} className="brain-bg" lite />
+        <NeuralField activity={0.4} />
         <Wizard config={config} onDone={loadConfig} onToast={toast} />
         <ToastWrap toasts={toasts} onDismiss={id => setToasts(t => t.filter(x => x.id !== id))} />
       </>
@@ -100,7 +100,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <BrainCore activity={activity} className="brain-bg" lite />
+      <NeuralField activity={activity} />
 
       <aside className="sidebar">
         <div className="brand">
