@@ -135,6 +135,27 @@ export default function GraphView() {
       spritesRef.current = sprites
       pulsesRef.current = []
 
+      // ── electrified neurons: one Points cloud = soft glow halo per node ──
+      // single draw call for up to 3k halos, tinted by directory color
+      const N = nodes3d.length
+      const gpos = new Float32Array(N * 3)
+      const gcol = new Float32Array(N * 3)
+      const tmpCol = new THREE.Color()
+      nodes3d.forEach((n: any, i: number) => {
+        tmpCol.set(colorFor(n.dir))
+        gcol[i * 3] = tmpCol.r; gcol[i * 3 + 1] = tmpCol.g; gcol[i * 3 + 2] = tmpCol.b
+      })
+      const ggeo = new THREE.BufferGeometry()
+      ggeo.setAttribute('position', new THREE.BufferAttribute(gpos, 3))
+      ggeo.setAttribute('color', new THREE.BufferAttribute(gcol, 3))
+      const glowPoints = new THREE.Points(ggeo, new THREE.PointsMaterial({
+        size: 6.5, map: tex, transparent: true, opacity: 0.42, vertexColors: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+      }))
+      scene.add(glowPoints)
+      ;(Graph as any).__glowDispose = () => { ggeo.dispose(); (glowPoints.material as THREE.Material).dispose() }
+      const gAttr = ggeo.attributes.position as THREE.BufferAttribute
+
       const pos = (n: any): any => n.__threeObj?.position ?? n
 
       const isHot = (id: string) => (hotRef.current.get(id) ?? 0) > Date.now()
@@ -264,6 +285,12 @@ export default function GraphView() {
 
         // ── ambient neural firing: hubs + hot nodes swell rhythmically ──
         stepNodePulses()
+        // halo cloud tracks node positions every frame
+        for (let i = 0; i < N; i++) {
+          const p = pos(nodes3d[i])
+          gAttr.setXYZ(i, p.x ?? 0, p.y ?? 0, p.z ?? 0)
+        }
+        gAttr.needsUpdate = true
         const fireCount = 3 + (hotRef.current.size > 0 ? 4 : 0)
         for (let i = 0; i < fireCount; i++) {
           let n: any
@@ -338,6 +365,7 @@ export default function GraphView() {
       cancelAnimationFrame(rafRef.current)
       graphRef.current?.__heatCleanup?.()
       graphRef.current?.__offPush?.()
+      graphRef.current?.__glowDispose?.()
       for (const sp of spritesRef.current) { sp.parent?.remove(sp); sp.material.dispose() }
       spritesRef.current = []
       graphRef.current?._destructor?.()
