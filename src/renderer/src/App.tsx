@@ -160,6 +160,16 @@ export default function App() {
         {view === 'settings' && <Settings onToast={toast} onActivity={pulse} />}
       </main>
 
+      <footer className="app-footer">
+        powered by{' '}
+        <button
+          className="app-footer__link"
+          onClick={() => window.sb.openExternal('https://zeroagency.ai')}
+        >
+          Zero Agency
+        </button>
+      </footer>
+
       <ToastWrap toasts={toasts} onDismiss={id => setToasts(t => t.filter(x => x.id !== id))} />
     </div>
   )

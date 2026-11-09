@@ -683,3 +683,16 @@ button.chip { cursor: pointer; font-family: var(--mono); }
 
 .hud-tag--lime { color: var(--lime); text-shadow: 0 0 10px rgba(163,230,53,.5); }
 .hud-tag--amber { color: var(--amber); text-shadow: 0 0 10px rgba(250,204,21,.5); }
+
+/* ── Footer ─────────────────────────────── */
+.app-footer {
+  flex-shrink: 0; height: 26px; display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--text-faint); border-top: 1px solid rgba(148,163,184,.08);
+  background: rgba(2,6,17,.6); user-select: none;
+}
+.app-footer__link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; color: var(--blue-bright); letter-spacing: inherit; text-transform: inherit;
+}
+.app-footer__link:hover { text-shadow: 0 0 10px rgba(34,211,238,.6); }
