@@ -42,6 +42,9 @@ const demoTasks: any[] = [
   { id: 't2', title: 'Book dentist appointment', done: false, priority: 'normal', due: null, created: '2026-11-05T09:05:00Z', notes: '' },
   { id: 't3', title: 'Renew domain superbrains.dev', done: true, priority: 'normal', due: null, created: '2026-11-01T09:00:00Z', notes: '' }
 ]
+let demoFacts = [
+  { id: 'p-demo', text: 'O repositório privado é a fonte da memória.', since: todayStr(), origin: 'sleep', source: 'sono', previous: '' }
+]
 const demoGoals: any[] = [
   { text: '90 minutes of deep work on the product', done: false },
   { text: 'Call mom', done: true },
@@ -197,12 +200,16 @@ const demo = {
     if (temporal) return { hits: [], semantic: false, notice: 'Não há fato datado que valesse nessa data. Texto sem data não entra nessa consulta.', asOf: '2026-03-31' }
     return { hits, semantic: false, notice: hits.length ? 'A busca semântica está parada. Estes resultados são só por texto.' : 'A busca semântica está parada. Nada casou por texto.', asOf: null }
   },
-  brainFacts: async () => [{ id: 'p-demo', text: 'O repositório privado é a fonte da memória.', since: todayStr(), origin: 'sleep', source: 'sono', previous: '' }],
-  brainFactAccept: async () => 'Fato aceito. O próximo prompt já pode usá-lo.',
-  brainFactDiscard: async () => 'Proposta descartada.',
+  brainFacts: async () => demoFacts,
+  brainFactAccept: async (id: string) => { demoFacts = demoFacts.filter(f => f.id !== id); return 'Fato aceito. O próximo prompt já pode usá-lo.' },
+  brainFactDiscard: async (id: string) => { demoFacts = demoFacts.filter(f => f.id !== id); return 'Proposta descartada.' },
   brainCapture: async () => 'Frase guardada. Ela já vale.',
   brainCorrect: async () => 'Correção gravada. Ela já vale, e a avaliação vai conferir isso no próximo sono.',
   brainEval: async () => ({ questions: [{ q: 'Onde a memória durável fica?', source: 'gap' }], last: { day: todayStr(), hit: 1, total: 1 } }),
+  brainBriefing: async () => 'Briefing de demonstração. Os fatos novos esperam você abaixo.',
+  automationPending: async () => [],
+  automationApprove: async () => true,
+  automationReject: async () => true,
   onCapture: () => () => {},
   brainCards: async () => [{ q: 'Onde a memória durável fica?', a: 'Em long-term/, dentro do repositório.' }],
   brainGradeCard: async () => ({ due: Date.now() + 86_400_000 }),
