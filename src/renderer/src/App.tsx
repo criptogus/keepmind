@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import NeuralField from './components/NeuralField'
-import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconToday, IconNotes, IconTasks, IconSparkle, IconSync } from './components/icons'
+import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconToday, IconSparkle, IconSync } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
 import Today from './components/Today'
-import Notes from './components/Notes'
-import Tasks from './components/Tasks'
 import Connectors from './components/Connectors'
 import Automations from './components/Automations'
 import Settings from './components/Settings'
@@ -14,17 +12,15 @@ import GraphView from './components/GraphView'
 import Activity from './components/Activity'
 import Login from './components/Login'
 
-type View = 'today' | 'dashboard' | 'chat' | 'notes' | 'tasks' | 'graph' | 'activity' | 'connectors' | 'automations' | 'settings'
+type View = 'graph' | 'today' | 'dashboard' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 
 const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }[] = [
+  { id: 'graph', label: 'Brain', Icon: IconSparkle },
   { id: 'today', label: 'Today', Icon: IconToday },
-  { id: 'dashboard', label: 'Brain', Icon: IconDashboard },
+  { id: 'dashboard', label: 'Insights', Icon: IconDashboard },
   { id: 'chat', label: 'Chat', Icon: IconChat },
-  { id: 'notes', label: 'Notes', Icon: IconNotes },
-  { id: 'tasks', label: 'Tasks', Icon: IconTasks },
-  { id: 'graph', label: 'Graph', Icon: IconSparkle },
   { id: 'activity', label: 'Activity', Icon: IconSync },
   { id: 'connectors', label: 'Agents', Icon: IconPlug },
   { id: 'automations', label: 'Automations', Icon: IconClock },
@@ -33,7 +29,7 @@ const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Elemen
 
 export default function App() {
   const [config, setConfig] = useState<any>(null)
-  const [view, setView] = useState<View>('today')
+  const [view, setView] = useState<View>('graph')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [activity, setActivity] = useState(0)
   const [authState, setAuthState] = useState<{ needsSetup: boolean; user: any } | null>(null)
@@ -154,8 +150,6 @@ export default function App() {
         {view === 'today' && <Today onNavigate={(v) => setView(v as View)} />}
         {view === 'dashboard' && <Dashboard onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}
-        {view === 'notes' && <Notes onActivity={pulse} />}
-        {view === 'tasks' && <Tasks onActivity={pulse} />}
         {view === 'graph' && <GraphView />}
         {view === 'activity' && <Activity />}
         {view === 'connectors' && <Connectors onActivity={pulse} onToast={toast} />}

@@ -58,10 +58,14 @@ export default function GraphView() {
   const pulsesRef = useRef<Pulse[]>([])
   const spritesRef = useRef<THREE.Sprite[]>([])
   const hotRef = useRef<Map<string, number>>(new Map()) // nodeId -> heat until ts
+  const feedSourcesRef = useRef<string[]>([])
   const rafRef = useRef(0)
   const showLinksRef = useRef(true)
   const [showLinks, setShowLinks] = useState(true)
   const [stats, setStats] = useState<{ nodes: number; links: number; total: number } | null>(null)
+  const [feed, setFeed] = useState<any[]>([])
+  const [todayWrites, setTodayWrites] = useState(0)
+  const [sourceCount, setSourceCount] = useState(0)
   const [sel, setSel] = useState<{ node: any; content: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -249,12 +253,41 @@ export default function GraphView() {
       }, 12_000)
       ;(Graph as any).__heatCleanup = () => clearInterval(heatTimer)
 
+      // ── realtime: journal pushes heat the graph the instant a write lands ──
+      const offPush = window.sb.onActivityPush?.((e: any) => {
+        if (e?.path?.endsWith('.md')) {
+          const id = e.path.replace(/\.md$/, '')
+          if (nodeById.has(id)) heatNode(id)
+        }
+        setFeed(f => [e, ...f].slice(0, 30))
+        setTodayWrites(w => w + 1)
+        setSourceCount(s => {
+          const srcs = new Set(feedSourcesRef.current)
+          srcs.add(e?.source ?? 'system')
+          feedSourcesRef.current = [...srcs]
+          return srcs.size
+        })
+      })
+      ;(Graph as any).__offPush = offPush
+
+      // initial feed + counters from the journal
+      try {
+        const acts: any[] = await window.sb.brainActivity(200)
+        const today = new Date().toISOString().slice(0, 10)
+        const dayStart = new Date(`${today}T00:00:00`).getTime()
+        setFeed((acts ?? []).slice(0, 8))
+        setTodayWrites((acts ?? []).filter(a => a.ts >= dayStart).length)
+        feedSourcesRef.current = [...new Set((acts ?? []).map(a => a.source ?? 'system'))]
+        setSourceCount(feedSourcesRef.current.length)
+      } catch { /* noop */ }
+
       setLoading(false)
     })()
     return () => {
       dead = true
       cancelAnimationFrame(rafRef.current)
       graphRef.current?.__heatCleanup?.()
+      graphRef.current?.__offPush?.()
       for (const sp of spritesRef.current) { sp.parent?.remove(sp); sp.material.dispose() }
       spritesRef.current = []
       graphRef.current?._destructor?.()
@@ -273,6 +306,58 @@ export default function GraphView() {
             {stats ? `${stats.nodes} notes · ${stats.links} synapses · ${stats.total} files` : 'Scanning vault…'}
             {' '}— pulses are live memory writes. Drag to orbit, scroll to zoom, click a node.
           </p>
+        </div>
+      </div>
+
+      {/* live command center — the product's value, quantified */}
+      <div style={{
+        position: 'absolute', left: 20, bottom: 20, zIndex: 6, width: 330,
+        background: 'rgba(4,8,20,.88)', backdropFilter: 'blur(10px)',
+        border: '1px solid rgba(56,189,248,.18)', borderRadius: 14,
+        padding: '14px 16px', pointerEvents: 'auto'
+      }}>
+        <div className="hud-tag" style={{ fontSize: 9, marginBottom: 4 }}>ORGANIZED · TRANSPARENT · AUTOMATED</div>
+        <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '.02em', marginBottom: 10 }}>
+          Your brain, <span style={{ color: '#7dd3fc' }}>live.</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', marginBottom: 12 }}>
+          {[
+            { k: 'memories', v: stats ? stats.total.toLocaleString() : '—' },
+            { k: 'synapses', v: stats ? stats.links.toLocaleString() : '—' },
+            { k: 'writes today', v: todayWrites.toLocaleString() },
+            { k: 'sources', v: sourceCount || '—' }
+          ].map(m => (
+            <div key={m.k}>
+              <div style={{ fontSize: 17, fontWeight: 800, color: '#e8f4ff', fontFamily: 'var(--mono)' }}>{m.v}</div>
+              <div className="faint" style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em' }}>{m.k}</div>
+            </div>
+          ))}
+        </div>
+        <div className="faint" style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
+          latest outputs
+        </div>
+        <div style={{ maxHeight: 148, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {feed.length === 0 && <p className="faint" style={{ fontSize: 11 }}>Waiting for the brain to write…</p>}
+          {feed.slice(0, 7).map((e, i) => (
+            <div key={`${e.ts}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11 }}>
+              <span className="mono faint" style={{ fontSize: 9.5, flexShrink: 0 }}>
+                {new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <span className="mono" style={{
+                fontSize: 8.5, padding: '1px 5px', borderRadius: 4, flexShrink: 0,
+                color: e.op === 'remove' ? '#fb7185' : e.op === 'append' ? '#34d399' : '#38bdf8',
+                border: '1px solid rgba(148,163,184,.25)'
+              }}>{e.op?.toUpperCase()}</span>
+              <span className="mono" style={{
+                fontSize: 9, padding: '1px 5px', borderRadius: 4, flexShrink: 0,
+                color: '#c084fc', border: '1px solid rgba(192,132,252,.25)', maxWidth: 90,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+              }}>{e.source}</span>
+              <span className="faint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10.5 }}>
+                {e.path?.split('/').slice(-2).join('/')}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 

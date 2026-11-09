@@ -132,6 +132,13 @@ export function registerIpc(
   hooks: HookServer | null = null
 ) {
   // ── Config ──
+  // Live activity stream — every journaled brain write reaches the renderer
+  // instantly (graph heat, activity feed, stat counters).
+  brain.getMemory().onJournal = (entry) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send('brain:activityPush', entry)
+    }
+  }
   ipcMain.handle('config:get', () => store.get())
   ipcMain.handle('config:set', (_e, patch: any) => {
     if (!isPlainObject(patch)) bad('config patch')

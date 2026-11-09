@@ -105,6 +105,11 @@ const api = {
   brainBriefing: (force?: boolean) => ipcRenderer.invoke('brain:briefing', force),
   brainMemoryFile: (rel: string) => ipcRenderer.invoke('brain:memoryFile', rel),
   brainActivity: (limit?: number) => ipcRenderer.invoke('brain:activity', limit),
+  onActivityPush: (cb: (e: any) => void) => {
+    const handler = (_e: any, entry: any) => cb(entry)
+    ipcRenderer.on('brain:activityPush', handler)
+    return () => { ipcRenderer.removeListener('brain:activityPush', handler) }
+  },
   brainExportConfig: () => ipcRenderer.invoke('brain:exportConfig'),
   onBrainDelta: (cb: (t: string) => void) => {
     const handler = (_e: any, t: string) => cb(t)

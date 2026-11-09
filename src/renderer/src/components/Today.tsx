@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { mdToHtml } from '../lib/markdown'
-import { IconToday, IconTasks, IconNotes, IconSparkle, IconSend, IconGithub, IconSettings } from './icons'
+import { IconToday, IconTasks, IconNotes, IconSparkle, IconSettings } from './icons'
 
 const dateStr = (offsetDays = 0) => {
   const d = new Date(Date.now() + offsetDays * 864e5)
@@ -13,9 +13,6 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
   const [tasks, setTasks] = useState<any[]>([])
   const [notes, setNotes] = useState<any[]>([])
   const [config, setConfig] = useState<any>(null)
-  const [goalInput, setGoalInput] = useState('')
-  const [taskInput, setTaskInput] = useState('')
-  const [noteInput, setNoteInput] = useState('')
   const [suggesting, setSuggesting] = useState(false)
   const [aiStatus, setAiStatus] = useState<'unknown' | 'testing' | 'ok' | 'fail'>('unknown')
   const [briefing, setBriefing] = useState<string | null>(null)
@@ -71,13 +68,6 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config?.ai?.provider])
 
-  const addGoal = async () => {
-    if (!goalInput.trim()) return
-    await window.sb.goalsAdd(date, goalInput.trim())
-    setGoalInput('')
-    refresh()
-  }
-
   const toggleGoal = async (i: number) => {
     await window.sb.goalsToggle(date, i)
     refresh()
@@ -105,23 +95,8 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
     } finally { setSuggesting(false) }
   }
 
-  const addTask = async () => {
-    if (!taskInput.trim()) return
-    await window.sb.tasksAdd(taskInput.trim(), { due: date })
-    setTaskInput('')
-    refresh()
-  }
-
   const toggleTask = async (id: string) => {
     await window.sb.tasksToggle(id)
-    refresh()
-  }
-
-  const addNote = async () => {
-    if (!noteInput.trim()) return
-    const title = noteInput.trim().split('\n')[0].slice(0, 60)
-    await window.sb.notesSave(null, title, noteInput.trim())
-    setNoteInput('')
     refresh()
   }
 
@@ -219,22 +194,12 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
               <IconSparkle size={11} /> {suggesting ? 'THINKING…' : 'AI SUGGEST'}
             </button>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <input
-              style={{ flex: 1 }}
-              placeholder="Add an intention… e.g. ship the proposal"
-              value={goalInput}
-              onChange={e => setGoalInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addGoal()}
-            />
-            <button className="btn btn--primary btn--sm" onClick={addGoal}>Add</button>
-          </div>
           {yesterdayLeft > 0 && (
             <button className="btn btn--ghost btn--sm" style={{ width: '100%', marginBottom: 10, justifyContent: 'center' }} onClick={carryOver}>
               ↺ Carry over {yesterdayLeft} intention{yesterdayLeft === 1 ? '' : 's'} from yesterday
             </button>
           )}
-          {goals.length === 0 && yesterdayLeft === 0 && <p className="faint" style={{ fontSize: 12.5 }}>No intentions yet. Add one or let the brain suggest.</p>}
+          {goals.length === 0 && yesterdayLeft === 0 && <p className="faint" style={{ fontSize: 12.5 }}>No intentions yet — the brain suggests them, or agents set them.</p>}
           {goals.map((g, i) => (
             <div key={i} className="goal-row">
               <button className={`goal-check ${g.done ? 'is-done' : ''}`} onClick={() => toggleGoal(i)}>
@@ -250,17 +215,6 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
         <div className="card card-pad">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><IconTasks size={15} /> Open tasks</h2>
-            {onNavigate && <button className="btn btn--ghost btn--sm" onClick={() => onNavigate('tasks')}>ALL →</button>}
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <input
-              style={{ flex: 1 }}
-              placeholder="Add a task…"
-              value={taskInput}
-              onChange={e => setTaskInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addTask()}
-            />
-            <button className="btn btn--primary btn--sm" onClick={addTask}>Add</button>
           </div>
           {overdue.length + dueToday.length + upcoming.length === 0 && (
             <p className="faint" style={{ fontSize: 12.5 }}>Nothing pending. Your list is clear.</p>
@@ -286,35 +240,19 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
           })}
           {openTasks.length > priorityTasks.length && (
             <p className="faint" style={{ fontSize: 11, marginTop: 8 }}>
-              +{openTasks.length - priorityTasks.length} more — see Tasks
+              +{openTasks.length - priorityTasks.length} more
             </p>
           )}
         </div>
       </div>
 
-      {/* Quick note + recent notes */}
-      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
-        <div className="card card-pad">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}><IconNotes size={15} /> Quick note</h2>
-          <textarea
-            rows={3}
-            placeholder="Jot something down — a thought, a link, a reminder…"
-            value={noteInput}
-            onChange={e => setNoteInput(e.target.value)}
-            style={{ width: '100%', resize: 'vertical' }}
-          />
-          <button className="btn btn--primary btn--sm" style={{ marginTop: 10 }} onClick={addNote} disabled={!noteInput.trim()}>
-            <IconSend size={11} /> Save note
-          </button>
-        </div>
-        <div className="card card-pad">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><IconNotes size={15} /> Recent notes</h2>
-            {onNavigate && <button className="btn btn--ghost btn--sm" onClick={() => onNavigate('notes')}>ALL →</button>}
-          </div>
-          {notes.length === 0 && <p className="faint" style={{ fontSize: 12.5 }}>No notes yet.</p>}
+      {/* Recent notes — read-only; notes are written by agents, not by hand */}
+      <div className="card card-pad" style={{ marginTop: 16 }}>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}><IconNotes size={15} /> Recent notes</h2>
+        {notes.length === 0 && <p className="faint" style={{ fontSize: 12.5 }}>No notes yet — agents write them as they learn.</p>}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px' }}>
           {notes.map(n => (
-            <div key={n.id} className="note-row" onClick={() => onNavigate?.('notes')}>
+            <div key={n.id} className="note-row">
               <span className="note-row__title">{n.title}</span>
               <span className="faint" style={{ fontSize: 11 }}>{n.updated?.slice(0, 10)}</span>
             </div>

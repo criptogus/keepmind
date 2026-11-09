@@ -29,6 +29,8 @@ export class Memory {
   // Who is writing right now — Brain methods set this so the activity
   // journal can attribute each change (sleep cycle, chat, ui, automation…)
   activitySource = 'system'
+  // Live hook — fired on every journaled change so the UI can react in real time
+  onJournal: ((entry: ActivityEntry) => void) | null = null
   private quiet = false
   private journal: ActivityEntry[] = []
   private journalFile: string
@@ -91,6 +93,7 @@ export class Memory {
         writeFileSync(this.journalFile, lines.slice(-2000).join('\n') + '\n', 'utf8')
       }
     } catch { /* journal is best-effort */ }
+    try { this.onJournal?.(entry) } catch { /* noop */ }
   }
 
   private loadJournal() {
