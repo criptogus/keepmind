@@ -111,6 +111,10 @@ export default function GraphView() {
         .linkColor(() => 'rgba(96,165,250,0.15)')
         .linkWidth(() => 0.35)
         .linkDirectionalParticles(0)
+        // perpetual motion — the brain never "falls asleep": slow alpha decay
+        // + no cooldown keeps nodes drifting and re-firing forever
+        .d3AlphaDecay(0.006)
+        .cooldownTicks(0)
         .onNodeClick(async (n: any) => {
           const content = await window.sb.brainMemoryFile(`${n.id}.md`).catch(() => null)
           setSel({ node: n, content })
@@ -166,8 +170,12 @@ export default function GraphView() {
         return { node: n, t: 0, speed: 0, life: 1, hot: hotOnly }
       }
 
-      const spawn = (hot: boolean): Pulse | null =>
-        showLinksRef.current ? spawnLinkPulse(hot) : spawnSpike(hot)
+      const spawn = (hot: boolean): Pulse | null => {
+        if (!showLinksRef.current) return spawnSpike(hot)
+        // mostly signal along synapses, some neurons firing in place —
+        // keeps the connectome visibly "alive" even when idle
+        return Math.random() < 0.8 ? spawnLinkPulse(hot) : spawnSpike(hot)
+      }
 
       // seed ambient activity
       for (let i = 0; i < PULSE_COUNT * 0.6; i++) {
@@ -309,7 +317,7 @@ export default function GraphView() {
   }, [])
 
   return (
-    <div className="view" style={{ position: 'relative', height: 'calc(100vh - 60px)' }}>
+    <div className="view" style={{ position: 'relative', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
       <div className="view-head" style={{ position: 'absolute', zIndex: 5, pointerEvents: 'none' }}>
         <div>
           <div className="hud-tag" style={{ marginBottom: 6 }}>LIVE SYNAPTIC MAP</div>
