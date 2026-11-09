@@ -199,6 +199,15 @@ export class GitSync {
       const remote = await github.listTree(gh, root)
       const remoteMap = new Map(remote.map(r => [r.path, r.sha]))
 
+      // Safety: an empty/suspiciously-small remote tree must never trigger
+      // mass local deletion — a failed API call returns [] indistinguishable
+      // from an empty repo, and we already wiped a 9.5k-file vault once.
+      const tracked = Object.keys(this.state.sha).length
+      if (remote.length === 0 && tracked > 0) {
+        console.warn(`[sync] remote tree empty but ${tracked} files tracked — skipping pull to avoid data loss`)
+        return
+      }
+
       // 1) Remote files that are new or changed → download & write locally
       for (const { path: rel, sha } of remote) {
         if (this.dirty.has(rel)) continue // local write wins until pushed
@@ -215,9 +224,17 @@ export class GitSync {
         }
       }
 
-      // 2) Remote deletions → remove locally (unless dirty)
+      // 2) Remote deletions → remove locally (unless dirty).
+      //    Guard: never delete more than half the tracked files in one pull —
+      //    a truncated/wrong-prefix tree looks like mass deletion.
+      let deletions = 0
       for (const rel of Object.keys(this.state.sha)) {
         if (!remoteMap.has(rel) && !this.dirty.has(rel)) {
+          deletions++
+          if (deletions > Math.max(10, tracked / 2)) {
+            console.warn(`[sync] aborting pull: ${deletions} remote deletions exceeds safety threshold`)
+            break
+          }
           try { this.memory.quietRemove(rel) } catch { /* unsafe path — skip */ }
           delete this.state.sha[rel]
         }
