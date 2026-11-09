@@ -394,6 +394,21 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
   box-shadow: 0 0 10px var(--glow);
   transition: width .3s;
 }
+.progress-bar--indeterminate > div {
+  width: 35% !important;
+  animation: indeterminateSlide 1.4s ease-in-out infinite;
+}
+@keyframes indeterminateSlide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+.gh-wait { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.gh-spinner {
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid rgba(96,165,250,.25); border-top-color: var(--blue-bright);
+  animation: ghSpin .8s linear infinite; flex: none;
+}
+@keyframes ghSpin { to { transform: rotate(360deg); } }
 
 /* ── Dashboard ──────────────────────────── */
 .view-head {

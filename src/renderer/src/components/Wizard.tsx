@@ -26,6 +26,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   const [ghDevice, setGhDevice] = useState<any>(null)
   const [ghCopied, setGhCopied] = useState(false)
   const [ghLogin, setGhLogin] = useState('')
+  const [ghWaitSec, setGhWaitSec] = useState(0)
   const [repoMode, setRepoMode] = useState<'create' | 'import'>('create')
   const [userRepos, setUserRepos] = useState<any[]>([])
   const [importRef, setImportRef] = useState('')
@@ -57,6 +58,13 @@ export default function Wizard({ config, onDone, onToast }: Props) {
     })
     return off
   }, [])
+
+  useEffect(() => {
+    if (!ghDevice || ghLogin) return
+    setGhWaitSec(0)
+    const t = setInterval(() => setGhWaitSec(s => s + 1), 1000)
+    return () => clearInterval(t)
+  }, [ghDevice, ghLogin])
 
   useEffect(() => {
     if (!ghDevice) return
@@ -321,11 +329,37 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                     {ghCopied ? '✓ Copied' : '⧉ Copy code'}
                   </button>
                 </div>
-                <p className="faint" style={{ fontSize: 12 }}>
-                  Waiting for authorization… code expires in ~{Math.round((ghDevice.expires_in ?? 900) / 60)} min.
+                <div className="gh-wait" style={{ marginBottom: 6 }}>
+                  <span className="gh-spinner" />
+                  <p className="faint" style={{ fontSize: 12.5 }}>
+                    Waiting for authorization — {ghWaitSec}s elapsed
+                  </p>
+                </div>
+                <p className="faint" style={{ fontSize: 11, marginBottom: 12 }}>
+                  Enter the code on GitHub, click <strong>Authorize</strong>, and this screen will continue automatically.
                 </p>
-                <div className="progress-bar" style={{ maxWidth: 280, margin: '14px auto 0' }}>
-                  <div style={{ width: '60%' }} />
+                <button
+                  className="btn btn--ghost"
+                  style={{ fontSize: 12, padding: '5px 14px', marginBottom: 12 }}
+                  onClick={async () => {
+                    try {
+                      const res: any = await window.sb.ghPollDeviceFlow(ghDevice)
+                      if (res?.status === 'success') {
+                        setGhLogin(res.login ?? 'you')
+                        setRepoName(`keepmind-${res.login ?? 'me'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'))
+                        onToast('GitHub connected!', 'success')
+                      } else {
+                        onToast('Not authorized yet — finish on github.com then check again', 'info')
+                      }
+                    } catch (e: any) {
+                      onToast(`Check failed: ${e?.message ?? e}`, 'error')
+                    }
+                  }}
+                >
+                  Already authorized? Check now
+                </button>
+                <div className="progress-bar progress-bar--indeterminate" style={{ maxWidth: 280, margin: '0 auto' }}>
+                  <div />
                 </div>
               </div>
             )}
