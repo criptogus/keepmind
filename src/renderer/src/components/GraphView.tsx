@@ -5,10 +5,11 @@ import * as THREE from 'three'
 // Living neural map — the vault as a firing brain. Nodes are notes, edges are
 // [[wikilinks]], and glowing pulses travel the synapses in real time. Activity
 // from the journal (chat writes, sleep cycles, automations) heats nearby
-// synapses so the graph visibly "thinks" along with the brain.
+// synapses so the graph visibly "thinks" along with the brain. Connections can
+// be hidden — nodes keep spiking like neurons either way.
 
 const DIR_COLORS: Record<string, string> = {
-  'long-term': '#22d3ye', 'medium-term': '#818cf8', 'short-term': '#38bdf8',
+  'long-term': '#22d3ee', 'medium-term': '#818cf8', 'short-term': '#38bdf8',
   'notes': '#34d399', 'daily': '#fbbf24', 'tasks': '#fb7185', 'insights': '#c084fc',
   'summaries': '#f472b6', 'entities': '#4ade80', 'meetings': '#facc15',
   'skills': '#2dd4bf', 'crm': '#fb923c', 'ops': '#94a3b8', 'agents': '#e879f9',
@@ -42,7 +43,14 @@ function getGlowTex() {
 
 const PULSE_COUNT = 90
 
-interface Pulse { link: any; t: number; speed: number; life: number; hot: boolean }
+interface Pulse {
+  link?: any          // synapse mode: travel source→target
+  node?: any          // spike mode: flash at a node (connections hidden)
+  t: number
+  speed: number
+  life: number
+  hot: boolean
+}
 
 export default function GraphView() {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -51,9 +59,21 @@ export default function GraphView() {
   const spritesRef = useRef<THREE.Sprite[]>([])
   const hotRef = useRef<Map<string, number>>(new Map()) // nodeId -> heat until ts
   const rafRef = useRef(0)
+  const showLinksRef = useRef(true)
+  const [showLinks, setShowLinks] = useState(true)
   const [stats, setStats] = useState<{ nodes: number; links: number; total: number } | null>(null)
   const [sel, setSel] = useState<{ node: any; content: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => { showLinksRef.current = showLinks }, [showLinks])
+
+  // hide/show edges without rebuilding the simulation
+  useEffect(() => {
+    const g: any = graphRef.current
+    if (!g) return
+    g.linkColor(showLinks ? () => 'rgba(96,165,250,0.15)' : 'rgba(0,0,0,0)')
+    g.linkWidth(showLinks ? () => 0.35 : 0)
+  }, [showLinks])
 
   useEffect(() => {
     let dead = false
@@ -63,7 +83,8 @@ export default function GraphView() {
       setStats({ nodes: data.nodes.length, links: data.links.length, total: data.totalFiles })
 
       const links3d = data.links.map(([s, t]: [string, string]) => ({ source: s, target: t }))
-      const nodeById = new Map(data.nodes.map((n: any) => [n.id, n]))
+      const nodes3d = data.nodes.map((n: any) => ({ ...n }))
+      const nodeById = new Map(nodes3d.map((n: any) => [n.id, n]))
 
       // activity heats synapses around recently-written notes
       const heatNode = (id: string) => {
@@ -92,9 +113,9 @@ export default function GraphView() {
           // user inspecting a node = interest signal → heat its synapses
           heatNode(n.id)
         })
-        .graphData({ nodes: data.nodes.map((n: any) => ({ ...n })), links: links3d })
+        .graphData({ nodes: nodes3d, links: links3d })
 
-      // ── synapse pulses: sprites traveling link source→target ──
+      // ── synapse pulses + neuron spikes: sprites traveling links or flashing nodes ──
       const scene = Graph.scene()
       const tex = getGlowTex()
       const sprites: THREE.Sprite[] = []
@@ -110,24 +131,41 @@ export default function GraphView() {
       spritesRef.current = sprites
       pulsesRef.current = []
 
-      const pickLink = (hotOnly: boolean) => {
+      const pos = (n: any): any => n.__threeObj?.position ?? n
+
+      const isHot = (id: string) => (hotRef.current.get(id) ?? 0) > Date.now()
+
+      const spawnLinkPulse = (hotOnly: boolean): Pulse | null => {
+        let pool = links3d
         if (hotOnly) {
           const hot = links3d.filter((l: any) => {
             const s = typeof l.source === 'object' ? l.source.id : l.source
             const t = typeof l.target === 'object' ? l.target.id : l.target
-            return (hotRef.current.get(s) ?? 0) > Date.now() || (hotRef.current.get(t) ?? 0) > Date.now()
+            return isHot(s) || isHot(t)
           })
-          if (hot.length) return hot[Math.floor(Math.random() * hot.length)]
+          if (hot.length) pool = hot
         }
-        return links3d[Math.floor(Math.random() * links3d.length)]
+        const l = pool[Math.floor(Math.random() * pool.length)]
+        if (!l) return null
+        return { link: l, t: 0, speed: 0.004 + Math.random() * 0.012, life: 1, hot: hotOnly }
       }
 
-      const spawn = (hot: boolean) => {
-        const l = pickLink(hot)
-        if (!l) return null
-        return { link: l, t: 0, speed: 0.004 + Math.random() * 0.012, life: 1, hot }
+      const spawnSpike = (hotOnly: boolean): Pulse | null => {
+        // neuron firing in place — biased to hot nodes, big fast flash
+        let pool = nodes3d
+        if (hotOnly) {
+          const hot = nodes3d.filter((n: any) => isHot(n.id))
+          if (hot.length) pool = hot
+        }
+        const n = pool[Math.floor(Math.random() * pool.length)]
+        if (!n) return null
+        return { node: n, t: 0, speed: 0, life: 1, hot: hotOnly }
       }
-      // seed ambient pulses
+
+      const spawn = (hot: boolean): Pulse | null =>
+        showLinksRef.current ? spawnLinkPulse(hot) : spawnSpike(hot)
+
+      // seed ambient activity
       for (let i = 0; i < PULSE_COUNT * 0.6; i++) {
         const p = spawn(false)
         if (p) { p.t = Math.random(); pulsesRef.current.push(p) }
@@ -138,30 +176,51 @@ export default function GraphView() {
         if (dead) return
         rafRef.current = requestAnimationFrame(tick)
         const now = Date.now()
-        // decay heat
         for (const [k, until] of hotRef.current) if (until < now) hotRef.current.delete(k)
 
         const pulses = pulsesRef.current
-        // maintain population — biased toward hot synapses
         while (pulses.length < PULSE_COUNT) {
           const hot = hotRef.current.size > 0 && Math.random() < 0.7
           const p = spawn(hot)
           if (p) pulses.push(p); else break
         }
+        // if links toggled off mid-flight, convert link pulses to spikes
+        if (!showLinksRef.current) {
+          for (const p of pulses) if (p.link) { p.link = undefined; p.node = nodes3d[Math.floor(Math.random() * nodes3d.length)]; p.t = 0; p.speed = 0; p.life = Math.min(p.life, 0.6) }
+        }
 
         for (let i = pulses.length - 1; i >= 0; i--) {
           const p = pulses[i]
+          const sprite = sprites[i] ?? sprites[0]
+          const flicker = 0.55 + Math.random() * 0.45
+
+          if (p.node) {
+            // ── neuron spike: flash at node position, fast decay ──
+            p.life -= 0.03
+            if (p.life <= 0) { pulses.splice(i, 1); continue }
+            const np = pos(p.node)
+            tmp.set(
+              (np.x ?? 0) + (Math.random() - 0.5) * 2,
+              (np.y ?? 0) + (Math.random() - 0.5) * 2,
+              (np.z ?? 0) + (Math.random() - 0.5) * 2
+            )
+            sprite.position.copy(tmp)
+            sprite.material.opacity = p.life * flicker
+            sprite.scale.setScalar((p.hot ? 7 : 4.5) * (1.6 - p.life * 0.6) + Math.random())
+            ;(sprite.material.color as THREE.Color).setHex(p.hot ? 0x7dd3fc : 0x38bdf8)
+            continue
+          }
+
+          // ── synapse pulse: travel link source→target ──
           p.t += p.speed * (p.hot ? 1.8 : 1)
           p.life -= 0.004
-          const s: any = typeof p.link.source === 'object' ? p.link.source : nodeById.get(p.link.source)
-          const t: any = typeof p.link.target === 'object' ? p.link.target : nodeById.get(p.link.target)
+          const l = p.link
+          const s: any = typeof l.source === 'object' ? l.source : nodeById.get(l.source)
+          const t: any = typeof l.target === 'object' ? l.target : nodeById.get(l.target)
           if (!s || !t || p.t >= 1 || p.life <= 0) {
             pulses.splice(i, 1)
             continue
           }
-          const sprite = sprites[i] ?? sprites[0]
-          // d3-force-3d writes x/y/z on node datums; __threeObj.position is the fallback
-          const pos = (n: any): any => n.__threeObj?.position ?? n
           const ps = pos(s); const pt = pos(t)
           tmp.set(
             (ps.x ?? 0) + ((pt.x ?? 0) - (ps.x ?? 0)) * p.t,
@@ -169,17 +228,15 @@ export default function GraphView() {
             (ps.z ?? 0) + ((pt.z ?? 0) - (ps.z ?? 0)) * p.t
           )
           sprite.position.copy(tmp)
-          const flicker = 0.55 + Math.random() * 0.45
           sprite.material.opacity = Math.min(1, p.life * 2) * flicker
           sprite.scale.setScalar(p.hot ? 2.6 + Math.random() * 1.6 : 1.4 + Math.random() * 0.9)
           ;(sprite.material.color as THREE.Color).setHex(p.hot ? 0x7dd3fc : 0x38bdf8)
         }
-        // hide unused sprites
         for (let i = pulses.length; i < sprites.length; i++) sprites[i].material.opacity = 0
       }
       tick()
 
-      // probe removed
+      // ── live heat: poll the activity journal, fire synapses near what changed ──
       const heatTimer = setInterval(async () => {
         try {
           const acts: any[] = await window.sb.brainActivity(40)
@@ -190,8 +247,7 @@ export default function GraphView() {
           }
         } catch { /* noop */ }
       }, 12_000)
-      const cleanupHeat = () => clearInterval(heatTimer)
-      ;(Graph as any).__heatCleanup = cleanupHeat
+      ;(Graph as any).__heatCleanup = () => clearInterval(heatTimer)
 
       setLoading(false)
     })()
@@ -219,6 +275,29 @@ export default function GraphView() {
           </p>
         </div>
       </div>
+
+      {/* connections toggle */}
+      <button
+        onClick={() => setShowLinks(v => !v)}
+        title={showLinks ? 'Hide synapse connections' : 'Show synapse connections'}
+        style={{
+          position: 'absolute', bottom: 20, right: 20, zIndex: 6,
+          display: 'flex', alignItems: 'center', gap: 7,
+          background: 'rgba(4,8,20,.85)', backdropFilter: 'blur(8px)',
+          border: '1px solid var(--line)', borderRadius: 20,
+          padding: '7px 14px', fontFamily: 'var(--mono)', fontSize: 11,
+          color: showLinks ? '#7dd3fc' : 'var(--text-faint)', cursor: 'pointer'
+        }}
+      >
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: showLinks ? '#38bdf8' : '#334155',
+          boxShadow: showLinks ? '0 0 8px #38bdf8' : 'none',
+          transition: 'all .2s'
+        }} />
+        {showLinks ? 'synapses on' : 'synapses off'}
+      </button>
+
       {loading && (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4 }}>
           <p className="faint" style={{ fontSize: 13 }}>Firing up the connectome…</p>
