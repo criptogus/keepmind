@@ -1,6 +1,9 @@
 import type { GitHubConfig } from '../store'
 
 const API = 'https://api.github.com'
+// Device flow endpoints live on github.com, NOT api.github.com —
+// api.github.com/login/* returns 404.
+const WEB = 'https://github.com'
 
 // GitHub OAuth App credentials.
 // For the open-source release we ship a public client_id for the device flow.
@@ -17,7 +20,7 @@ export interface DeviceCode {
 }
 
 export async function startDeviceFlow(): Promise<DeviceCode> {
-  const res = await fetch(`${API}/login/device/code`, {
+  const res = await fetch(`${WEB}/login/device/code`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: CLIENT_ID, scope: SCOPES })
@@ -26,8 +29,13 @@ export async function startDeviceFlow(): Promise<DeviceCode> {
   return res.json()
 }
 
-export async function pollDeviceFlow(deviceCode: DeviceCode): Promise<{ accessToken: string; login?: string } | null> {
-  const res = await fetch(`${API}/login/oauth/access_token`, {
+export type DevicePoll =
+  | { status: 'pending' }
+  | { status: 'slow_down' }
+  | { status: 'success'; accessToken: string; login?: string }
+
+export async function pollDeviceFlow(deviceCode: DeviceCode): Promise<DevicePoll> {
+  const res = await fetch(`${WEB}/login/oauth/access_token`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -39,9 +47,11 @@ export async function pollDeviceFlow(deviceCode: DeviceCode): Promise<{ accessTo
   const data = await res.json()
   if (data.access_token) {
     const user = await apiGet('/user', data.access_token)
-    return { accessToken: data.access_token, login: user.login }
+    return { status: 'success', accessToken: data.access_token, login: user.login }
   }
-  if (data.error === 'authorization_pending' || data.error === 'slow_down') return null
+  if (data.error === 'authorization_pending') return { status: 'pending' }
+  if (data.error === 'slow_down') return { status: 'slow_down' }
+  // expired_token / access_denied / bad_verification — terminal, caller should restart
   throw new Error(`GitHub auth error: ${data.error_description ?? data.error}`)
 }
 
@@ -68,6 +78,39 @@ async function apiSend(method: string, path: string, token: string, body?: unkno
   return res.status === 204 ? null : res.json()
 }
 
+export interface UserRepo {
+  full_name: string
+  name: string
+  owner: string
+  html_url: string
+  private: boolean
+  default_branch: string
+  description?: string
+  updated_at: string
+}
+
+// List the authenticated user's repos (newest first, up to 100).
+export async function listUserRepos(token: string): Promise<UserRepo[]> {
+  const items = await apiGet('/user/repos?per_page=100&sort=updated&type=owner', token) as any[]
+  return items.map(r => ({
+    full_name: r.full_name,
+    name: r.name,
+    owner: r.owner?.login ?? '',
+    html_url: r.html_url,
+    private: !!r.private,
+    default_branch: r.default_branch ?? 'main',
+    description: r.description ?? undefined,
+    updated_at: r.updated_at ?? ''
+  }))
+}
+
+// Validate that owner/repo exists and the token can read it.
+export async function getRepo(token: string, owner: string, repo: string) {
+  return apiGet(`/repos/${owner}/${repo}`, token) as Promise<{
+    full_name: string; html_url: string; default_branch: string; private: boolean
+  }>
+}
+
 export async function createRepo(token: string, name: string, description: string, privateRepo = true) {
   const repo = await apiSend('POST', '/user/repos', token, {
     name,
@@ -88,7 +131,7 @@ function repoCoords(cfg: GitHubConfig): { owner: string; repo: string; branch: s
   return { owner, repo, branch: cfg.defaultBranch ?? 'main' }
 }
 
-export async function pushFile(cfg: GitHubConfig, path: string, content: string, message: string) {
+export async function pushFile(cfg: GitHubConfig, path: string, content: string, message: string): Promise<string | null> {
   if (!cfg.accessToken) throw new Error('GitHub not connected')
   const { owner, repo, branch } = repoCoords(cfg)
   const encoded = encodeURIComponent(path)
@@ -101,12 +144,13 @@ export async function pushFile(cfg: GitHubConfig, path: string, content: string,
     sha = existing.sha
   } catch { /* new file */ }
 
-  await apiSend('PUT', apiPath, cfg.accessToken, {
+  const res = await apiSend('PUT', apiPath, cfg.accessToken, {
     message,
     content: Buffer.from(content, 'utf8').toString('base64'),
     branch,
     ...(sha ? { sha } : {})
   })
+  return res?.content?.sha ?? null
 }
 
 export async function listRepoFiles(cfg: GitHubConfig, dir = ''): Promise<string[]> {
@@ -138,10 +182,10 @@ export async function listTree(cfg: GitHubConfig, prefix = 'memory/'): Promise<R
 }
 
 // Delete a file under memory/ (relPath is relative to memory/).
-export async function deleteMemoryFile(cfg: GitHubConfig, relPath: string) {
+export async function deleteMemoryFile(cfg: GitHubConfig, relPath: string, root = 'memory/') {
   if (!cfg.accessToken) throw new Error('GitHub not connected')
   const { owner, repo, branch } = repoCoords(cfg)
-  const apiPath = `/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(relPath)}`
+  const apiPath = `/repos/${owner}/${repo}/contents/${root}${encodeURIComponent(relPath)}`
   let sha: string
   try {
     const existing = await apiGet(`${apiPath}?ref=${branch}`, cfg.accessToken)
@@ -153,11 +197,11 @@ export async function deleteMemoryFile(cfg: GitHubConfig, relPath: string) {
 }
 
 // Fetch a single file's content + blob sha (paths are relative to memory/).
-export async function fetchMemoryFile(cfg: GitHubConfig, relPath: string): Promise<{ content: string; sha: string } | null> {
+export async function fetchMemoryFile(cfg: GitHubConfig, relPath: string, root = 'memory/'): Promise<{ content: string; sha: string } | null> {
   if (!cfg.accessToken) return null
   try {
     const { owner, repo, branch } = repoCoords(cfg)
-    const data = await apiGet(`/repos/${owner}/${repo}/contents/memory/${encodeURIComponent(relPath)}?ref=${branch}`, cfg.accessToken)
+    const data = await apiGet(`/repos/${owner}/${repo}/contents/${root}${encodeURIComponent(relPath)}?ref=${branch}`, cfg.accessToken)
     const content = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8')
     return { content, sha: data.sha }
   } catch {

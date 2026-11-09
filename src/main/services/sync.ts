@@ -1,9 +1,9 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { Store } from '../store'
 import type { Memory } from './brain'
 import * as github from './github'
-import { ensureRepoScaffold } from './scaffold'
+import { ensureRepoScaffold, exportBrainConfig } from './scaffold'
 
 // ── GitSync: keeps local memory/ and the GitHub repo continuously in sync ──
 //
@@ -27,6 +27,8 @@ interface SyncState {
 const PULL_INTERVAL_MS = 60_000
 const PUSH_DEBOUNCE_MS = 2_500
 const PUSH_MIN_INTERVAL_MS = 5_000
+// Text formats worth mirroring — skips images/binaries/attachments on vault imports
+const TEXT_FILE_RE = /\.(md|markdown|txt|json|canvas|csv|org|base)$/i
 
 export class GitSync {
   private memory: Memory
@@ -100,6 +102,8 @@ export class GitSync {
     try {
       const pushed = await ensureRepoScaffold(this.store.get().github)
       if (pushed.length) console.log(`[sync] repo scaffold pushed: ${pushed.join(', ')}`)
+      // keepmind.json — sanitized brain-as-code snapshot at repo root
+      await exportBrainConfig(this.store.get().github, this.store.get())
     } catch (e) {
       this.scaffoldDone = false // retry on next start
       console.warn('[sync] scaffold failed:', e)
@@ -157,12 +161,22 @@ export class GitSync {
         const content = this.memory.read(rel)
         if (content == null) {
           // local deletion → propagate to GitHub
-          try { await github.deleteMemoryFile(gh, rel) } catch { /* may already be gone */ }
+          try { await github.deleteMemoryFile(gh, rel, this.syncRoot) } catch { /* may already be gone */ }
           delete this.state.sha[rel]
           this.dirty.delete(rel)
           continue
         }
-        await github.pushFile(gh, `memory/${rel}`, content, 'sync: keepmind update')
+        // Conflict guard: if the remote file moved since our last sync (or exists
+        // untracked) while we hold unsynced local changes, preserve the remote
+        // version under conflicts/ before overwriting — nothing is lost.
+        const expected = this.state.sha[rel]
+        const remote = await github.fetchMemoryFile(gh, rel, this.syncRoot).catch(() => null)
+        if (remote && remote.sha !== expected) {
+          this.memory.syncWrite(`conflicts/${rel}`, `<!-- remote version preserved ${new Date().toISOString()} — local version won the push -->\n\n${remote.content}`)
+          this.dirty.add(`conflicts/${rel}`)
+        }
+        const newSha = await github.pushFile(gh, `${this.syncRoot}${rel}`, content, 'sync: keepmind update')
+        if (newSha) this.state.sha[rel] = newSha
         this.dirty.delete(rel)
         this.lastPushAt = Date.now()
       }
@@ -178,34 +192,65 @@ export class GitSync {
     }
   }
 
+  // Repo prefix mirrored into local memory/. 'memory/' for keepmind-native repos,
+  // '' when an existing vault (Obsidian/PARA) is imported — its layout becomes ours.
+  private get syncRoot(): string {
+    return this.store.get().github.syncRoot ?? 'memory/'
+  }
+
   private async pull(): Promise<void> {
     if (this.pulling || !this.connected()) return
     this.pulling = true
     this.lastPullAttempt = Date.now()
     this.emit()
     const gh = this.store.get().github
+    const root = this.syncRoot
     try {
-      const remote = await github.listTree(gh, 'memory/')
+      appendFileSync(this.stateFile + '.debug', `${new Date().toISOString()} pull start root=${JSON.stringify(root)} token=${!!gh.accessToken} owner=${gh.repoOwner}\n`)
+      const remote = await github.listTree(gh, root)
       const remoteMap = new Map(remote.map(r => [r.path, r.sha]))
+      try {
+        appendFileSync(this.stateFile + '.debug',
+          `${new Date().toISOString()} root=${JSON.stringify(root)} remote=${remote.length} tracked=${Object.keys(this.state.sha).length} sample=${remote.slice(0, 3).map(r => r.path).join(',')}\n`)
+      } catch { /* noop */ }
+
+      // Safety: an empty/suspiciously-small remote tree must never trigger
+      // mass local deletion — a failed API call returns [] indistinguishable
+      // from an empty repo, and we already wiped a 9.5k-file vault once.
+      const tracked = Object.keys(this.state.sha).length
+      if (remote.length === 0 && tracked > 0) {
+        console.warn(`[sync] remote tree empty but ${tracked} files tracked — skipping pull to avoid data loss`)
+        return
+      }
 
       // 1) Remote files that are new or changed → download & write locally
       for (const { path: rel, sha } of remote) {
         if (this.dirty.has(rel)) continue // local write wins until pushed
         if (this.state.sha[rel] === sha) continue // unchanged
-        const file = await github.fetchMemoryFile(gh, rel)
+        if (!TEXT_FILE_RE.test(rel)) continue // skip binaries/attachments on vault import
+        if (rel.split('/').slice(0, -1).some(s => s.startsWith('.'))) continue // skip .obsidian/ etc.
+        const file = await github.fetchMemoryFile(gh, rel, root)
         if (!file) continue
         try {
-          this.memory.quietWrite(rel, file.content)
+          this.memory.syncWrite(rel, file.content)
           this.state.sha[rel] = file.sha
         } catch (e) {
           console.warn(`[sync] skipped unsafe remote path ${rel}:`, e)
         }
       }
 
-      // 2) Remote deletions → remove locally (unless dirty)
+      // 2) Remote deletions → remove locally (unless dirty).
+      //    Guard: never delete more than half the tracked files in one pull —
+      //    a truncated/wrong-prefix tree looks like mass deletion.
+      let deletions = 0
       for (const rel of Object.keys(this.state.sha)) {
         if (!remoteMap.has(rel) && !this.dirty.has(rel)) {
-          try { this.memory.quietRemove(rel) } catch { /* unsafe path — skip */ }
+          deletions++
+          if (deletions > Math.max(10, tracked / 2)) {
+            console.warn(`[sync] aborting pull: ${deletions} remote deletions exceeds safety threshold`)
+            break
+          }
+          try { this.memory.syncRemove(rel) } catch { /* unsafe path — skip */ }
           delete this.state.sha[rel]
         }
       }
@@ -223,6 +268,7 @@ export class GitSync {
       this.state.lastPull = new Date().toISOString()
       this.saveState()
     } catch (e) {
+      try { appendFileSync(this.stateFile + '.debug', `${new Date().toISOString()} pull error: ${e}\n`) } catch { /* noop */ }
       console.warn('[sync] pull failed:', e)
     } finally {
       this.pulling = false

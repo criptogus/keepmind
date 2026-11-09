@@ -18,6 +18,10 @@ const api = {
   ghStartDeviceFlow: () => ipcRenderer.invoke('github:startDeviceFlow'),
   ghPollDeviceFlow: (dc: any) => ipcRenderer.invoke('github:pollDeviceFlow', dc),
   ghCreateRepo: (name: string, desc: string) => ipcRenderer.invoke('github:createRepo', name, desc),
+  ghListRepos: () => ipcRenderer.invoke('github:listRepos'),
+  ghUseRepo: (owner: string, repo: string) => ipcRenderer.invoke('github:useRepo', owner, repo),
+  modelsList: () => ipcRenderer.invoke('models:list'),
+  modelsDelete: (key: string) => ipcRenderer.invoke('models:delete', key),
   ghPushMemory: (msg: string) => ipcRenderer.invoke('github:pushMemory', msg),
 
   // local llm
@@ -37,7 +41,9 @@ const api = {
   mcpStop: (id: string) => ipcRenderer.invoke('mcp:stop', id),
   mcpStatus: () => ipcRenderer.invoke('mcp:status'),
   whatsappQr: () => ipcRenderer.invoke('mcp:whatsappQr'),
+  connectorQr: (id: string) => ipcRenderer.invoke('mcp:connectorQr', id),
   mcpLogs: () => ipcRenderer.invoke('mcp:logs'),
+  connectInfo: () => ipcRenderer.invoke('connect:info'),
 
   // auth
   authState: () => ipcRenderer.invoke('auth:state'),
@@ -81,6 +87,9 @@ const api = {
   automationPending: () => ipcRenderer.invoke('automation:pending'),
   automationApprove: (id: string) => ipcRenderer.invoke('automation:approve', id),
   automationReject: (id: string) => ipcRenderer.invoke('automation:reject', id),
+  automationSetWebhook: (id: string, enabled: boolean) => ipcRenderer.invoke('automation:setWebhook', id, enabled),
+  hooksStatus: () => ipcRenderer.invoke('hooks:status'),
+  hooksSetLan: (lan: boolean) => ipcRenderer.invoke('hooks:setLan', lan),
 
   // brain
   brainChat: (agentId: string, message: string) => ipcRenderer.invoke('brain:chat', agentId, message),
@@ -92,7 +101,28 @@ const api = {
   brainListInsights: () => ipcRenderer.invoke('brain:listInsights'),
   brainListSummaries: () => ipcRenderer.invoke('brain:listSummaries'),
   brainListMemory: () => ipcRenderer.invoke('brain:listMemory'),
+  brainGraph: () => ipcRenderer.invoke('brain:graph'),
+  brainBriefing: (force?: boolean) => ipcRenderer.invoke('brain:briefing', force),
+  brainMemoryFile: (rel: string) => ipcRenderer.invoke('brain:memoryFile', rel),
   brainActivity: (limit?: number) => ipcRenderer.invoke('brain:activity', limit),
+  onActivityPush: (cb: (e: any) => void) => {
+    const handler = (_e: any, entry: any) => cb(entry)
+    ipcRenderer.on('brain:activityPush', handler)
+    return () => { ipcRenderer.removeListener('brain:activityPush', handler) }
+  },
+  brainExportConfig: () => ipcRenderer.invoke('brain:exportConfig'),
+  brainHealth: () => ipcRenderer.invoke('brain:health'),
+  brainHealthApply: (recId: string) => ipcRenderer.invoke('brain:healthApply', recId),
+  brainSkills: () => ipcRenderer.invoke('brain:skills'),
+  brainSkillInstall: (slug: string) => ipcRenderer.invoke('brain:skillInstall', slug),
+  securityStatus: () => ipcRenderer.invoke('security:status'),
+  securityScan: () => ipcRenderer.invoke('security:scan'),
+  securityConfigure: (patch: any) => ipcRenderer.invoke('security:configure', patch),
+  securityEncryptAll: () => ipcRenderer.invoke('security:encryptAll'),
+  securityDecryptAll: () => ipcRenderer.invoke('security:decryptAll'),
+  securityAiAlerts: () => ipcRenderer.invoke('security:aiAlerts'),
+  appLaunchAtLogin: () => ipcRenderer.invoke('app:launchAtLogin'),
+  appSetLaunchAtLogin: (enabled: boolean) => ipcRenderer.invoke('app:setLaunchAtLogin', enabled),
   onBrainDelta: (cb: (t: string) => void) => {
     const handler = (_e: any, t: string) => cb(t)
     ipcRenderer.on('brain:delta', handler)

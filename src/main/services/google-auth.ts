@@ -52,7 +52,7 @@ export function googleLogin(creds: GoogleCreds | null | undefined): Promise<Goog
         const err = url.searchParams.get('error')
         const st = url.searchParams.get('state')
         if (err || !code || st !== state) {
-          res.writeHead(200, { 'Content-Type': 'text/html' })
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
           res.end('<html><body style="background:#030712;color:#7dd3fc;font-family:monospace;display:grid;place-items:center;height:100vh"><h2>Sign-in cancelled — you can close this tab.</h2></body></html>')
           clearTimeout(timer); server?.close()
           reject(new Error(err ? `Google sign-in failed: ${err}` : 'Missing auth code'))
@@ -80,7 +80,7 @@ export function googleLogin(creds: GoogleCreds | null | undefined): Promise<Goog
         if (!info?.sub || !info?.email) {
           throw new Error(`Google sign-in failed: incomplete profile (${info?.error ?? 'missing sub/email'})`)
         }
-        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         res.end('<html><body style="background:#030712;color:#a3e635;font-family:monospace;display:grid;place-items:center;height:100vh"><h2>✓ Signed in — return to KeepMind.</h2></body></html>')
         clearTimeout(timer); server?.close()
         resolve({ sub: info.sub, email: info.email, name: info.name, picture: info.picture })

@@ -1,6 +1,7 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import type { GitHubConfig } from '../store'
+import { app } from 'electron'
+import type { AppConfig, GitHubConfig } from '../store'
 import * as github from './github'
 
 // ── Repo scaffold: files that teach ANY agent how to use this memory repo ──
@@ -61,6 +62,7 @@ OpenCode or any MCP client can spawn the same command.
 - Markdown only. One fact per bullet in \`long-term/\` files.
 - Tasks: first line \`# Title\`, second line \`> status: open|done · priority: low|normal|high · due: YYYY-MM-DD · created: ISO\`.
 - Notes may carry YAML frontmatter (\`summary:\`, \`tags:\`, \`links:\`, \`enriched:\`) — preserve it when editing.
+- Classify sensitivity in frontmatter: \`sensitivity: public|internal|sensitive|secret\`. The app masks secret-shaped values (API keys, tokens, private keys, password assignments) before any content reaches a cloud LLM — local models see everything. Use \`secret\` for credentials, financial or board-confidential material.
 - Notes may also declare freshness: \`valido_ate: YYYY-MM-DD\` (or \`expires:\`) — expired notes are demoted in search. Set \`review_after:\` for time-sensitive content.
 - Distinguish hypothesis from fact: prefix unverified claims with \`> proof: hypothesis\`; confirmed ones with \`> proof: confirmed\`.
 - Link recurring people/projects/topics with \`[[Name]]\` — entity pages live in \`memory/entities/\`.
@@ -102,6 +104,17 @@ function mcpServerSource(): string {
   throw new Error('keepmind-mcp.mjs not found')
 }
 
+// Materialize the zero-dep MCP server on disk so EXTERNAL agents/CLIs
+// (Codex, Claude Code, Cursor, bots on a VPS…) can spawn it — files inside
+// app.asar are not executable by a plain `node` process.
+export function ensureMcpServerScript(): string {
+  const dir = join(app.getPath('userData'), 'mcp')
+  mkdirSync(dir, { recursive: true })
+  const dest = join(dir, 'keepmind-mcp.mjs')
+  writeFileSync(dest, mcpServerSource(), 'utf8')
+  return dest
+}
+
 export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
   if (!gh.accessToken || !gh.repoOwner) return []
   const [root, tools] = await Promise.all([
@@ -128,4 +141,35 @@ export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
     pushed.push(path)
   }
   return pushed
+}
+
+// ── keepmind.json: "brain as code" ──
+// A sanitized declaration of the brain — agents, automations, connectors,
+// model prefs — at the repo ROOT (outside memory/). Any bot or agent that
+// clones the repo can see how the brain is configured. NEVER includes
+// secrets: no API keys, tokens, env values or webhook tokens.
+
+export function brainConfigJson(cfg: AppConfig): string {
+  const doc = {
+    $schema: 'keepmind/v1',
+    generatedAt: new Date().toISOString(),
+    note: 'Declarative snapshot of this KeepMind brain. Secrets are never included. Memory lives under memory/.',
+    ai: { provider: cfg.ai.provider, model: cfg.ai.model ?? null, localModel: cfg.localLlm.modelId ?? null },
+    agents: cfg.agents.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, builtin: !!a.builtin })),
+    automations: cfg.automations.map(a => ({
+      id: a.id, name: a.name, kind: a.kind, schedule: a.schedule,
+      time: a.time ?? null, everyMinutes: a.everyMinutes ?? null,
+      weekday: a.weekday ?? null, enabled: a.enabled, mode: a.mode ?? 'auto'
+    })),
+    connectors: cfg.mcpServers.map(s => ({
+      id: s.id, name: s.name, kind: s.kind, enabled: s.enabled,
+      permission: s.permission ?? 'allow', custom: s.kind === 'custom'
+    }))
+  }
+  return JSON.stringify(doc, null, 2) + '\n'
+}
+
+export async function exportBrainConfig(gh: GitHubConfig, cfg: AppConfig): Promise<void> {
+  if (!gh.accessToken || !gh.repoOwner) throw new Error('GitHub not configured')
+  await github.pushFile(gh, 'keepmind.json', brainConfigJson(cfg), 'chore: refresh keepmind.json brain config')
 }

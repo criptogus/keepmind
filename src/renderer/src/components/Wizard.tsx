@@ -1,23 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { BrainMark } from './icons'
-
 interface Props {
   config: any
   onDone: () => void
   onToast: (msg: string, kind?: 'info' | 'error' | 'success') => void
 }
 
-const STEPS = ['Welcome', 'GitHub', 'AI', 'Connectors', 'Done']
+const STEPS = ['Welcome', 'GitHub', 'AI', 'Agents', 'Done']
 
 const PROVIDERS = [
-  { id: 'local', emoji: '🏠', name: 'Local (recommended)', desc: 'Runs on your PC, offline, private. Downloads ~2GB once.' },
-  { id: 'codex', emoji: '🟢', name: 'Codex / ChatGPT', desc: 'Uses your Codex CLI login (~/.codex). No key needed.' },
-  { id: 'claude-oauth', emoji: '🧠', name: 'Claude (sign-in)', desc: 'Claude Pro/Max — run `claude setup-token` and paste it.' },
-  { id: 'anthropic', emoji: '🔑', name: 'Claude API', desc: 'Anthropic API key. Pay-per-token.' },
-  { id: 'openai', emoji: '⚡', name: 'OpenAI', desc: 'OpenAI API key (GPT-4o, o-series).' },
-  { id: 'grok', emoji: '𝕏', name: 'Grok', desc: 'xAI API key from console.x.ai.' },
-  { id: 'gemini', emoji: '✨', name: 'Gemini', desc: 'Free API key from Google AI Studio.' },
-  { id: 'ollama', emoji: '🦙', name: 'Ollama', desc: 'If you already have Ollama installed with models.' }
+  { id: 'local', mark: '⌂', accent: '#22d3ee', name: 'Local (recommended)', desc: 'Runs on your PC, offline, private. Downloads ~2GB once.' },
+  { id: 'codex', mark: '◎', accent: '#4ade80', name: 'Codex / ChatGPT', desc: 'Uses your Codex CLI login (~/.codex). No key needed.' },
+  { id: 'claude-oauth', mark: '✳', accent: '#c4b5fd', name: 'Claude (sign-in)', desc: 'Claude Pro/Max — run `claude setup-token` and paste it.' },
+  { id: 'anthropic', mark: 'A', accent: '#fbbf24', name: 'Claude API', desc: 'Anthropic API key. Pay-per-token.' },
+  { id: 'openai', mark: 'O', accent: '#34d399', name: 'OpenAI', desc: 'OpenAI API key (GPT-4o, o-series).' },
+  { id: 'grok', mark: 'X', accent: '#e5e7eb', name: 'Grok', desc: 'xAI API key from console.x.ai.' },
+  { id: 'gemini', mark: 'G', accent: '#60a5fa', name: 'Gemini', desc: 'Free API key from Google AI Studio.' },
+  { id: 'ollama', mark: 'L', accent: '#fb923c', name: 'Ollama', desc: 'If you already have Ollama installed with models.' }
 ]
 
 export default function Wizard({ config, onDone, onToast }: Props) {
@@ -25,7 +24,12 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   const [busy, setBusy] = useState(false)
 
   const [ghDevice, setGhDevice] = useState<any>(null)
+  const [ghCopied, setGhCopied] = useState(false)
   const [ghLogin, setGhLogin] = useState('')
+  const [ghWaitSec, setGhWaitSec] = useState(0)
+  const [repoMode, setRepoMode] = useState<'create' | 'import'>('create')
+  const [userRepos, setUserRepos] = useState<any[]>([])
+  const [importRef, setImportRef] = useState('')
   const [repoName, setRepoName] = useState('')
   const [repoCreated, setRepoCreated] = useState(false)
   const pollRef = useRef<any>(null)
@@ -38,51 +42,49 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   const [aiTest, setAiTest] = useState<{ ok: boolean; msg: string } | null>(null)
   const [codexStatus, setCodexStatus] = useState<any>(null)
 
-  const [waQr, setWaQr] = useState<any>(null)
-  const [tgToken, setTgToken] = useState('')
-  const [pgUrl, setPgUrl] = useState('')
-  const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({})
-
   useEffect(() => {
     window.sb.localLlmStatus().then(setLocalStatus)
     window.sb.aiCodexStatus?.().then(setCodexStatus).catch(() => {})
     const off = window.sb.onLocalLlmProgress(setLocalProgress)
-    window.sb.mcpStatus().then(s => {
-      const map: Record<string, boolean> = {}
-      for (const id of ['whatsapp', 'telegram', 'postgres']) map[id] = s.running.includes(id)
-      setServerStatus(map)
-    })
     return off
   }, [])
 
   useEffect(() => {
+    if (!ghDevice || ghLogin) return
+    setGhWaitSec(0)
+    const t = setInterval(() => setGhWaitSec(s => s + 1), 1000)
+    return () => clearInterval(t)
+  }, [ghDevice, ghLogin])
+
+  useEffect(() => {
     if (!ghDevice) return
+    let nextPollAt = 0
     pollRef.current = setInterval(async () => {
+      if (Date.now() < nextPollAt) return // honoring slow_down backoff
       try {
-        const res = await window.sb.ghPollDeviceFlow(ghDevice)
-        if (res) {
+        const res: any = await window.sb.ghPollDeviceFlow(ghDevice)
+        if (res?.status === 'success') {
           clearInterval(pollRef.current)
           setGhLogin(res.login ?? 'you')
           setRepoName(`keepmind-${res.login ?? 'me'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'))
           onToast('GitHub connected!', 'success')
+        } else if (res?.status === 'slow_down') {
+          nextPollAt = Date.now() + 10_000
         }
+        // 'pending' → keep polling
       } catch (e: any) {
-        clearInterval(pollRef.current)
-        onToast(`GitHub: ${e?.message ?? e}`, 'error')
+        const msg = String(e?.message ?? e)
+        if (/expired|denied|bad_verification/i.test(msg)) {
+          // terminal — the code is dead, let the user restart the flow
+          clearInterval(pollRef.current)
+          setGhDevice(null)
+          onToast(`GitHub: ${msg} — start the connection again`, 'error')
+        }
+        // transient errors (network blips) → keep polling
       }
     }, Math.max(ghDevice.interval ?? 5, 5) * 1000)
     return () => clearInterval(pollRef.current)
   }, [ghDevice])
-
-  useEffect(() => {
-    if (step !== 3 || !serverStatus.whatsapp) return
-    const t = setInterval(async () => {
-      const qr = await window.sb.whatsappQr()
-      setWaQr(qr)
-      if (qr?.status === 'connected') onToast('WhatsApp connected!', 'success')
-    }, 2500)
-    return () => clearInterval(t)
-  }, [step, serverStatus.whatsapp])
 
   const startGithub = async () => {
     setBusy(true)
@@ -93,6 +95,31 @@ export default function Wizard({ config, onDone, onToast }: Props) {
       onToast(`Code: ${dc.user_code}`, 'info')
     } catch (e: any) {
       onToast(`GitHub failed: ${e?.message ?? e} — check the OAuth App is configured`, 'error')
+    } finally { setBusy(false) }
+  }
+
+  // Once GitHub is connected, offer the user's repos for import
+  useEffect(() => {
+    if (!ghLogin) return
+    window.sb.ghListRepos?.().then((repos: any[]) => {
+      const sorted = [...(repos ?? [])].sort((a, b) => {
+        const score = (r: any) => /brain|second|keepmind|memory/i.test(r.full_name) ? 0 : 1
+        return score(a) - score(b)
+      })
+      setUserRepos(sorted)
+      if (sorted[0] && !importRef) setImportRef(sorted[0].full_name)
+    }).catch(() => {})
+  }, [ghLogin])
+
+  const useExistingRepo = async () => {
+    setBusy(true)
+    try {
+      const [owner, name] = importRef.split('/')
+      await window.sb.ghUseRepo(owner, name)
+      setRepoCreated(true)
+      onToast(`Repo linked: ${importRef}`, 'success')
+    } catch (e: any) {
+      onToast(`Repo: ${e?.message ?? e}`, 'error')
     } finally { setBusy(false) }
   }
 
@@ -141,33 +168,6 @@ export default function Wizard({ config, onDone, onToast }: Props) {
     } finally { setBusy(false) }
   }
 
-  const toggleServer = async (id: string, kind: string) => {
-    const running = serverStatus[id]
-    if (running) {
-      await window.sb.mcpStop(id)
-      setServerStatus(s => ({ ...s, [id]: false }))
-      return
-    }
-    try {
-      if (kind === 'telegram') {
-        if (!tgToken.trim()) { onToast('Paste the bot token first', 'error'); return }
-        await window.sb.updateMcp(id, { env: { TELEGRAM_BOT_TOKEN: tgToken.trim() }, enabled: true })
-      }
-      if (kind === 'postgres') {
-        if (!pgUrl.trim()) { onToast('Paste the DATABASE_URL first', 'error'); return }
-        await window.sb.updateMcp(id, { env: { DATABASE_URL: pgUrl.trim() }, enabled: true })
-      }
-      if (kind === 'whatsapp') {
-        await window.sb.updateMcp(id, { enabled: true })
-      }
-      const res = await window.sb.mcpStart(id)
-      setServerStatus(s => ({ ...s, [id]: true }))
-      onToast(`${id} connected (${res.tools.length} tools)`, 'success')
-    } catch (e: any) {
-      onToast(`${id}: ${e?.message ?? e}`, 'error')
-    }
-  }
-
   const skipConnectors = async () => {
     await window.sb.setConfig({ onboardingDone: true })
     onDone()
@@ -184,7 +184,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
   }
 
   const next = () => {
-    if (step === 1 && !repoCreated && ghLogin) { createRepo(); return }
+    if (step === 1 && !repoCreated && ghLogin) { repoMode === 'import' ? useExistingRepo() : createRepo(); return }
     if (step === 2) { saveProvider(); return }
     if (step === 3) { skipConnectors(); return }
     setStep(s => Math.min(s + 1, STEPS.length - 1))
@@ -194,7 +194,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
     <div className="view" style={{ display: 'flex', alignItems: 'center' }}>
       <div className="wizard">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 8 }}>SECOND BRAIN · SETUP</div>
+          <div className="hud-tag" style={{ marginBottom: 8 }}>KEEPMIND · SETUP</div>
           <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>KeepMind</h1>
           <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>
             Let&apos;s set up your digital brain in ~2 minutes.
@@ -210,19 +210,28 @@ export default function Wizard({ config, onDone, onToast }: Props) {
         {/* STEP 0 — welcome */}
         {step === 0 && (
           <div className="card wizard__card">
-            <h2>What KeepMind does</h2>
+            <h2>Your AI agents get a brain</h2>
             <p className="sub">
-              It connects your apps (GitHub, WhatsApp, Telegram, databases), stores memories in
-              <strong> your own GitHub repo</strong>, and learns while you sleep — nightly cycles
-              distill facts, lessons and skills — powered by any AI you plug in, local or cloud.
+              KeepMind is not a note app — it&apos;s the <strong>persistent memory engine your LLMs plug into</strong>.
+              Connect Codex, Claude, Cursor or any agent via MCP and it starts learning on its own:
+              reading, writing, organizing and consolidating knowledge in the background while you sleep.
             </p>
+            <div className="card card-pad" style={{ padding: '14px 18px', marginBottom: 16, borderColor: 'rgba(34,211,238,.35)' }}>
+              <p className="faint" style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                🔓 <strong style={{ color: 'var(--text)' }}>Never locked to one model.</strong>{' '}
+                Your entire knowledge base is plain Markdown in <em>your</em> GitHub repo — swap Codex for Claude,
+                Cursor for Grok, local for cloud, at any moment. Zero migration, zero export, zero loss.
+                The agents are replaceable. The brain is yours.
+              </p>
+            </div>
             <div className="grid grid-2" style={{ marginBottom: 8 }}>
               {[
-                ['💾', 'Own memory', 'Everything lives in a private repo that is yours — portable, versioned.'],
-                ['🔌', 'Connectors', 'WhatsApp (QR), Telegram, Postgres and any MCP server.'],
-                ['🧠', 'Local AI', 'Bundled open-source model — works fully offline.'],
-                ['🌙', 'Sleep learning', 'Nightly cycles review the day and distill durable memory.'],
-                ['🕸️', 'Entity graph', 'Recurring people and projects become linked knowledge pages.']
+                ['🧠', 'Agent-native memory', 'LLMs read & write via MCP tools — no copy-paste, no context loss between sessions.'],
+                ['🔁', 'Swap brains anytime', 'Change provider whenever you want. Same memory, same skills — knowledge never leaves your repo.'],
+                ['🌙', 'Sleep-cycle learning', 'Nightly cycles replay the day and distill durable facts, lessons and skills — like memory consolidation in a real brain.'],
+                ['🧬', 'Living synaptic map', 'A real-time 3D graph of how your memories connect — watch knowledge fire as agents write.'],
+                ['🗂️', 'Tiered memory + semantic search', 'Short → medium → long-term consolidation, embeddings-powered recall, entity graph linking people & projects.'],
+                ['⚙️', 'Self-improving brain', 'Automations, skill evolution, dedup and memory hygiene — the brain maintains itself and recommends what to run next.']
               ].map(([e, t, d]) => (
                 <div key={t} className="card card-pad" style={{ padding: '16px 18px' }}>
                   <div className="feat-emoji" style={{ fontSize: 22, marginBottom: 8 }}>{e}</div>
@@ -262,13 +271,57 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                   fontSize: 32, fontWeight: 700, letterSpacing: '0.2em',
                   color: 'var(--blue-bright)', textShadow: '0 0 20px var(--glow)',
                   padding: '14px', borderRadius: 10, background: 'rgba(3,7,18,.7)',
-                  border: '1px solid var(--line-bright)', marginBottom: 14
+                  border: '1px solid var(--line-bright)', marginBottom: 10,
+                  display: 'inline-block'
                 }}>
                   {ghDevice.user_code}
                 </div>
-                <p className="faint" style={{ fontSize: 12 }}>Waiting for authorization… the GitHub window should already be open.</p>
-                <div className="progress-bar" style={{ maxWidth: 280, margin: '14px auto 0' }}>
-                  <div style={{ width: '60%' }} />
+                <div style={{ marginBottom: 14 }}>
+                  <button
+                    className="btn btn--ghost"
+                    style={{ fontSize: 12, padding: '5px 14px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(ghDevice.user_code)
+                        setGhCopied(true)
+                        setTimeout(() => setGhCopied(false), 2000)
+                      } catch { /* clipboard unavailable */ }
+                    }}
+                  >
+                    {ghCopied ? '✓ Copied' : '⧉ Copy code'}
+                  </button>
+                </div>
+                <div className="gh-wait" style={{ marginBottom: 6 }}>
+                  <span className="gh-spinner" />
+                  <p className="faint" style={{ fontSize: 12.5 }}>
+                    Waiting for authorization — {ghWaitSec}s elapsed
+                  </p>
+                </div>
+                <p className="faint" style={{ fontSize: 11, marginBottom: 12 }}>
+                  Enter the code on GitHub, click <strong>Authorize</strong>, and this screen will continue automatically.
+                </p>
+                <button
+                  className="btn btn--ghost"
+                  style={{ fontSize: 12, padding: '5px 14px', marginBottom: 12 }}
+                  onClick={async () => {
+                    try {
+                      const res: any = await window.sb.ghPollDeviceFlow(ghDevice)
+                      if (res?.status === 'success') {
+                        setGhLogin(res.login ?? 'you')
+                        setRepoName(`keepmind-${res.login ?? 'me'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'))
+                        onToast('GitHub connected!', 'success')
+                      } else {
+                        onToast('Not authorized yet — finish on github.com then check again', 'info')
+                      }
+                    } catch (e: any) {
+                      onToast(`Check failed: ${e?.message ?? e}`, 'error')
+                    }
+                  }}
+                >
+                  Already authorized? Check now
+                </button>
+                <div className="progress-bar progress-bar--indeterminate" style={{ maxWidth: 280, margin: '0 auto' }}>
+                  <div />
                 </div>
               </div>
             )}
@@ -279,14 +332,54 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                 </div>
                 {!repoCreated ? (
                   <>
-                    <div className="field">
-                      <label>Repository name</label>
-                      <input value={repoName} onChange={e => setRepoName(e.target.value)} />
-                      <span className="hint">Will be created as a private repo on your GitHub automatically.</span>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                      {([['create', '＋ New repo'], ['import', '⇪ Import existing']] as const).map(([m, label]) => (
+                        <button key={m}
+                          className={`btn ${repoMode === m ? 'btn--primary' : 'btn--ghost'}`}
+                          style={{ flex: 1, fontSize: 12.5 }}
+                          onClick={() => setRepoMode(m)}>
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                    <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={next} disabled={busy}>
-                      {busy ? 'Creating…' : 'Create repository'}
-                    </button>
+                    {repoMode === 'create' ? (
+                      <>
+                        <div className="field">
+                          <label>Repository name</label>
+                          <input value={repoName} onChange={e => setRepoName(e.target.value)} />
+                          <span className="hint">Will be created as a private repo on your GitHub automatically.</span>
+                        </div>
+                        <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={next} disabled={busy}>
+                          {busy ? 'Creating…' : 'Create repository'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="field">
+                          <label>Existing repository</label>
+                          {userRepos.length > 0 ? (
+                            <select value={importRef} onChange={e => setImportRef(e.target.value)}>
+                              {userRepos.map((r: any) => (
+                                <option key={r.full_name} value={r.full_name}>
+                                  {r.full_name}{r.private ? ' 🔒' : ''}{/brain|second|keepmind|memory/i.test(r.full_name) ? ' ★' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input value={importRef} onChange={e => setImportRef(e.target.value)} placeholder="owner/repo-name" />
+                          )}
+                          <span className="hint">
+                            {userRepos.length > 0
+                              ? 'Pick a repo — its memory/ contents will sync into KeepMind. ★ = likely a brain repo.'
+                              : 'Loading your repos… or type owner/repo manually.'}
+                          </span>
+                        </div>
+                        <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={next}
+                          disabled={busy || !importRef.includes('/')}>
+                          {busy ? 'Linking…' : 'Use this repo →'}
+                        </button>
+                      </>
+                    )}
                   </>
                 ) : (
                   <div className="card card-pad" style={{ borderColor: 'rgba(52,211,153,.3)' }}>
@@ -325,9 +418,10 @@ export default function Wizard({ config, onDone, onToast }: Props) {
                 <button
                   key={p.id}
                   className={`provider-card ${provider === p.id ? 'is-selected' : ''}`}
-                  onClick={() => setProvider(p.id)}
+                  style={{ '--accent': p.accent } as any}
+                  onClick={() => { setProvider(p.id); if (p.id !== 'local' && p.id !== 'ollama') setModel('') }}
                 >
-                  <div className="p-emoji">{p.emoji}</div>
+                  <div className="p-mark" style={{ color: p.accent, borderColor: `${p.accent}55`, background: `${p.accent}14` }}>{p.mark}</div>
                   <div className="p-name">{p.name}</div>
                   <div className="p-desc">{p.desc}</div>
                 </button>
@@ -442,74 +536,39 @@ export default function Wizard({ config, onDone, onToast }: Props) {
           </div>
         )}
 
-        {/* STEP 3 — connectors */}
+        {/* STEP 3 — agents */}
         {step === 3 && (
           <div className="card wizard__card">
-            <h2>3 · Connectors (optional)</h2>
+            <h2>3 · Your agents, your brain</h2>
             <p className="sub">
-              Connect messengers and data now, or later in <strong>Connectors</strong>.
+              KeepMind exposes a local <strong>MCP server</strong> — any agent that speaks MCP can read and write
+              your memory. After setup, the <strong>Agents</strong> page has copy-paste configs and prompts for each one.
             </p>
-
-            <div className="mcp-row">
-              <span className="m-emoji">🟢</span>
-              <div className="m-info">
-                <div className="m-name">WhatsApp</div>
-                <div className="m-desc">QR-code connection (WhatsApp Web style). ⚠ Unofficial — use in moderation.</div>
-                {waQr?.status === 'qr' && (
-                  <div className="qr-box">
-                    <img src={waQr.dataUrl} alt="WhatsApp QR" />
-                    <p className="faint" style={{ color: '#333', fontSize: 12 }}>Scan with WhatsApp → Linked devices</p>
+            <div className="grid grid-2" style={{ marginBottom: 8 }}>
+              {[
+                ['◎', 'Codex / ChatGPT', 'TOML snippet for ~/.codex/config.toml — uses your existing CLI login.'],
+                ['✳', 'Claude Code', 'One command: claude mcp add keepmind. Also .mcp.json for repo work.'],
+                ['▣', 'Cursor / Gemini CLI', 'Drop-in JSON configs for .cursor/mcp.json and .gemini/settings.json.'],
+                ['𝕏', 'Grok & VPS bots', 'Same MCP server runs headless on any server — your brain travels with the repo.']
+              ].map(([e, t, d]) => (
+                <div key={t} className="card card-pad" style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 18 }}>{e}</span>
+                    <strong style={{ fontSize: 13 }}>{t}</strong>
                   </div>
-                )}
-                {waQr?.status === 'connected' && <div className="m-status on">● Connected</div>}
-              </div>
-              <button className="btn btn--sm" onClick={() => toggleServer('whatsapp', 'whatsapp')}>
-                {serverStatus.whatsapp ? 'Stop' : waQr?.status === 'qr' ? 'Waiting scan…' : 'Connect'}
-              </button>
+                  <p className="faint" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>{d}</p>
+                </div>
+              ))}
             </div>
 
-            <div className="mcp-row">
-              <span className="m-emoji">✈️</span>
-              <div className="m-info">
-                <div className="m-name">Telegram</div>
-                <div className="m-desc">Official bot via BotFather. Chat with your KeepMind remotely.</div>
-                {!serverStatus.telegram && (
-                  <input value={tgToken} onChange={e => setTgToken(e.target.value)}
-                    placeholder="Bot token (@BotFather)" className="mono"
-                    style={{ marginTop: 8, width: '100%', background: 'rgba(3,7,18,.7)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', color: 'var(--text)', fontSize: 12 }} />
-                )}
-                {serverStatus.telegram && <div className="m-status on">● Running</div>}
-              </div>
-              <button className="btn btn--sm" onClick={() => toggleServer('telegram', 'telegram')}>
-                {serverStatus.telegram ? 'Stop' : 'Connect'}
-              </button>
-            </div>
-
-            <div className="mcp-row">
-              <span className="m-emoji">🐘</span>
-              <div className="m-info">
-                <div className="m-name">Postgres (read-only)</div>
-                <div className="m-desc">Talk to your data. postgres://user:pass@host:5432/db</div>
-                {!serverStatus.postgres && (
-                  <input value={pgUrl} onChange={e => setPgUrl(e.target.value)}
-                    placeholder="postgres://…" className="mono"
-                    style={{ marginTop: 8, width: '100%', background: 'rgba(3,7,18,.7)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', color: 'var(--text)', fontSize: 12 }} />
-                )}
-                {serverStatus.postgres && <div className="m-status on">● Running</div>}
-              </div>
-              <button className="btn btn--sm" onClick={() => toggleServer('postgres', 'postgres')}>
-                {serverStatus.postgres ? 'Stop' : 'Connect'}
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button className="btn btn--ghost" onClick={() => setStep(2)}>← Back</button>
               <button className="btn btn--primary btn--lg" style={{ flex: 1 }} onClick={skipConnectors}>
                 Finish setup →
               </button>
             </div>
             <p className="faint" style={{ fontSize: 11.5, marginTop: 12, textAlign: 'center' }}>
-              You can connect more apps later — Gmail, Calendar, Notion etc. via Composio or other MCPs.
+              Everything syncs to your GitHub repo continuously — agents on other machines see the same brain.
             </p>
           </div>
         )}
@@ -522,8 +581,9 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             </div>
             <h2 style={{ fontSize: 22 }}>Your KeepMind is ready</h2>
             <p className="sub" style={{ margin: '10px auto 26px', maxWidth: 460 }}>
-              Start chatting — ask &quot;what do you know about me?&quot; Your brain learns every night.
-              Everything that happens is remembered in your repository.
+              Your brain is live. Connect an agent from the <strong>Agents</strong> page and it starts learning immediately —
+              every night it consolidates what happened, and every write syncs to your GitHub repo.
+              Change the AI whenever you want; the memory stays.
             </p>
             <button className="btn btn--primary btn--lg" style={{ width: '100%', maxWidth: 320 }} onClick={onDone}>
               Enter KeepMind →

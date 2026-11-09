@@ -3,15 +3,20 @@
 // NOTE: uses the unofficial Baileys library; WhatsApp may ban numbers that
 // automate heavily. This is an opt-in connector.
 
-import makeWASocket, {
+// Deps are externalized at build time — require() yields the CJS namespace,
+// so the callable socket factory lives on .default (or the namespace itself).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const baileys: any = require('@whiskeysockets/baileys')
+const makeWASocket: any = baileys.default ?? baileys
+const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   jidNormalizedUser,
   Browsers
-} from '@whiskeysockets/baileys'
-import { Boom } from '@hapi/boom'
+} = baileys
+import type { Boom } from '@hapi/boom'
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import QRCode from 'qrcode'

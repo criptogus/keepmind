@@ -1,4 +1,4 @@
-import { ipcMain, shell, BrowserWindow } from 'electron'
+import { ipcMain, shell, BrowserWindow, app } from 'electron'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Store, type Automation } from './store'
@@ -14,8 +14,14 @@ import type { Planner } from './services/planner'
 import * as llm from './services/llm'
 import * as github from './services/github'
 import { checkForUpdates, installUpdate, updaterStatus } from './services/updater'
+import { listModels, deleteModel } from './services/models'
+import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
+import { analyzeHealth, applyHealth } from './services/health'
+import { listVaultSkills, suggestSkills, installSkill } from './services/skillsHub'
+import { attachVaultCrypto, securityStatus, securityScan, securityConfigure, encryptAll, decryptAll, securityAiAlerts, type SecurityPatch } from './services/security'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
 import type { McpServerConfig } from './store'
+import type { HookServer } from './services/hooks'
 
 // ── IPC input validation ──
 // Renderer is sandboxed, but a compromised renderer (XSS, malicious
@@ -25,8 +31,9 @@ import type { McpServerConfig } from './store'
 
 const AI_PROVIDERS = new Set(['local', 'anthropic', 'claude-oauth', 'openai', 'codex', 'gemini', 'grok', 'ollama'])
 const MCP_KINDS = new Set(['whatsapp', 'telegram', 'postgres', 'custom'])
-const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone'])
-const MCP_PATCH_KEYS = new Set(['id', 'name', 'kind', 'enabled', 'command', 'args', 'env', 'sessionDir'])
+const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone', 'background'])
+const MCP_PATCH_KEYS = new Set(['id', 'name', 'kind', 'enabled', 'command', 'args', 'env', 'sessionDir', 'permission'])
+const MCP_PERMISSIONS = new Set(['allow', 'ask', 'block'])
 const AUTOMATION_PATCH_KEYS = new Set(['name', 'instruction', 'kind', 'schedule', 'time', 'everyMinutes', 'weekday', 'enabled', 'mode'])
 const AUTOMATION_KINDS = new Set(['brain', 'sleep', 'summary', 'librarian', 'evolve', 'enrich', 'review', 'security', 'skills', 'triage'])
 const AUTOMATION_SCHEDULES = new Set(['daily', 'interval', 'weekly'])
@@ -54,6 +61,7 @@ function validateMcpServerShape(s: any, partial: boolean): void {
     if (!MCP_KINDS.has(s.kind)) bad('mcp.kind')
   }
   if (s.enabled !== undefined && typeof s.enabled !== 'boolean') bad('mcp.enabled')
+  if (s.permission !== undefined && !MCP_PERMISSIONS.has(s.permission)) bad('mcp.permission')
   optStr(s.command, 'mcp.command')
   optStr(s.sessionDir, 'mcp.sessionDir', 1024)
   if (s.args !== undefined) {
@@ -81,7 +89,7 @@ function validateAiPatch(p: any): void {
 function validateGithubPatch(p: any): void {
   if (!isPlainObject(p)) bad('github patch')
   for (const k of Object.keys(p)) {
-    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch'].includes(k)) bad(`github.${k}`)
+    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch', 'syncRoot'].includes(k)) bad(`github.${k}`)
   }
   for (const k of Object.keys(p)) optStr(p[k], `github.${k}`, 2048)
 }
@@ -123,14 +131,23 @@ export function registerIpc(
   auth: AuthService | null = null,
   rag: RagService | null = null,
   planner: Planner | null = null,
-  laya: import('./services/laya').LayaService | null = null
+  laya: import('./services/laya').LayaService | null = null,
+  hooks: HookServer | null = null
 ) {
   // ── Config ──
+  // Live activity stream — every journaled brain write reaches the renderer
+  // instantly (graph heat, activity feed, stat counters).
+  brain.getMemory().onJournal = (entry) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send('brain:activityPush', entry)
+    }
+  }
   ipcMain.handle('config:get', () => store.get())
   ipcMain.handle('config:set', (_e, patch: any) => {
     if (!isPlainObject(patch)) bad('config patch')
     for (const k of Object.keys(patch)) if (!CONFIG_SET_KEYS.has(k)) bad(`config.${k}`)
     if (patch.onboardingDone !== undefined && typeof patch.onboardingDone !== 'boolean') bad('onboardingDone')
+    if (patch.background !== undefined && typeof patch.background !== 'boolean') bad('background')
     if (patch.mcpServers !== undefined) {
       if (!Array.isArray(patch.mcpServers) || patch.mcpServers.length > 32) bad('mcpServers')
       for (const s of patch.mcpServers) validateMcpServerShape(s, false)
@@ -206,7 +223,7 @@ export function registerIpc(
   })
   ipcMain.handle('github:pollDeviceFlow', async (_e, deviceCode: any) => {
     const res = await github.pollDeviceFlow(deviceCode)
-    if (res) {
+    if (res.status === 'success') {
       store.updateGithub({ accessToken: res.accessToken })
       // fetch login
       try {
@@ -217,6 +234,28 @@ export function registerIpc(
       } catch { /* noop */ }
     }
     return res
+  })
+  ipcMain.handle('github:listRepos', async () => {
+    const t = store.get().github.accessToken
+    if (!t) return []
+    try { return await github.listUserRepos(t) } catch { return [] }
+  })
+  ipcMain.handle('github:useRepo', async (_e, owner: string, repo: string) => {
+    const t = store.get().github.accessToken
+    if (!t) throw new Error('Not authenticated')
+    const r = await github.getRepo(t, owner, repo)
+    // Imported vaults usually have no memory/ subtree — mirror the whole repo
+    // root instead so their existing layout becomes the brain. New repos and
+    // vaults that already use memory/ keep the scoped prefix.
+    const hasMemoryDir = (await github.listRepoFiles({ accessToken: t, repoOwner: owner, repoName: repo }, 'memory')).length > 0
+    store.updateGithub({
+      repoOwner: owner, repoName: repo,
+      repoUrl: r.html_url, defaultBranch: r.default_branch,
+      syncRoot: hasMemoryDir ? 'memory/' : ''
+    })
+    // teach agents the layout — only writes files the repo doesn't already have
+    sync?.maybeScaffold().catch(() => {})
+    return r
   })
   ipcMain.handle('github:createRepo', async (_e, name: string, description: string) => {
     const cfg = store.get().github
@@ -262,6 +301,21 @@ export function registerIpc(
     running: mcp?.runningServers ?? [],
     allTools: mcp?.allTools().map(({ serverId, tool }) => ({ serverId, name: tool.name, description: tool.description })) ?? []
   }))
+  ipcMain.handle('mcp:connectorQr', (_e, id: string) => {
+    const srv = store.get().mcpServers.find(s => s.id === id)
+    if (!srv) return null
+    // legacy configs may lack sessionDir — fall back to the default locations
+    const sessionDir = srv.sessionDir
+      ?? (id === 'whatsapp' ? join(app.getPath('userData'), 'wa-session') : null)
+      ?? (id === 'telegram' ? join(app.getPath('userData'), 'tg-session') : null)
+    if (!sessionDir) return null
+    const qrFile = join(sessionDir, 'qr.txt')
+    if (!existsSync(qrFile)) return null
+    const v = readFileSync(qrFile, 'utf8')
+    if (v === 'CONNECTED') return { status: 'connected' }
+    if (/^(LOGGED_OUT|ERROR|LOGIN_FAILED|QR_EXPIRED)$/.test(v)) return { status: 'error', code: v }
+    return { status: 'qr', dataUrl: v }
+  })
   ipcMain.handle('mcp:whatsappQr', () => {
     const qrFile = join(store.get().mcpServers.find(s => s.id === 'whatsapp')?.sessionDir ?? '', 'qr.txt')
     if (!existsSync(qrFile)) return null
@@ -271,6 +325,18 @@ export function registerIpc(
     return { status: 'qr', dataUrl: v }
   })
   ipcMain.handle('mcp:logs', () => mcpLogs)
+
+  // ── Agent connections: paths/prompts for external LLMs & bots ──
+  ipcMain.handle('connect:info', () => {
+    const gh = store.get().github
+    return {
+      mcpScript: ensureMcpServerScript(),
+      memoryDir: store.memoryDir,
+      repoUrl: gh.repoUrl ?? null,
+      repoOwner: gh.repoOwner ?? null,
+      repoName: gh.repoName ?? null
+    }
+  })
 
   // ── GitHub sync (bidirectional) ──
   ipcMain.handle('sync:status', () => sync?.status() ?? { connected: false, pending: 0, lastPull: null, lastPush: null, syncing: false })
@@ -311,12 +377,37 @@ export function registerIpc(
   ipcMain.handle('automation:runNow', async (_e, id: string) => {
     const auto = store.get().automations.find(a => a.id === id)
     if (!auto) throw new Error('Unknown automation')
+    // clicking "run now" IS the approval — bypass the approval queue
     if (automations) await automations.run(auto)
     store.set({
       automations: store.get().automations.map(a =>
         a.id === id ? { ...a, lastRunAt: new Date().toISOString() } : a)
     })
     return true
+  })
+  ipcMain.handle('automation:setWebhook', (_e, id: string, enabled: boolean) => {
+    reqStr(id, 'automation id', 128)
+    if (typeof enabled !== 'boolean') bad('webhook flag')
+    const auto = automations?.setWebhook(id, enabled)
+    if (!auto) throw new Error('Unknown automation')
+    if (enabled) hooks?.ensureStarted()
+    return {
+      webhook: !!auto.webhook,
+      url: auto.webhook && hooks ? `http://${hooks.host}:${hooks.port}/hook/${auto.id}` : null,
+      token: auto.webhook ? auto.webhookToken : null
+    }
+  })
+  ipcMain.handle('hooks:status', () => ({
+    running: hooks?.running ?? false,
+    host: hooks?.host ?? '127.0.0.1',
+    port: hooks?.port ?? 4789,
+    lan: !!store.get().hooks?.lan
+  }))
+  ipcMain.handle('hooks:setLan', (_e, lan: boolean) => {
+    if (typeof lan !== 'boolean') bad('lan flag')
+    store.set({ hooks: { lan } })
+    hooks?.restart()
+    return { lan }
   })
   ipcMain.handle('automation:pending', () => store.get().pendingApprovals)
   ipcMain.handle('automation:approve', async (_e, pendingId: string) => {
@@ -346,17 +437,93 @@ export function registerIpc(
       win?.webContents.send('brain:delta', t)
     })
   })
-  ipcMain.handle('brain:insights', async () => { brain.setActivitySource('summary'); return brain.generateInsights() })
-  ipcMain.handle('brain:dailySummary', async () => { brain.setActivitySource('summary'); return brain.dailySummary() })
-  ipcMain.handle('brain:sleep', async () => { brain.setActivitySource('sleep'); return brain.sleep() })
+  ipcMain.handle('brain:insights', async () => { brain.setActivitySource('summary'); await brain.ensureProviderReady(); return brain.generateInsights() })
+  ipcMain.handle('brain:dailySummary', async () => { brain.setActivitySource('summary'); await brain.ensureProviderReady(); return brain.dailySummary() })
+  ipcMain.handle('brain:sleep', async () => { brain.setActivitySource('sleep'); await brain.ensureProviderReady(); return brain.sleep() })
   ipcMain.handle('brain:listSleep', () => brain.listSleepReports())
   ipcMain.handle('brain:memoryTiers', () => brain.memoryTierStats())
   ipcMain.handle('brain:listInsights', () => brain.listInsights())
   ipcMain.handle('brain:listSummaries', () => brain.listSummaries())
   ipcMain.handle('brain:listMemory', () => {
     const memDir = store.memoryDir
-    return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 4000) }))
+    return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 1500) }))
   })
+  ipcMain.handle('brain:briefing', (_e, force?: boolean) => brain.briefing(!!force))
+  ipcMain.handle('brain:graph', () => brain.memoryGraph())
+  ipcMain.handle('brain:memoryFile', (_e, rel: string) => {
+    if (typeof rel !== 'string' || rel.length > 500) return null
+    return brain.readMemoryFile(rel)
+  })
+  ipcMain.handle('brain:exportConfig', async () => {
+    const gh = store.get().github
+    if (!gh.accessToken || !gh.repoOwner) throw new Error('GitHub not configured')
+    await exportBrainConfig(gh, store.get())
+    return true
+  })
+  // ── Background / launch-at-login ──
+  ipcMain.handle('app:launchAtLogin', () => ({
+    enabled: store.get().launchAtLogin ?? false,
+    openAtLogin: app.getLoginItemSettings().openAtLogin
+  }))
+  ipcMain.handle('app:setLaunchAtLogin', (_e, enabled: boolean) => {
+    if (typeof enabled !== 'boolean') bad('launchAtLogin')
+    app.setLoginItemSettings({ openAtLogin: enabled })
+    return store.set({ launchAtLogin: enabled })
+  })
+
+  // ── Brain health: meta-insights about the second brain itself ──
+  ipcMain.handle('brain:health', () => analyzeHealth(store, brain.getMemory()))
+  ipcMain.handle('brain:healthApply', async (_e, recId: string) =>
+    applyHealth(store, brain.getMemory(), automations, String(recId ?? ''))
+  )
+
+  // ── Skills bank: vault skills + registry suggestions + install ──
+  ipcMain.handle('brain:skills', async () => {
+    const memory = brain.getMemory()
+    const [items, suggestions] = await Promise.all([
+      Promise.resolve(listVaultSkills(memory)),
+      suggestSkills(memory).catch(() => [])
+    ])
+    return { items, suggestions }
+  })
+  ipcMain.handle('brain:skillInstall', async (_e, slug: string) => {
+    const s = String(slug ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '')
+    if (!s || s.length > 80) throw new Error('invalid skill slug')
+    return installSkill(brain.getMemory(), s)
+  })
+
+  // ── Security: at-rest vault encryption + risk alerts ──
+  ipcMain.handle('security:status', () => securityStatus(store, brain.getMemory()))
+  ipcMain.handle('security:scan', () => securityScan(store, brain.getMemory()))
+  ipcMain.handle('security:configure', async (_e, patch: any) => {
+    if (!isPlainObject(patch)) bad('security patch')
+    for (const k of Object.keys(patch)) {
+      if (!['enabled', 'categories', 'passphrase'].includes(k)) bad(`security.${k}`)
+    }
+    if (patch.enabled !== undefined && typeof patch.enabled !== 'boolean') bad('security.enabled')
+    if (patch.categories !== undefined && !Array.isArray(patch.categories)) bad('security.categories')
+    if (patch.passphrase !== undefined && (typeof patch.passphrase !== 'string' || patch.passphrase.length > 256)) bad('security.passphrase')
+    const p: SecurityPatch = {
+      enabled: patch.enabled,
+      categories: patch.categories?.map((c: any) => String(c)),
+      passphrase: patch.passphrase
+    }
+    const status = await securityConfigure(store, brain.getMemory(), p)
+    attachVaultCrypto(store, brain.getMemory())
+    return status
+  })
+  ipcMain.handle('security:encryptAll', async () => {
+    const n = await encryptAll(store, brain.getMemory())
+    attachVaultCrypto(store, brain.getMemory())
+    return { encrypted: n, status: await securityStatus(store, brain.getMemory()) }
+  })
+  ipcMain.handle('security:decryptAll', async () => {
+    const n = await decryptAll(store, brain.getMemory())
+    attachVaultCrypto(store, brain.getMemory())
+    return { decrypted: n, status: await securityStatus(store, brain.getMemory()) }
+  })
+  ipcMain.handle('security:aiAlerts', () => securityAiAlerts(store, brain.getMemory(), localLlm))
+
   ipcMain.handle('brain:activity', (_e, limit?: number) => brain.getMemory().activity(limit ?? 200))
 
   // ── Auth (local accounts + Google sign-in) ──
@@ -425,6 +592,18 @@ export function registerIpc(
     return rag?.stats ?? null
   })
   ipcMain.handle('rag:reindex', async () => rag ? rag.reindex() : null)
+
+  // ── Model manager (disk inventory + delete) ──
+  ipcMain.handle('models:list', () => {
+    if (!localLlm) return []
+    return listModels(localLlm, laya)
+  })
+  ipcMain.handle('models:delete', async (_e, key: string) => {
+    if (!localLlm || typeof key !== 'string' || key.length > 80) throw new Error('invalid model key')
+    const res = await deleteModel(localLlm, laya, key)
+    pushMcpLog(`model deleted: ${key} (${(res.freedBytes / 1e6).toFixed(0)}MB)`)
+    return res
+  })
 
   // ── Laya decision engine (fast ONNX System-1) ──
   ipcMain.handle('laya:status', () => laya?.status() ?? { available: false, loaded: false, modelDir: '', downloaded: false })

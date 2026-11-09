@@ -15,6 +15,11 @@ export function mdToHtml(md: string): string {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code>$1</code>')
+    // links: [text](url) or bare https?:// URLs — single pass so the URL
+    // inside a labeled link isn't re-matched as a bare one
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s<>"')\]]+)/g,
+      (_m, label, labeled, bare) =>
+        `<a href="${labeled ?? bare}" target="_blank" rel="noopener noreferrer">${label ?? bare}</a>`)
     .replace(/^- \[ \] (.*)$/gm, '<div class="md-todo">☐ $1</div>')
     .replace(/^- \[x\] (.*)$/gm, '<div class="md-todo md-todo--done">☑ $1</div>')
     .replace(/^- (.*)$/gm, '<div class="md-li">• $1</div>')

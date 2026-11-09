@@ -1,6 +1,7 @@
 import { app, safeStorage } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, cpSync, chmodSync } from 'node:fs'
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { join, dirname } from 'node:path'
 
 export interface AiProviderConfig {
   provider: 'local' | 'anthropic' | 'claude-oauth' | 'openai' | 'codex' | 'gemini' | 'grok' | 'ollama'
@@ -26,6 +27,7 @@ export interface GitHubConfig {
   repoName?: string
   repoUrl?: string
   defaultBranch?: string
+  syncRoot?: string // repo prefix mirrored into memory/ — 'memory/' default, '' = whole repo (imported vaults)
 }
 
 export interface McpServerConfig {
@@ -39,6 +41,9 @@ export interface McpServerConfig {
   env?: Record<string, string>
   // bundled servers
   sessionDir?: string
+  // connector permission — 'block' never spawns, 'ask' waits for manual
+  // connect, 'allow'/undefined may auto-start
+  permission?: 'allow' | 'ask' | 'block'
 }
 
 export interface Automation {
@@ -52,6 +57,8 @@ export interface Automation {
   weekday?: number             // 0=Sun..6=Sat for weekly
   enabled: boolean
   mode?: 'auto' | 'approval'  // 'approval' = scheduled runs queue for user OK
+  webhook?: boolean          // expose POST /hook/<id> trigger
+  webhookToken?: string      // shared secret for the webhook (server-generated)
   lastRunAt?: string
   createdAt: string
 }
@@ -88,7 +95,21 @@ export interface AppConfig {
   pendingApprovals: PendingApproval[]
   auth: AuthConfig
   pro: ProConfig
+  hooks: { lan: boolean }    // webhook listener: localhost-only vs LAN
   memoryDir?: string
+  background?: boolean       // keep services (sync/crons/MCP) alive when window closes
+  launchAtLogin?: boolean    // open KeepMind at OS login
+  security?: VaultSecurityConfig
+}
+
+// At-rest vault encryption. `sealedKey` is the scrypt-derived AES-256 key,
+// sealed by the local keyfile (never synced, never leaves userData).
+// `salt` exists for auditability/rotation; the passphrase itself is never stored.
+export interface VaultSecurityConfig {
+  enabled?: boolean
+  categories?: string[]      // top-level vault dirs whose .md files are encrypted
+  salt?: string              // hex — scrypt salt used to derive sealedKey
+  sealedKey?: string         // hex key, sealed via enc2: envelope
 }
 
 export interface AgentPersona {
@@ -112,11 +133,11 @@ function defaultConfig(): AppConfig {
     localLlm: {},
     github: {},
     mcpServers: [
-      { id: 'whatsapp', name: 'WhatsApp', kind: 'whatsapp', enabled: false, sessionDir: join(app.getPath('userData'), 'wa-session') },
-      { id: 'telegram', name: 'Telegram', kind: 'telegram', enabled: false },
       { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
     ],
     agents: DEFAULT_AGENTS,
+    hooks: { lan: false },
+    background: true,
     // Self-learning defaults: nightly sleep, morning summary, weekly
     // librarian hygiene, weekly evolution review, nightly note enrichment.
     automations: [
@@ -162,45 +183,98 @@ function defaultConfig(): AppConfig {
 // stored as "enc:<base64>"; plaintext legacy values still load fine.
 // Falls back to plaintext when the OS offers no encryption (rare Linux).
 
-const SECRET_PREFIX = 'enc:'
+const SECRET_PREFIX = 'enc:'      // legacy: Electron safeStorage (keychain)
+const LOCAL_PREFIX = 'enc2:'      // local keyfile AES-256-GCM — survives app updates/re-signing
 
-function sealValue(v: unknown): unknown {
-  if (typeof v !== 'string' || !v || v.startsWith(SECRET_PREFIX)) return v
-  if (!safeStorage.isEncryptionAvailable()) return v
-  try { return SECRET_PREFIX + safeStorage.encryptString(v).toString('base64') } catch { return v }
-}
-
-function unsealValue(v: unknown): unknown {
-  if (typeof v !== 'string' || !v.startsWith(SECRET_PREFIX)) return v
+// Local keyfile: 32 random bytes stored next to config.json with 0600 perms.
+// safeStorage's keychain identity is tied to the code signature — every
+// unsigned rebuild/re-sign can orphan previously sealed secrets, which is
+// why GitHub tokens kept "disappearing". The keyfile is deterministic
+// across updates; both config.json and the key stay in userData (never synced).
+let secretKeyCache: Buffer | null = null
+function secretKey(dir: string): Buffer | null {
+  if (secretKeyCache) return secretKeyCache
   try {
-    return safeStorage.decryptString(Buffer.from(v.slice(SECRET_PREFIX.length), 'base64'))
-  } catch { return v }
+    const keyFile = join(dir, '.secret-key')
+    if (existsSync(keyFile)) {
+      const k = Buffer.from(readFileSync(keyFile, 'utf8').trim(), 'hex')
+      if (k.length === 32) { secretKeyCache = k; return k }
+    }
+    const k = randomBytes(32)
+    writeFileSync(keyFile, k.toString('hex'), { mode: 0o600 })
+    chmodSync(keyFile, 0o600)
+    secretKeyCache = k
+    return k
+  } catch { return null }
 }
 
-function sealConfig(c: AppConfig): AppConfig {
+function sealLocal(v: string, key: Buffer): string {
+  const iv = randomBytes(12)
+  const c = createCipheriv('aes-256-gcm', key, iv)
+  const ct = Buffer.concat([c.update(v, 'utf8'), c.final()])
+  return LOCAL_PREFIX + Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64')
+}
+
+function unsealLocal(v: string, key: Buffer): string {
+  const raw = Buffer.from(v.slice(LOCAL_PREFIX.length), 'base64')
+  const d = createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12))
+  d.setAuthTag(raw.subarray(12, 28))
+  return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8')
+}
+
+function sealValue(v: unknown, key: Buffer | null): unknown {
+  if (typeof v !== 'string' || !v || v.startsWith(SECRET_PREFIX) || v.startsWith(LOCAL_PREFIX)) return v
+  if (key) { try { return sealLocal(v, key) } catch { /* fall through */ } }
+  if (safeStorage.isEncryptionAvailable()) {
+    try { return SECRET_PREFIX + safeStorage.encryptString(v).toString('base64') } catch { /* noop */ }
+  }
+  return v
+}
+
+function unsealValue(v: unknown, key: Buffer | null): unknown {
+  if (typeof v !== 'string') return v
+  if (v.startsWith(LOCAL_PREFIX) && key) {
+    try { return unsealLocal(v, key) } catch { return undefined } // key lost/corrupt → unrecoverable
+  }
+  if (v.startsWith(LOCAL_PREFIX)) return undefined
+  if (v.startsWith(SECRET_PREFIX)) {
+    try {
+      return safeStorage.decryptString(Buffer.from(v.slice(SECRET_PREFIX.length), 'base64'))
+    } catch { return undefined } // safeStorage identity lost (re-signed build) → treat as unset
+  }
+  return v
+}
+
+function sealConfig(c: AppConfig, key: Buffer | null): AppConfig {
   const out = JSON.parse(JSON.stringify(c)) as AppConfig
-  out.ai.apiKey = sealValue(out.ai.apiKey) as string | undefined
-  out.github.accessToken = sealValue(out.github.accessToken) as string | undefined
-  out.github.refreshToken = sealValue(out.github.refreshToken) as string | undefined
-  out.auth.sessionToken = sealValue(out.auth.sessionToken) as string | undefined
-  out.auth.googleClientSecret = sealValue(out.auth.googleClientSecret) as string | undefined
-  out.pro.key = sealValue(out.pro.key) as string | undefined
+  out.ai.apiKey = sealValue(out.ai.apiKey, key) as string | undefined
+  out.github.accessToken = sealValue(out.github.accessToken, key) as string | undefined
+  out.github.refreshToken = sealValue(out.github.refreshToken, key) as string | undefined
+  out.auth.sessionToken = sealValue(out.auth.sessionToken, key) as string | undefined
+  out.auth.googleClientSecret = sealValue(out.auth.googleClientSecret, key) as string | undefined
+  out.pro.key = sealValue(out.pro.key, key) as string | undefined
   for (const s of out.mcpServers ?? []) {
-    if (s.env) for (const k of Object.keys(s.env)) s.env[k] = sealValue(s.env[k]) as string
+    if (s.env) for (const k of Object.keys(s.env)) s.env[k] = sealValue(s.env[k], key) as string
+  }
+  if (out.security?.sealedKey) {
+    out.security = { ...out.security, sealedKey: sealValue(out.security.sealedKey, key) as string | undefined }
   }
   return out
 }
 
-function unsealConfig(c: AppConfig): AppConfig {
+function unsealConfig(c: AppConfig, key: Buffer | null): AppConfig {
   const out = JSON.parse(JSON.stringify(c)) as AppConfig
-  out.ai.apiKey = unsealValue(out.ai.apiKey) as string | undefined
-  out.github.accessToken = unsealValue(out.github.accessToken) as string | undefined
-  out.github.refreshToken = unsealValue(out.github.refreshToken) as string | undefined
-  out.auth.sessionToken = unsealValue(out.auth.sessionToken) as string | undefined
-  out.auth.googleClientSecret = unsealValue(out.auth.googleClientSecret) as string | undefined
-  out.pro.key = unsealValue(out.pro.key) as string | undefined
+  out.ai.apiKey = unsealValue(out.ai.apiKey, key) as string | undefined
+  out.github.accessToken = unsealValue(out.github.accessToken, key) as string | undefined
+  out.github.refreshToken = unsealValue(out.github.refreshToken, key) as string | undefined
+  out.auth.sessionToken = unsealValue(out.auth.sessionToken, key) as string | undefined
+  out.auth.googleClientSecret = unsealValue(out.auth.googleClientSecret, key) as string | undefined
+  out.pro.key = unsealValue(out.pro.key, key) as string | undefined
   for (const s of out.mcpServers ?? []) {
-    if (s.env) for (const k of Object.keys(s.env)) s.env[k] = unsealValue(s.env[k]) as string
+    if (s.env) for (const k of Object.keys(s.env)) s.env[k] = unsealValue(s.env[k], key) as string
+  }
+  if (out.security?.sealedKey) {
+    out.security = { ...out.security, sealedKey: unsealValue(out.security.sealedKey, key) as string | undefined }
   }
   return out
 }
@@ -213,7 +287,24 @@ export class Store {
     const dir = join(app.getPath('userData'), 'second-brain')
     mkdirSync(dir, { recursive: true })
     this.file = join(dir, 'config.json')
+    this.migrateLegacy(dir)
     this.config = this.load()
+  }
+
+  // One-time migration for installs that ran before the KeepMind rename:
+  // those builds stored everything under the "second-brain" userData dir.
+  // If we have no config yet, adopt the legacy config, auth db and memory.
+  private migrateLegacy(dir: string) {
+    if (existsSync(this.file)) return
+    const legacy = join(app.getPath('userData'), '..', 'second-brain', 'second-brain')
+    if (legacy === dir || !existsSync(join(legacy, 'config.json'))) return
+    try {
+      copyFileSync(join(legacy, 'config.json'), this.file)
+      const legacyAuth = join(legacy, 'auth.db')
+      if (existsSync(legacyAuth)) copyFileSync(legacyAuth, join(dir, 'auth.db'))
+      const legacyMemory = join(legacy, 'memory')
+      if (existsSync(legacyMemory)) cpSync(legacyMemory, join(dir, 'memory'), { recursive: true })
+    } catch { /* migration is best-effort — fresh install is fine too */ }
   }
 
   private load(): AppConfig {
@@ -233,9 +324,10 @@ export class Store {
         merged.pendingApprovals = raw.pendingApprovals ?? []
         merged.auth = { ...defaultConfig().auth, ...raw.auth }
         merged.pro = { ...defaultConfig().pro, ...raw.pro }
+        merged.hooks = { ...defaultConfig().hooks, ...raw.hooks }
         // decrypt secrets only after all merges — raw.* values may still
         // carry the "enc:" envelope from the sealed file
-        return unsealConfig(merged)
+        return unsealConfig(merged, secretKey(dirname(this.file)))
       }
     } catch { /* corrupt config -> defaults */ }
     return defaultConfig()
@@ -247,7 +339,7 @@ export class Store {
 
   set(patch: Partial<AppConfig>): AppConfig {
     this.config = { ...this.config, ...patch }
-    writeFileSync(this.file, JSON.stringify(sealConfig(this.config), null, 2), 'utf8')
+    writeFileSync(this.file, JSON.stringify(sealConfig(this.config, secretKey(dirname(this.file))), null, 2), 'utf8')
     return this.config
   }
 

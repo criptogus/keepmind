@@ -7,14 +7,14 @@ interface Props {
 }
 
 const PROVIDERS = [
-  { id: 'local', emoji: '🏠', name: 'Local (built-in)', desc: 'Runs on your machine via llama.cpp. Private, offline.' },
-  { id: 'codex', emoji: '🟢', name: 'Codex / ChatGPT', desc: 'Reuses your Codex CLI login. No key needed.' },
-  { id: 'claude-oauth', emoji: '🧠', name: 'Claude (sign-in)', desc: 'Claude Pro/Max via `claude setup-token`.' },
-  { id: 'anthropic', emoji: '🔑', name: 'Claude API', desc: 'Anthropic API key. Pay-per-token.' },
-  { id: 'openai', emoji: '⚡', name: 'OpenAI', desc: 'OpenAI API key (GPT-4o, o-series).' },
-  { id: 'grok', emoji: '𝕏', name: 'Grok', desc: 'xAI API key from console.x.ai.' },
-  { id: 'gemini', emoji: '✨', name: 'Gemini', desc: 'Free API key from Google AI Studio.' },
-  { id: 'ollama', emoji: '🦙', name: 'Ollama', desc: 'Uses your existing Ollama install.' }
+  { id: 'local', mark: '⌂', accent: '#22d3ee', name: 'Local (built-in)', desc: 'Runs on your machine via llama.cpp. Private, offline.' },
+  { id: 'codex', mark: '◎', accent: '#4ade80', name: 'Codex / ChatGPT', desc: 'Reuses your Codex CLI login. No key needed.' },
+  { id: 'claude-oauth', mark: '✳', accent: '#c4b5fd', name: 'Claude (sign-in)', desc: 'Claude Pro/Max via `claude setup-token`.' },
+  { id: 'anthropic', mark: 'A', accent: '#fbbf24', name: 'Claude API', desc: 'Anthropic API key. Pay-per-token.' },
+  { id: 'openai', mark: 'O', accent: '#34d399', name: 'OpenAI', desc: 'OpenAI API key (GPT-4o, o-series).' },
+  { id: 'grok', mark: 'X', accent: '#e5e7eb', name: 'Grok', desc: 'xAI API key from console.x.ai.' },
+  { id: 'gemini', mark: 'G', accent: '#60a5fa', name: 'Gemini', desc: 'Free API key from Google AI Studio.' },
+  { id: 'ollama', mark: 'L', accent: '#fb923c', name: 'Ollama', desc: 'Uses your existing Ollama install.' }
 ]
 
 export default function Settings({ onToast, onActivity }: Props) {
@@ -35,7 +35,8 @@ export default function Settings({ onToast, onActivity }: Props) {
     setConfig(c); setProviders(p); setLocal(l)
     setProvider(c.ai?.provider ?? 'local')
     setApiKey(c.ai?.apiKey ?? '')
-    setModel(c.ai?.model ?? '')
+    const plist = (p as any[])?.find((x: any) => x.id === (c.ai?.provider ?? 'local'))?.models
+    setModel(plist?.length ? (plist.includes(c.ai?.model) ? c.ai.model : plist[0]) : (c.ai?.model ?? ''))
   }
 
   useEffect(() => {
@@ -98,20 +99,37 @@ export default function Settings({ onToast, onActivity }: Props) {
         </div>
       </div>
 
+      <nav className="settings-nav">
+        {([['General', 'sec-general'], ['AI', 'sec-ai'], ['Models', 'sec-models'], ['Sync', 'sec-memory'], ['Account', 'sec-account'],
+           ['Pro', 'sec-pro'], ['Search', 'sec-rag'], ['Decisions', 'sec-laya'], ['Updates', 'sec-updates'], ['About', 'sec-about']] as const)
+          .map(([label, id]) => (
+            <button key={id} className="chip" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+              {label}
+            </button>
+          ))}
+      </nav>
+
       <div className="grid" style={{ maxWidth: 860 }}>
+        <GeneralCard onToast={onToast} />
         {/* AI provider */}
-        <div className="card card-pad">
+        <div className="card card-pad" id="sec-ai">
           <h2 style={{ marginBottom: 14 }}>AI provider</h2>
           <div className="provider-grid" style={{ marginBottom: 16 }}>
             {PROVIDERS.map(p => (
               <button
                 key={p.id}
                 className={`provider-card ${provider === p.id ? 'is-selected' : ''}`}
-                onClick={() => { setProvider(p.id); setTest(null) }}
+                style={{ '--accent': p.accent } as any}
+                onClick={() => {
+                  setProvider(p.id); setTest(null)
+                  const next = providers.find(x => x.id === p.id)
+                  setModel(next?.models?.length ? next.models[0] : '')
+                }}
               >
-                <div className="p-emoji">{p.emoji}</div>
+                <div className="p-mark" style={{ color: p.accent, borderColor: `${p.accent}55`, background: `${p.accent}14` }}>{p.mark}</div>
                 <div className="p-name">{p.name}</div>
                 <div className="p-desc">{p.desc}</div>
+                {config?.ai?.provider === p.id && <span className="p-current">CURRENT</span>}
               </button>
             ))}
           </div>
@@ -210,8 +228,11 @@ export default function Settings({ onToast, onActivity }: Props) {
           </div>
         </div>
 
+        {/* Models & runtimes */}
+        <ModelsCard onToast={onToast} />
+
         {/* Memory / GitHub */}
-        <div className="card card-pad">
+        <div className="card card-pad" id="sec-memory">
           <h2 style={{ marginBottom: 14 }}>Memory & sync</h2>
           <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 14 }}>
             Your KeepMind stores everything as Markdown in your private GitHub repo.
@@ -245,13 +266,61 @@ export default function Settings({ onToast, onActivity }: Props) {
   )
 }
 
+function GeneralCard({ onToast }: { onToast: Props['onToast'] }) {
+  const [background, setBackground] = useState(true)
+  const [login, setLogin] = useState(false)
+
+  useEffect(() => {
+    window.sb.getConfig?.().then((c: any) => setBackground(c?.background !== false)).catch(() => {})
+    window.sb.appLaunchAtLogin?.().then((s: any) => setLogin(!!s?.enabled)).catch(() => {})
+  }, [])
+
+  const toggleBackground = async (v: boolean) => {
+    setBackground(v)
+    try {
+      await window.sb.setConfig({ background: v })
+      onToast(v ? 'Background mode on — brain keeps running when window closes' : 'Background mode off — closing window quits KeepMind', 'success')
+    } catch (e: any) { setBackground(!v); onToast(String(e?.message ?? e), 'error') }
+  }
+
+  const toggleLogin = async (v: boolean) => {
+    setLogin(v)
+    try {
+      await window.sb.appSetLaunchAtLogin(v)
+      onToast(v ? 'KeepMind will open at login' : 'Removed from login items', 'success')
+    } catch (e: any) { setLogin(!v); onToast(String(e?.message ?? e), 'error') }
+  }
+
+  return (
+    <div className="card card-pad" id="sec-general">
+      <h2 style={{ marginBottom: 14 }}>General</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={background} onChange={e => toggleBackground(e.target.checked)} />
+          <span>
+            <strong style={{ color: 'var(--text)' }}>Keep running in background</strong>
+            <div className="faint" style={{ fontSize: 12 }}>Closing the window keeps GitHub sync, crons and MCP agents alive — find KeepMind in the menu bar.</div>
+          </span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={login} onChange={e => toggleLogin(e.target.checked)} />
+          <span>
+            <strong style={{ color: 'var(--text)' }}>Open at login</strong>
+            <div className="faint" style={{ fontSize: 12 }}>Start KeepMind automatically when this computer boots.</div>
+          </span>
+        </label>
+      </div>
+    </div>
+  )
+}
+
 function AboutCard() {
   const [version, setVersion] = useState('')
   useEffect(() => {
     window.sb.updaterStatus?.().then((s: any) => setVersion(s?.version ?? '')).catch(() => {})
   }, [])
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-about">
       <h2 style={{ marginBottom: 14 }}>About</h2>
       <div className="faint" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
         <p><strong style={{ color: 'var(--text)' }}>KeepMind</strong>{version ? ` v${version}` : ''} — open source, MIT.</p>
@@ -296,7 +365,7 @@ function AccountCard({ onToast }: { onToast: Props['onToast'] }) {
   }
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-account">
       <h2 style={{ marginBottom: 14 }}>Account & Google sign-in</h2>
       {auth?.user ? (
         <p style={{ fontSize: 13, marginBottom: 12 }}>
@@ -351,7 +420,7 @@ function ProCard({ onToast }: { onToast: Props['onToast'] }) {
   }
 
   return (
-    <div className="card card-pad" style={{ borderColor: pro?.active ? 'rgba(163,230,53,.35)' : undefined }}>
+    <div className="card card-pad" id="sec-pro" style={{ borderColor: pro?.active ? 'rgba(163,230,53,.35)' : undefined }}>
       <h2 style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
         KeepMind Pro {pro?.active && <span className="chip" style={{ borderColor: 'rgba(163,230,53,.4)', color: 'var(--lime)' }}>active</span>}
       </h2>
@@ -412,7 +481,7 @@ function RagCard({ onToast, onActivity }: { onToast: Props['onToast']; onActivit
   }
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-rag">
       <h2 style={{ marginBottom: 6 }}>Semantic memory (local RAG)</h2>
       <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
         Embeds your memory locally (llama.cpp) and injects the most relevant chunks into every chat —
@@ -493,7 +562,7 @@ function LayaCard({ onToast }: { onToast: Props['onToast'] }) {
   }
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-laya">
       <h2 style={{ marginBottom: 6 }}>Decision engine (Laya)</h2>
       <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
         Fast System-1 decisions in a single ONNX forward pass (~33ms): memory classification,
@@ -576,7 +645,7 @@ function UpdatesCard({ onToast }: { onToast: Props['onToast'] }) {
   }
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-updates">
       <h2 style={{ marginBottom: 6 }}>Updates</h2>
       <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
         {status?.packaged === false
@@ -613,6 +682,88 @@ const EMBED_MODELS_FALLBACK = [
   { id: 'bge-small', label: 'BGE Small EN v1.5', sizeMB: 64 },
   { id: 'nomic-embed', label: 'Nomic Embed Text v1.5', sizeMB: 85 }
 ]
+
+const KIND_LABEL: Record<string, string> = {
+  chat: 'CHAT', embed: 'EMBED', runtime: 'RUNTIME', decision: 'DECISION'
+}
+
+function fmtBytes(b: number): string {
+  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`
+  if (b >= 1e6) return `${(b / 1e6).toFixed(0)} MB`
+  if (b >= 1e3) return `${(b / 1e3).toFixed(0)} KB`
+  return `${b} B`
+}
+
+function ModelsCard({ onToast }: { onToast: Props['onToast'] }) {
+  const [models, setModels] = useState<any[] | null>(null)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+
+  const load = () => window.sb.modelsList?.().then(setModels).catch(() => setModels([]))
+  useEffect(() => { load() }, [])
+
+  const del = async (m: any) => {
+    if (!window.confirm(`Delete ${m.label} (${fmtBytes(m.sizeBytes)})?${m.active ? '\n\nThis is the ACTIVE model — the brain will fall back to the default.' : ''}`)) return
+    setBusyKey(m.key)
+    try {
+      const r: any = await window.sb.modelsDelete?.(m.key)
+      onToast(`Freed ${fmtBytes(r?.freedBytes ?? 0)}${r?.warnings?.[0] ? ` — ${r.warnings[0]}` : ''}`, 'success')
+      await load()
+    } catch (e: any) {
+      onToast(`Delete failed: ${e?.message ?? e}`, 'error')
+    } finally { setBusyKey(null) }
+  }
+
+  const total = (models ?? []).reduce((n, m) => n + (m.downloaded ? m.sizeBytes : 0), 0)
+
+  return (
+    <div className="card card-pad" id="sec-models">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+        <h2>Models & runtimes</h2>
+        {models && <span className="faint" style={{ fontSize: 11.5 }}>{fmtBytes(total)} on disk</span>}
+      </div>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 14 }}>
+        Local AI assets downloaded by KeepMind — chat models, embeddings, the llama.cpp engine and the Laya decision model.
+        Deleting frees disk space; models re-download automatically if needed again.
+      </p>
+      {!models ? (
+        <p className="faint" style={{ fontSize: 12.5 }}>Loading…</p>
+      ) : models.length === 0 ? (
+        <p className="faint" style={{ fontSize: 12.5 }}>No local models yet.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {models.map(m => (
+            <div key={m.key} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px',
+              borderRadius: 8, border: '1px solid var(--line)', background: 'rgba(3,7,18,.4)'
+            }}>
+              <span className="mono" style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '.06em', minWidth: 64,
+                color: m.kind === 'decision' ? '#c4b5fd' : m.kind === 'runtime' ? '#fbbf24' : m.kind === 'embed' ? '#34d399' : '#22d3ee'
+              }}>{KIND_LABEL[m.kind]}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {m.label}
+                  {m.active && <span style={{ color: 'var(--green)', fontSize: 11, marginLeft: 8 }}>● ACTIVE</span>}
+                  {m.running && <span className="faint" style={{ fontSize: 11, marginLeft: 6 }}>· running</span>}
+                </div>
+                {m.detail && <div className="faint" style={{ fontSize: 11, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.detail}</div>}
+              </div>
+              <span className="mono faint" style={{ fontSize: 11.5, minWidth: 64, textAlign: 'right' }}>
+                {m.downloaded ? fmtBytes(m.sizeBytes) : '—'}
+              </span>
+              {m.downloaded && (
+                <button className="btn btn--ghost" style={{ fontSize: 11, padding: '4px 10px' }}
+                  disabled={busyKey === m.key} onClick={() => del(m)}>
+                  {busyKey === m.key ? '…' : 'DELETE'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function CodexStatus() {
   const [s, setS] = useState<any>(null)

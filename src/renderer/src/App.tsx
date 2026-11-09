@@ -1,35 +1,51 @@
 import { useCallback, useEffect, useState } from 'react'
-import BrainCore from './components/BrainCore'
-import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconToday, IconNotes, IconTasks } from './components/icons'
+import NeuralField from './components/NeuralField'
+import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconSparkle, IconSync, IconDoc, IconShield } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
-import Today from './components/Today'
-import Notes from './components/Notes'
-import Tasks from './components/Tasks'
 import Connectors from './components/Connectors'
 import Automations from './components/Automations'
 import Settings from './components/Settings'
+import GraphView from './components/GraphView'
+import Activity from './components/Activity'
+import Skills from './components/Skills'
+import Security from './components/Security'
 import Login from './components/Login'
 
-type View = 'today' | 'dashboard' | 'chat' | 'notes' | 'tasks' | 'connectors' | 'automations' | 'settings'
+type View = 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 
-const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }[] = [
-  { id: 'today', label: 'Today', Icon: IconToday },
-  { id: 'dashboard', label: 'Brain', Icon: IconDashboard },
-  { id: 'chat', label: 'Chat', Icon: IconChat },
-  { id: 'notes', label: 'Notes', Icon: IconNotes },
-  { id: 'tasks', label: 'Tasks', Icon: IconTasks },
-  { id: 'connectors', label: 'Connectors', Icon: IconPlug },
-  { id: 'automations', label: 'Automations', Icon: IconClock },
-  { id: 'settings', label: 'Settings', Icon: IconSettings }
+type NavItem = { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }
+
+// Grouped nav — the brain's surfaces clustered by what they answer:
+// what it IS (brain/activity), how it IMPROVES (health/skills/security),
+// who works WITH it (chat/agents/automations), and SYSTEM.
+const NAV: { section: string; items: NavItem[] }[] = [
+  { section: 'Brain', items: [
+    { id: 'graph', label: 'Connectome', Icon: IconSparkle },
+    { id: 'activity', label: 'Activity', Icon: IconSync }
+  ]},
+  { section: 'Mind', items: [
+    { id: 'dashboard', label: 'Health', Icon: IconDashboard },
+    { id: 'skills', label: 'Skills', Icon: IconDoc },
+    { id: 'security', label: 'Security', Icon: IconShield }
+  ]},
+  { section: 'Agents', items: [
+    { id: 'chat', label: 'Chat', Icon: IconChat },
+    { id: 'connectors', label: 'Connect', Icon: IconPlug },
+    { id: 'automations', label: 'Crons', Icon: IconClock }
+  ]},
+  { section: 'System', items: [
+    { id: 'settings', label: 'Settings', Icon: IconSettings }
+  ]}
 ]
+const NAV_FLAT = NAV.flatMap(g => g.items)
 
 export default function App() {
   const [config, setConfig] = useState<any>(null)
-  const [view, setView] = useState<View>('today')
+  const [view, setView] = useState<View>('graph')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [activity, setActivity] = useState(0)
   const [authState, setAuthState] = useState<{ needsSetup: boolean; user: any } | null>(null)
@@ -91,32 +107,37 @@ export default function App() {
   if (!config.onboardingDone) {
     return (
       <>
-        <BrainCore activity={0.4} className="brain-bg" lite />
+        <NeuralField activity={0.4} />
         <Wizard config={config} onDone={loadConfig} onToast={toast} />
-        <ToastWrap toasts={toasts} />
+        <ToastWrap toasts={toasts} onDismiss={id => setToasts(t => t.filter(x => x.id !== id))} />
       </>
     )
   }
 
   return (
     <div className="app">
-      <BrainCore activity={activity} className="brain-bg" lite />
+      <NeuralField activity={activity} />
 
       <aside className="sidebar">
         <div className="brand">
           <BrainMark size={36} />
-          <div className="brand__name">second<em>brain</em></div>
+          <div className="brand__name">keep<em>mind</em></div>
         </div>
         <nav className="nav">
-          {NAV.map(n => (
-            <button
-              key={n.id}
-              className={`nav__item ${view === n.id ? 'is-active' : ''}`}
-              onClick={() => setView(n.id)}
-            >
-              <span className="ico"><n.Icon size={17} /></span>
-              <span className="nav__label">{n.label}</span>
-            </button>
+          {NAV.map(g => (
+            <div key={g.section} className="nav__group">
+              <div className="nav__section">{g.section}</div>
+              {g.items.map(n => (
+                <button
+                  key={n.id}
+                  className={`nav__item ${view === n.id ? 'is-active' : ''}`}
+                  onClick={() => setView(n.id)}
+                >
+                  <span className="ico"><n.Icon size={17} /></span>
+                  <span className="nav__label">{n.label}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar__foot">
@@ -133,11 +154,13 @@ export default function App() {
 
       {/* mobile bottom nav */}
       <nav className="mobile-nav">
-        {NAV.map(n => (
+        {NAV_FLAT.map(n => (
           <button
             key={n.id}
             className={`mobile-nav__item ${view === n.id ? 'is-active' : ''}`}
             onClick={() => setView(n.id)}
+            aria-label={n.label}
+            title={n.label}
           >
             <n.Icon size={19} />
           </button>
@@ -145,27 +168,39 @@ export default function App() {
       </nav>
 
       <main className="main" style={{ zIndex: 1 }}>
-        {view === 'today' && <Today onNavigate={(v) => setView(v as View)} />}
-        {view === 'dashboard' && <Dashboard onActivity={pulse} />}
+        {view === 'dashboard' && <Dashboard onActivity={pulse} onToast={toast} />}
+        {view === 'skills' && <Skills onActivity={pulse} onToast={toast} />}
+        {view === 'security' && <Security onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}
-        {view === 'notes' && <Notes onActivity={pulse} />}
-        {view === 'tasks' && <Tasks onActivity={pulse} />}
+        {view === 'graph' && <GraphView />}
+        {view === 'activity' && <Activity />}
         {view === 'connectors' && <Connectors onActivity={pulse} onToast={toast} />}
         {view === 'automations' && <Automations onActivity={pulse} onToast={toast} />}
         {view === 'settings' && <Settings onToast={toast} onActivity={pulse} />}
       </main>
 
-      <ToastWrap toasts={toasts} />
+      <footer className="app-footer">
+        powered by{' '}
+        <button
+          className="app-footer__link"
+          onClick={() => window.sb.openExternal('https://zeroagency.ai')}
+        >
+          Zero Agency
+        </button>
+      </footer>
+
+      <ToastWrap toasts={toasts} onDismiss={id => setToasts(t => t.filter(x => x.id !== id))} />
     </div>
   )
 }
 
-function ToastWrap({ toasts }: { toasts: Toast[] }) {
+function ToastWrap({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
   return (
     <div className="toast-wrap">
       {toasts.map(t => (
         <div key={t.id} className={`toast toast--${t.kind === 'error' ? 'error' : t.kind === 'success' ? 'success' : ''}`}>
-          {t.msg}
+          <span style={{ flex: 1 }}>{t.msg}</span>
+          <button className="toast__x" aria-label="Dismiss" onClick={() => onDismiss(t.id)}>×</button>
         </div>
       ))}
     </div>

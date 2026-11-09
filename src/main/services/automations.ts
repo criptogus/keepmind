@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type { Store, Automation } from '../store'
 import type { Brain } from './brain'
 
@@ -117,6 +118,54 @@ export class AutomationScheduler {
 
   onRun(cb: (a: Automation) => void) { this.listeners.add(cb); return () => this.listeners.delete(cb) }
 
+  // Toggle the webhook trigger for an automation. Returns the updated
+  // automation (with token) so callers can show the URL to the user.
+  setWebhook(id: string, enabled: boolean): Automation | undefined {
+    const autos = this.store.get().automations.map(a => a.id === id ? {
+      ...a,
+      webhook: enabled,
+      webhookToken: enabled ? (a.webhookToken ?? `wh_${randomBytes(18).toString('hex')}`) : undefined
+    } : a)
+    this.store.set({ automations: autos })
+    return autos.find(a => a.id === id)
+  }
+
+  // Single entry point for "run this automation now-ish": used by the cron
+  // tick AND by external webhook triggers. Approval-mode jobs are queued
+  // for the user instead of executing. Returns what happened.
+  async fire(auto: Automation): Promise<'ran' | 'queued' | 'busy' | 'error'> {
+    if (auto.mode === 'approval') {
+      const pending = this.store.get().pendingApprovals
+      if (!pending.some(p => p.automationId === auto.id)) {
+        this.store.set({
+          pendingApprovals: [...pending, {
+            id: `ap-${Date.now().toString(36)}-${auto.id}`,
+            automationId: auto.id,
+            name: auto.name,
+            kind: auto.kind,
+            instruction: auto.instruction,
+            createdAt: new Date().toISOString()
+          }]
+        })
+        this.log(`automation "${auto.name}" queued for approval`)
+        for (const cb of this.listeners) cb(auto)
+      }
+      return 'queued'
+    }
+    if (this.running.has(auto.id)) return 'busy'
+    this.running.add(auto.id)
+    try {
+      await this.run(auto)
+      for (const cb of this.listeners) cb(auto)
+      return 'ran'
+    } catch (e) {
+      this.log(`automation ${auto.name} failed: ${e}`)
+      return 'error'
+    } finally {
+      this.running.delete(auto.id)
+    }
+  }
+
   start() {
     this.timer = setInterval(() => { void this.tick() }, 30_000)
     setTimeout(() => { void this.tick() }, 15_000)
@@ -131,44 +180,14 @@ export class AutomationScheduler {
       if (!auto.enabled || this.running.has(auto.id)) continue
       if (!this.isDue(auto, now)) continue
 
-      // Approval mode: queue for the user instead of running autonomously
-      if (auto.mode === 'approval') {
-        const pending = this.store.get().pendingApprovals
-        if (!pending.some(p => p.automationId === auto.id)) {
-          this.store.set({
-            pendingApprovals: [...pending, {
-              id: `ap-${Date.now().toString(36)}-${auto.id}`,
-              automationId: auto.id,
-              name: auto.name,
-              kind: auto.kind,
-              instruction: auto.instruction,
-              createdAt: new Date().toISOString()
-            }]
-          })
-          this.log(`automation "${auto.name}" queued for approval`)
-          for (const cb of this.listeners) cb(auto)
-        }
-        // mark as handled so it doesn't re-queue every tick; approval runs it
-        this.store.set({
-          automations: this.store.get().automations.map(a =>
-            a.id === auto.id ? { ...a, lastRunAt: new Date().toISOString() } : a)
-        })
-        continue
-      }
-
-      this.running.add(auto.id)
-      try {
-        await this.run(auto)
-        this.store.set({
-          automations: this.store.get().automations.map(a =>
-            a.id === auto.id ? { ...a, lastRunAt: new Date().toISOString() } : a)
-        })
-        for (const cb of this.listeners) cb(auto)
-      } catch (e) {
-        this.log(`automation ${auto.name} failed: ${e}`)
-      } finally {
-        this.running.delete(auto.id)
-      }
+      // fire() handles approval-queueing and execution; lastRunAt is marked
+      // for every outcome so a failing job retries on its next schedule
+      // instead of every 30s tick.
+      await this.fire(auto)
+      this.store.set({
+        automations: this.store.get().automations.map(a =>
+          a.id === auto.id ? { ...a, lastRunAt: new Date().toISOString() } : a)
+      })
     }
   }
 
@@ -200,6 +219,7 @@ export class AutomationScheduler {
   async run(auto: Automation) {
     this.log(`automation "${auto.name}" running (${auto.kind})`)
     this.brain.setActivitySource(`auto:${auto.name}`)
+    await this.brain.ensureProviderReady()
     if (auto.kind === 'sleep') {
       await this.brain.sleep()
     } else if (auto.kind === 'librarian') {
