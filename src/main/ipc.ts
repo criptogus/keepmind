@@ -16,6 +16,8 @@ import * as github from './services/github'
 import { checkForUpdates, installUpdate, updaterStatus } from './services/updater'
 import { listModels, deleteModel } from './services/models'
 import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
+import { analyzeHealth, applyHealth } from './services/health'
+import { listVaultSkills, suggestSkills, installSkill } from './services/skillsHub'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
 import type { McpServerConfig } from './store'
 import type { HookServer } from './services/hooks'
@@ -456,6 +458,27 @@ export function registerIpc(
     await exportBrainConfig(gh, store.get())
     return true
   })
+  // ── Brain health: meta-insights about the second brain itself ──
+  ipcMain.handle('brain:health', () => analyzeHealth(store, brain.getMemory()))
+  ipcMain.handle('brain:healthApply', async (_e, recId: string) =>
+    applyHealth(store, brain.getMemory(), automations, String(recId ?? ''))
+  )
+
+  // ── Skills bank: vault skills + registry suggestions + install ──
+  ipcMain.handle('brain:skills', async () => {
+    const memory = brain.getMemory()
+    const [items, suggestions] = await Promise.all([
+      Promise.resolve(listVaultSkills(memory)),
+      suggestSkills(memory).catch(() => [])
+    ])
+    return { items, suggestions }
+  })
+  ipcMain.handle('brain:skillInstall', async (_e, slug: string) => {
+    const s = String(slug ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '')
+    if (!s || s.length > 80) throw new Error('invalid skill slug')
+    return installSkill(brain.getMemory(), s)
+  })
+
   ipcMain.handle('brain:activity', (_e, limit?: number) => brain.getMemory().activity(limit ?? 200))
 
   // ── Auth (local accounts + Google sign-in) ──

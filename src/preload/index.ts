@@ -111,6 +111,10 @@ const api = {
     return () => { ipcRenderer.removeListener('brain:activityPush', handler) }
   },
   brainExportConfig: () => ipcRenderer.invoke('brain:exportConfig'),
+  brainHealth: () => ipcRenderer.invoke('brain:health'),
+  brainHealthApply: (recId: string) => ipcRenderer.invoke('brain:healthApply', recId),
+  brainSkills: () => ipcRenderer.invoke('brain:skills'),
+  brainSkillInstall: (slug: string) => ipcRenderer.invoke('brain:skillInstall', slug),
   onBrainDelta: (cb: (t: string) => void) => {
     const handler = (_e: any, t: string) => cb(t)
     ipcRenderer.on('brain:delta', handler)
