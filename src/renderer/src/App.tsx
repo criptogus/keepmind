@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import NeuralField from './components/NeuralField'
-import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconToday, IconSparkle, IconSync } from './components/icons'
+import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconSparkle, IconSync } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
-import Today from './components/Today'
 import Connectors from './components/Connectors'
 import Automations from './components/Automations'
 import Settings from './components/Settings'
@@ -12,13 +11,12 @@ import GraphView from './components/GraphView'
 import Activity from './components/Activity'
 import Login from './components/Login'
 
-type View = 'graph' | 'today' | 'dashboard' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
+type View = 'graph' | 'dashboard' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 
 const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Element }[] = [
   { id: 'graph', label: 'Brain', Icon: IconSparkle },
-  { id: 'today', label: 'Today', Icon: IconToday },
   { id: 'dashboard', label: 'Insights', Icon: IconDashboard },
   { id: 'chat', label: 'Chat', Icon: IconChat },
   { id: 'activity', label: 'Activity', Icon: IconSync },
@@ -147,7 +145,6 @@ export default function App() {
       </nav>
 
       <main className="main" style={{ zIndex: 1 }}>
-        {view === 'today' && <Today onNavigate={(v) => setView(v as View)} />}
         {view === 'dashboard' && <Dashboard onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}
         {view === 'graph' && <GraphView />}
