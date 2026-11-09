@@ -96,6 +96,16 @@ export function buildAgentCatalog(info: ConnectInfo): AgentCard[] {
   const { mcpScript: s, memoryDir: d, repoUrl } = info
   const cards: AgentCard[] = [
     {
+      id: 'grok', name: 'Grok Bot', tag: 'bot · your VM',
+      where: 'runs inside your VM — repo clone + MCP',
+      blurb: 'Your Grok bot running on your own machine or VM. Clone the brain repo there and run the bundled MCP server — it gets sb_search, sb_remember and friends natively. Falls back to the git prompt if the bot has no shell.',
+      snippets: [
+        { label: 'bot on VM (repo clone)', language: 'bash', content: `git clone ${repoUrl ?? '<your-repo-url>'}\ncd second-brain-vault\nnode tools/keepmind-mcp.mjs --dir ./memory` },
+        { label: 'mcpServers JSON', language: 'json', content: jsonMcp(s, d) }
+      ],
+      prompt: true
+    },
+    {
       id: 'codex', name: 'Codex', tag: 'CLI · local',
       where: '~/.codex/config.toml',
       blurb: 'Codex CLI / IDE extension. Registers KeepMind as an MCP server — tools like sb_search, sb_remember become native.',
@@ -143,15 +153,6 @@ export function buildAgentCatalog(info: ConnectInfo): AgentCard[] {
       snippets: [],
       prompt: true,
       note: 'Needs the GitHub connector enabled in ChatGPT, or paste the MEMORY BLOCK it returns.'
-    },
-    {
-      id: 'grok', name: 'Grok', tag: 'web / bot · VPS',
-      where: 'paste prompt · or bot with shell',
-      blurb: 'X/Grok web has no shell — use the prompt. A Grok bot on a VPS with shell access can clone the repo and run the bundled MCP server directly.',
-      snippets: [
-        { label: 'bot on VPS (repo clone)', language: 'bash', content: `git clone ${repoUrl ?? '<your-repo-url>'}\ncd second-brain-vault\nnode tools/keepmind-mcp.mjs --dir ./memory` }
-      ],
-      prompt: true
     }
   ]
   return cards
