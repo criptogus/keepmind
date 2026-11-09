@@ -3,48 +3,46 @@
 
 export function buildConnectPrompt(repoUrl: string): string {
   const repo = repoUrl?.replace(/\.git$/, '') ?? 'YOUR_SECOND_BRAIN_REPO_URL'
-  return `You are now connected to my "KeepMind" — a private GitHub repository that is my long-term memory. From now on, use it like a persistent memory across every session, shared with my KeepMind desktop app.
+  return `You are now connected to my "KeepMind" — a GitHub repository that is my long-term memory, shared with my KeepMind desktop app.
 
 REPOSITORY: ${repo}
 
-## Memory layout (human-brain style tiers)
-The repo keeps memory in tiers under \`memory/\`:
-- \`short-term/YYYY-MM-DD.md\` — raw daily logs (working memory). THIS is where you write.
-- \`medium-term/YYYY-Www.md\` — weekly consolidations (written by the app's sleep cycle; don't touch)
-- \`long-term/\` — durable facts, lessons and skills (app-managed; read freely, append only if clearly durable)
-- \`insights/\`, \`summaries/\`, \`sleep/\` — generated reports (read-only for you)
-- \`notes/\`, \`tasks/\`, \`daily/\` — user notes, to-dos and daily goals
-- \`entities/\` — knowledge graph: one page per person/project/topic with [[wikilinks]]
-- \`review/\` — spaced-repetition flashcards and quiz sessions
-- \`skills/\` — procedural skills (reusable "how we do X" pages)
-- \`crm/\` — people/, companies/, interactions/ relationship memory
-- \`ops/\` — operational logs incl. search-gaps.md (queries that found nothing)
-- \`long-term/decisions.md\` — decision ledger (append via remember kind=decision)
-- Notes may have YAML frontmatter (\`summary:\`, \`tags:\`, \`links:\`) — preserve it when editing
-- \`tools/keepmind-mcp.mjs\` — zero-dep MCP server; if you support MCP, prefer it over raw file edits:
-  \`node tools/keepmind-mcp.mjs --dir ./memory\` exposes sb_search / sb_read / sb_write / sb_remember / sb_tasks
+## FIRST: repo governance wins
+Before writing anything, explore the repo root and read its governance docs — \`AGENTS.md\`, \`CLAUDE.md\`, \`CONTEXT.md\`, \`governance/\`, \`README\`, writer/ingest scripts in \`tools/\` or \`ops/\`. If the repo defines its own structure, write paths, or a writer script, FOLLOW THEM — they override everything below. Never bypass a documented write path with raw git commits.
+
+## Memory layout
+The repo IS the memory — its structure is whatever it already is. Explore first; do not assume directories exist. Common KeepMind-native layout (only if present):
+- \`memory/short-term/YYYY-MM-DD.md\` — raw daily logs (working memory)
+- \`memory/medium-term/\`, \`memory/long-term/\` — consolidations and durable facts/lessons/skills (app-managed; read freely, append only if clearly durable)
+- \`memory/insights/\`, \`memory/summaries/\`, \`memory/sleep/\` — generated reports (read-only)
+- \`memory/notes/\`, \`memory/daily/\`, \`memory/entities/\`, \`memory/review/\`, \`memory/skills/\`, \`memory/crm/\`, \`memory/ops/\`
+If the repo uses a different memory root (e.g. an imported vault), write inside THAT root, not a parallel \`memory/\` tree.
+
+## Boundaries — do not create parallel systems
+- If the repo already has directories for people/companies/relationships, EXTEND them — never create a second CRM.
+- If my tasks live in an external tool (e.g. Google Tasks), do NOT create task files in the repo — record references/links instead.
+- If the repo ships a memory/writer script or MCP server (e.g. \`tools/keepmind-mcp.mjs\`), prefer it over raw file edits.
+- Secrets, passwords, API keys and credentials are NEVER saved.
 
 ## Setup (do once)
 - Clone the repo locally, or access it via the GitHub API / \`gh\` CLI / GitHub MCP if you have one.
-- Read \`memory/long-term/facts.md\`, \`memory/long-term/lessons.md\`, \`memory/long-term/skills.md\` and the last few \`short-term/\` logs to load context.
-- The app syncs this repo continuously — anything you push is pulled into my KeepMind automatically, and vice versa. Always \`git pull\` before reading and \`git push\` after writing.
-- If \`memory/INDEX.md\` does not exist, create it — a markdown table of contents of everything stored.
+- Read the repo's index/context files and the most recent memory logs to load context.
+- The app syncs this repo continuously — anything you push is pulled into my KeepMind automatically. Pull before reading, push after writing — UNLESS repo governance specifies another write path.
 
 ## Every session
 - BEFORE answering anything about me, my work, or my projects: read the relevant memory files first.
-- AFTER completing meaningful work: APPEND a memory entry. Never rewrite or delete existing entries.
+- AFTER completing meaningful work: APPEND a memory entry in the repo's own format. Never rewrite or delete existing entries.
 
 ## What to save
-Append to \`memory/short-term/YYYY-MM-DD.md\` under a heading \`## HH:MM — <source>\` (e.g. \`claude-code\`, \`chatgpt\`, \`gemini\`). Save:
+Append under a dated heading (e.g. \`## HH:MM — <source>\`, matching repo conventions). Save:
 - Decisions made and the reasoning behind them
-- Work output: emails sent (subject + gist), documents produced (PDFs, decks, reports — title + summary/path), code shipped, PRs, deploys
+- Work output: emails sent (subject + gist), documents produced (title + summary/path), code shipped, PRs, deploys
 - Insights, lessons learned, things I said I would do
 - Personal context when relevant: health, family, preferences, goals, finances
 
 ## Rules
 - Markdown only. Append-only. One file per day per source.
 - Keep entries concise — bullets, not essays. Link artifacts by path or URL.
-- Secrets, passwords, API keys and credentials are NEVER saved.
 - Commit and push at the end of each session with message \`memory: YYYY-MM-DD <source>\`.
 - If you cannot write to GitHub directly, end your reply with a \`## 🧠 MEMORY BLOCK\` section containing the exact markdown to append — I will paste it back.
 
@@ -59,6 +57,7 @@ Confirm you understand by listing the top 5 things you remember about me after r
 export interface ConnectInfo {
   mcpScript: string
   memoryDir: string
+  memoryRoot?: string // repo-relative memory root, e.g. 'memory/' or '' for whole-vault imports
   repoUrl: string | null
   repoOwner: string | null
   repoName: string | null
@@ -93,14 +92,17 @@ command = "node"
 args = ["${script}", "--dir", "${dir}"]`
 
 export function buildAgentCatalog(info: ConnectInfo): AgentCard[] {
-  const { mcpScript: s, memoryDir: d, repoUrl } = info
+  const { mcpScript: s, memoryDir: d, repoUrl, memoryRoot } = info
+  const repoName = (repoUrl ?? '').replace(/\.git$/, '').split('/').pop() || 'your-brain-repo'
+  const memArg = memoryRoot === '' || memoryRoot == null ? '.' : `./${memoryRoot.replace(/\/$/, '')}`
+  const cloneSnippet = `git clone ${repoUrl ?? '<your-repo-url>'}\ncd ${repoName}\nnode tools/keepmind-mcp.mjs --dir ${memArg}`
   const cards: AgentCard[] = [
     {
       id: 'grok', name: 'Grok Bot', tag: 'bot · your VM',
       where: 'runs inside your VM — repo clone + MCP',
       blurb: 'Your Grok bot running on your own machine or VM. Clone the brain repo there and run the bundled MCP server — it gets sb_search, sb_remember and friends natively. Falls back to the git prompt if the bot has no shell.',
       snippets: [
-        { label: 'bot on VM (repo clone)', language: 'bash', content: `git clone ${repoUrl ?? '<your-repo-url>'}\ncd second-brain-vault\nnode tools/keepmind-mcp.mjs --dir ./memory` },
+        { label: 'bot on VM (repo clone)', language: 'bash', content: cloneSnippet },
         { label: 'mcpServers JSON', language: 'json', content: jsonMcp(s, d) }
       ],
       prompt: true
@@ -142,7 +144,7 @@ export function buildAgentCatalog(info: ConnectInfo): AgentCard[] {
       blurb: 'Generic stdio MCP registration for Hermes, OpenCode, custom bots or scripts. On a VPS, clone the repo and run `node tools/keepmind-mcp.mjs --dir ./memory` instead — the script ships inside the repo.',
       snippets: [
         { label: 'mcpServers JSON', language: 'json', content: jsonMcp(s, d) },
-        { label: 'remote/VPS (repo clone)', language: 'bash', content: `git clone ${repoUrl ?? '<your-repo-url>'}\ncd second-brain-vault\nnode tools/keepmind-mcp.mjs --dir ./memory` }
+        { label: 'remote/VPS (repo clone)', language: 'bash', content: cloneSnippet }
       ],
       prompt: true
     },

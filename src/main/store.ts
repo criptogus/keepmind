@@ -102,6 +102,7 @@ export interface AppConfig {
   background?: boolean       // keep services (sync/crons/MCP) alive when window closes
   launchAtLogin?: boolean    // open KeepMind at OS login
   autonomy?: 'supervised' | 'autopilot' | 'autonomous' // supervised=approval queues; autopilot=crons run free; autonomous=+health self-applies daily
+  vaultTasksTriaged?: boolean // one-shot flag (userData only): vault checkbox→tasks import already ran; survives vault cleanup so archived tasks never re-import
   security?: VaultSecurityConfig
 }
 

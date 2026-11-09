@@ -1686,7 +1686,13 @@ Se não houver nota do SuperagentSkill, diga isso. Menos skills afiadas vencem u
   // (marker in ops/) after a whole-vault import.
   async triageVaultTasks() {
     const marker = 'ops/vault-tasks-triaged.md'
-    if (this.memory.read(marker)) return { skipped: true }
+    // Permanent guard: the ops/ marker lives inside the synced vault and can be
+    // deleted by vault cleanup, which would re-import archived tasks forever.
+    // This flag lives in config.json (userData, never synced) and survives.
+    if (this.store.get().vaultTasksTriaged || this.memory.read(marker)) {
+      if (!this.store.get().vaultTasksTriaged) this.store.set({ vaultTasksTriaged: true })
+      return { skipped: true }
+    }
     const seen = new Set<string>()
     const out: { title: string; src: string }[] = []
     const cbRe = /^\s*[-*+]\s+\[ \]\s+(.{3,200}?)\s*$/gm
@@ -1712,6 +1718,7 @@ Se não houver nota do SuperagentSkill, diga isso. Menos skills afiadas vencem u
         `# ${t.title}\n> status: open · priority: normal · created: ${new Date().toISOString()}\n\n_source: ${t.src}_\n`)
     }
     this.memory.quietWrite(marker, `# Vault task triage\n\n_imported ${out.length} open checkbox items from vault markdown on ${new Date().toISOString()}_\n`)
+    this.store.set({ vaultTasksTriaged: true })
     return { imported: out.length }
   }
 

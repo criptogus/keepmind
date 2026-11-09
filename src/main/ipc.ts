@@ -348,6 +348,7 @@ export function registerIpc(
     return {
       mcpScript: ensureMcpServerScript(),
       memoryDir: store.memoryDir,
+      memoryRoot: store.get().github.syncRoot ?? 'memory/',
       repoUrl: gh.repoUrl ?? null,
       repoOwner: gh.repoOwner ?? null,
       repoName: gh.repoName ?? null
