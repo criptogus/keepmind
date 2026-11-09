@@ -80,8 +80,8 @@ export class Memory {
   // Activity journal — every local mutation is recorded to
   // ops/activity.jsonl (local-only, .jsonl so it never syncs to GitHub)
   // and kept in a ring buffer for the UI feed.
-  private journalPush(op: ActivityEntry['op'], rel: string) {
-    const entry: ActivityEntry = { ts: Date.now(), op, path: rel, source: this.activitySource }
+  private journalPush(op: ActivityEntry['op'], rel: string, source = this.activitySource) {
+    const entry: ActivityEntry = { ts: Date.now(), op, path: rel, source }
     this.journal.push(entry)
     if (this.journal.length > 600) this.journal.splice(0, this.journal.length - 600)
     try {
@@ -119,6 +119,25 @@ export class Memory {
   quietRemove(relative: string) {
     this.quiet = true
     try { this.remove(relative) } finally { this.quiet = false }
+  }
+
+  // Remote-originated changes (GitSync pull): journaled so Activity shows
+  // WHO/WHAT synced in — but never re-dirtied for push (already on GitHub).
+  syncWrite(relative: string, content: string) {
+    const p = this.path(relative)
+    // skip no-op pulls — identical content doesn't churn the journal
+    if (existsSync(p) && readFileSync(p, 'utf8') === content) return
+    mkdirSync(join(p, '..'), { recursive: true })
+    writeFileSync(p, content, 'utf8')
+    this.journalPush('write', relative, 'sync')
+  }
+
+  syncRemove(relative: string) {
+    const p = this.path(relative)
+    if (existsSync(p)) {
+      unlinkSync(p)
+      this.journalPush('remove', relative, 'sync')
+    }
   }
 
   allRelFiles(): string[] { return this.allFiles('') }

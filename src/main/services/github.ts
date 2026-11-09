@@ -131,7 +131,7 @@ function repoCoords(cfg: GitHubConfig): { owner: string; repo: string; branch: s
   return { owner, repo, branch: cfg.defaultBranch ?? 'main' }
 }
 
-export async function pushFile(cfg: GitHubConfig, path: string, content: string, message: string) {
+export async function pushFile(cfg: GitHubConfig, path: string, content: string, message: string): Promise<string | null> {
   if (!cfg.accessToken) throw new Error('GitHub not connected')
   const { owner, repo, branch } = repoCoords(cfg)
   const encoded = encodeURIComponent(path)
@@ -144,12 +144,13 @@ export async function pushFile(cfg: GitHubConfig, path: string, content: string,
     sha = existing.sha
   } catch { /* new file */ }
 
-  await apiSend('PUT', apiPath, cfg.accessToken, {
+  const res = await apiSend('PUT', apiPath, cfg.accessToken, {
     message,
     content: Buffer.from(content, 'utf8').toString('base64'),
     branch,
     ...(sha ? { sha } : {})
   })
+  return res?.content?.sha ?? null
 }
 
 export async function listRepoFiles(cfg: GitHubConfig, dir = ''): Promise<string[]> {

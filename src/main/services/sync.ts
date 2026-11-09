@@ -166,7 +166,17 @@ export class GitSync {
           this.dirty.delete(rel)
           continue
         }
-        await github.pushFile(gh, `${this.syncRoot}${rel}`, content, 'sync: keepmind update')
+        // Conflict guard: if the remote file moved since our last sync (or exists
+        // untracked) while we hold unsynced local changes, preserve the remote
+        // version under conflicts/ before overwriting — nothing is lost.
+        const expected = this.state.sha[rel]
+        const remote = await github.fetchMemoryFile(gh, rel, this.syncRoot).catch(() => null)
+        if (remote && remote.sha !== expected) {
+          this.memory.syncWrite(`conflicts/${rel}`, `<!-- remote version preserved ${new Date().toISOString()} — local version won the push -->\n\n${remote.content}`)
+          this.dirty.add(`conflicts/${rel}`)
+        }
+        const newSha = await github.pushFile(gh, `${this.syncRoot}${rel}`, content, 'sync: keepmind update')
+        if (newSha) this.state.sha[rel] = newSha
         this.dirty.delete(rel)
         this.lastPushAt = Date.now()
       }
@@ -222,7 +232,7 @@ export class GitSync {
         const file = await github.fetchMemoryFile(gh, rel, root)
         if (!file) continue
         try {
-          this.memory.quietWrite(rel, file.content)
+          this.memory.syncWrite(rel, file.content)
           this.state.sha[rel] = file.sha
         } catch (e) {
           console.warn(`[sync] skipped unsafe remote path ${rel}:`, e)
@@ -240,7 +250,7 @@ export class GitSync {
             console.warn(`[sync] aborting pull: ${deletions} remote deletions exceeds safety threshold`)
             break
           }
-          try { this.memory.quietRemove(rel) } catch { /* unsafe path — skip */ }
+          try { this.memory.syncRemove(rel) } catch { /* unsafe path — skip */ }
           delete this.state.sha[rel]
         }
       }
