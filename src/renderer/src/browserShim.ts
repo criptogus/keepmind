@@ -195,6 +195,47 @@ const demo = {
   brainGradeCard: async () => ({ due: Date.now() + 86_400_000 }),
   brainPolicy: async () => ({ active: 'Sem instruções extras ainda.', proposals: ['- 2026-11-08: Separar fatos de pessoas em páginas de entidade.'] }),
   brainPolicyApply: async () => 'Política ativa atualizada.',
+  brainSkills: async () => ({
+    items: [{
+      file: 'research.md', path: 'skills/research.md', group: 'keepmind', segment: 'KeepMind',
+      title: 'Pesquisar antes de responder', ageDays: 4, uses: 3, mentions: 2, kind: 'skill',
+      slug: 'research', excerpt: 'Antes de afirmar um fato, busque na memória.'
+    }],
+    suggestions: [{
+      slug: 'research-skill', name: 'Research', description: 'Pacote público de pesquisa.', type: 'skill', installs: 120, alreadyHave: false
+    }],
+    hints: [{
+      path: 'skills/research.md', title: 'Pesquisar antes de responder', segment: 'KeepMind', kind: 'use' as const,
+      sentence: 'Usada 5 vezes e ainda sem nota. Avalie no SuperagentSkill antes de reescrever.'
+    }],
+    notes: [],
+    segments: [{ id: 'KeepMind', count: 1 }],
+    threats: []
+  }),
+  brainSkillThreatScan: async () => ({
+    threats: [{
+      path: 'skills/research.md', slug: 'research', at: new Date().toISOString(),
+      status: 'clean' as const, score: 7.5, findingsCritical: 0, findingsPublic: 0,
+      injection: 'Guarda de injeção: limpo.',
+      summary: 'confiança 7.5 · nenhum achado público de robustez',
+      findings: []
+    }],
+    hints: []
+  }),
+  brainSkillInstall: async (slug: string) => ({
+    file: `${slug}.md`, path: `skills/${slug}.md`, group: 'keepmind', segment: 'SuperagentSkill',
+    title: slug, ageDays: 0, uses: 0, mentions: 0, kind: 'skill', slug, excerpt: ''
+  }),
+  brainSkillSearch: async (query: string) => [{
+    slug: 'demo', name: query, description: 'Resultado de demonstração.', type: 'skill', installs: 1, alreadyHave: false
+  }],
+  brainSkillReview: async (path: string) => ({
+    path, at: new Date().toISOString(), score: 70, formatScore: 80, substanceScore: 60,
+    rationale: 'A estrutura está clara e o exemplo ainda é genérico.',
+    actions: ['Acrescente um exemplo com o vocabulário do usuário.']
+  }),
+  brainSkillTrust: async (slug: string) => ({ slug, score: 80, summary: 'Confiança de demonstração, 80/100.' }),
+  brainSkillEvolve: async () => ({ report: 'Evolução de demonstração.', hints: [] }),
   onJob: () => () => {},
   onBrainStep: () => () => {},
 

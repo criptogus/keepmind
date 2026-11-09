@@ -13,6 +13,7 @@ import type { RagService } from './rag'
 import type { LayaService } from './laya'
 import { refreshEntities } from './entities'
 import { SECRET_PATTERNS } from './redact'
+import { evolutionHints, listVaultSkills, loadSakNotes, loadSkillThreats } from './skillsHub'
 
 // Long-term files are append-only, so the durable signal is at the end.
 // Reading the head drops everything the brain just learned.
@@ -1362,12 +1363,12 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
     const skillDocs = skillFiles.map(f => `### skills/${f}\n${(this.memory.read(`skills/${f}`) ?? '').slice(0, 3000)}`)
 
     if (!skillsMd.trim() && !skillDocs.length) {
-      const msg = '# Skills evolution — nothing to review yet\n\nNo skills recorded. They accumulate from sleep cycles and `sb_remember kind=skill`.\n'
+      const msg = `# Evolução de skills — ${day}\n\nAinda não há skills. Elas entram pelo sono, por \`sb_remember kind=skill\`, ou quando você instala um pacote do SuperagentSkill.\n`
       this.memory.write(`insights/skills-${day}.md`, msg)
+      this.note('processed', 'Evolução de skills não tinha o que revisar.', `insights/skills-${day}.md`)
       return msg
     }
 
-    // 1) deterministic dedupe on skills.md bullets
     let deduped = 0
     if (skillsMd.trim()) {
       const seen = new Set<string>()
@@ -1385,34 +1386,67 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
       if (next !== skillsMd) this.memory.write('long-term/skills.md', next)
     }
 
-    // 2) LLM consolidation review
+    const vault = listVaultSkills(this.memory)
+    const notes = loadSakNotes(this.memory)
+    const threats = loadSkillThreats(this.memory)
+    const hints = evolutionHints(vault, notes, threats)
+    const guide = [
+      'Segmentos e uso (gravações no diário + menções nos logs recentes):',
+      ...vault.slice(0, 40).map(s => `- [${s.segment}] ${s.title} (${s.path}) · ${s.kind} · ${s.uses} gravações · ${s.mentions} menções · ${s.ageDays} dias`),
+      '',
+      'Notas do SuperagentSkill (só existem se a pessoa rodou a avaliação):',
+      ...(notes.length
+        ? notes.slice(0, 12).map(n => `- ${n.path}: nota ${n.score ?? 'sem número'} · ${n.rationale.slice(0, 240)} · ações: ${n.actions.join(' | ') || 'nenhuma'}`)
+        : ['- Nenhuma nota ainda. Não invente pontuação.']),
+      '',
+      'Análise de skill maliciosa (confiança do pacote + guarda de injeção no arquivo):',
+      ...(threats.length
+        ? threats.slice(0, 12).map(t => `- ${t.path}: ${t.status} · ${t.summary}`)
+        : ['- A análise ainda não rodou. Não invente achado.']),
+      '',
+      'Pistas já calculadas:',
+      ...(hints.length ? hints.map(h => `- (${h.kind}) ${h.sentence}`) : ['- Sem pista determinística.'])
+    ].join('\n')
+
     const corpus = [
-      skillsMd.slice(-8000),
-      ...skillDocs.slice(-10)
-    ].join('\n\n').slice(-20000)
+      guide,
+      skillsMd.slice(-6000),
+      ...skillDocs.slice(0, 8)
+    ].join('\n\n').slice(0, 20000)
 
     const res = await chat(this.store.get().ai as AiProviderConfig, [
       {
         role: 'system',
-        content: `You are the skills curator of a personal knowledge system. Review the procedural skills below and output a consolidation report:
+        content: `Você é o curador de habilidades do KeepMind. O texto junta a memória procedural, o uso real, as notas do SuperagentSkill e, se a pessoa tiver rodado, a análise de skill maliciosa.
 
-1. **Merge** — skills that are duplicates or should be one procedure
-2. **Prune** — skills that are stale, wrong, or superseded (say why)
-3. **Promote** — skills proven useful ≥2 times that deserve a dedicated page in skills/
-4. **Gap** — recurring tasks with NO skill yet that should get one
+Escreva um relatório curto, em português, com quatro blocos:
 
-Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every call in the text. Markdown, user's language, max ~400 words.`
+1. Segmentos — agrupe as skills por origem e diga o que cada grupo está fazendo.
+2. Evoluir — para cada skill com uso ou com nota, uma melhoria concreta. Cite o número de usos ou a nota. Não invente pontuação.
+3. Ameaças — o que a análise de robustez e de injeção pediu para tirar ou reescrever. Se a análise não rodou, diga isso. Não invente achado.
+4. Aposentar — skills sem uso, e por quê.
+
+Se não houver nota do SuperagentSkill, diga isso. Menos skills afiadas vencem uma lista vaga. No máximo 400 palavras.`
       },
       { role: 'user', content: corpus }
     ], [], this.localLlm?.endpoint)
 
+    const hintLines = hints.length ? hints.map(h => `- ${h.sentence}`).join('\n') : '- Nenhuma pista além do texto.'
     const report = [
-      `# Skills evolution — ${day}`,
-      `_${deduped} duplicate bullet(s) removed from skills.md · ${skillFiles.length} skill page(s)_`,
-      '', res.text, ''
+      `# Evolução de skills — ${day}`,
+      '',
+      `${vault.length} no cofre · ${notes.length} nota(s) do SuperagentSkill · ${deduped} duplicata(s) removida(s) de skills.md`,
+      '',
+      '## Pistas de uso e de nota',
+      '',
+      hintLines,
+      '',
+      res.text,
+      ''
     ].join('\n')
     this.memory.write(`insights/skills-${day}.md`, report)
-    this.memory.append('long-term/skills.md', `\n\n## Evolution review ${day}\n\n${res.text}\n`)
+    this.memory.append('long-term/skills.md', `\n\n## Evolução ${day}\n\n${res.text}\n`)
+    this.note('improved', `Evolução de skills: ${vault.length} no cofre, ${notes.length} nota(s) do SuperagentSkill.`, `insights/skills-${day}.md`)
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()

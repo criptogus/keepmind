@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import NeuralField from './components/NeuralField'
-import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconSparkle, IconSync, IconToday } from './components/icons'
+import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconSparkle, IconSync, IconToday, IconSkill } from './components/icons'
+import Skills from './components/Skills'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
@@ -12,7 +13,7 @@ import Activity from './components/Activity'
 import Today from './components/Today'
 import Login from './components/Login'
 
-type View = 'today' | 'graph' | 'dashboard' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
+type View = 'today' | 'graph' | 'dashboard' | 'chat' | 'skills' | 'activity' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 interface Job { phase: 'start' | 'done' | 'error'; name: string; summary?: string }
@@ -22,6 +23,7 @@ const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Elemen
   { id: 'today', label: 'Hoje', Icon: IconToday },
   { id: 'graph', label: 'Mapa', Icon: IconSparkle },
   { id: 'chat', label: 'Conversar', Icon: IconChat },
+  { id: 'skills', label: 'Habilidades', Icon: IconSkill },
   { id: 'dashboard', label: 'Saúde', Icon: IconDashboard },
   { id: 'activity', label: 'Atividade', Icon: IconSync },
   { id: 'connectors', label: 'Conectar', Icon: IconPlug },
@@ -158,7 +160,10 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <BrainMark size={36} />
-          <div className="brand__name">keep<em>mind</em></div>
+          <div className="brand__text">
+            <div className="brand__name">keep<em>mind</em></div>
+            <div className="brand__tag">Your AI Second Brain</div>
+          </div>
         </div>
         <nav className="nav">
           {NAV.map(n => (
@@ -212,6 +217,7 @@ export default function App() {
         {view === 'today' && <Today onToast={toast} />}
         {view === 'dashboard' && <Dashboard onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}
+        {view === 'skills' && <Skills onActivity={pulse} onToast={toast} />}
         {view === 'graph' && <GraphView />}
         {view === 'activity' && <Activity />}
         {view === 'connectors' && <Connectors onActivity={pulse} onToast={toast} />}

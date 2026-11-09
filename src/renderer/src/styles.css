@@ -55,11 +55,19 @@ input, textarea, select { font-family: inherit; }
   display: flex; align-items: center; gap: 12px;
   padding: 4px 12px 22px;
 }
+.brand__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .brand__name {
   font-family: var(--mono); font-weight: 700; font-size: 13px;
   letter-spacing: .2em; text-transform: uppercase;
 }
 .brand__name em { color: var(--cyan); font-style: normal; text-shadow: 0 0 14px var(--glow); }
+.brand__tag {
+  font-size: 11px; line-height: 1.25; color: var(--text-dim); letter-spacing: .01em;
+}
+.skills-grid {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+  gap: 16px; max-width: 1100px;
+}
 
 .nav { display: flex; flex-direction: column; gap: 5px; flex: 1; }
 .nav__item {
@@ -485,7 +493,7 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
 /* ── Responsive ─────────────────────────── */
 @media (max-width: 1100px) {
   .sidebar { width: 76px; padding: 18px 10px; }
-  .brand__name, .nav__label, .status-pill span:not(.dot) { display: none; }
+  .brand__name, .brand__tag, .nav__label, .status-pill span:not(.dot) { display: none; }
   .brand { justify-content: center; padding: 4px 0 20px; }
   .nav__item { justify-content: center; padding: 12px; }
   .nav__item .ico { width: auto; }
@@ -494,6 +502,7 @@ h3 { font-size: 12.5px; font-weight: 650; letter-spacing: .08em; }
 }
 
 @media (max-width: 860px) {
+  .skills-grid { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .mobile-nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;

@@ -131,6 +131,11 @@ const api = {
   brainHealthApply: (recId: string) => ipcRenderer.invoke('brain:healthApply', recId),
   brainSkills: () => ipcRenderer.invoke('brain:skills'),
   brainSkillInstall: (slug: string) => ipcRenderer.invoke('brain:skillInstall', slug),
+  brainSkillSearch: (query: string, type?: string) => ipcRenderer.invoke('brain:skillSearch', query, type),
+  brainSkillReview: (path: string) => ipcRenderer.invoke('brain:skillReview', path),
+  brainSkillTrust: (slug: string) => ipcRenderer.invoke('brain:skillTrust', slug),
+  brainSkillThreatScan: () => ipcRenderer.invoke('brain:skillThreatScan'),
+  brainSkillEvolve: () => ipcRenderer.invoke('brain:skillEvolve'),
   appLaunchAtLogin: () => ipcRenderer.invoke('app:launchAtLogin'),
   appSetLaunchAtLogin: (enabled: boolean) => ipcRenderer.invoke('app:setLaunchAtLogin', enabled),
   onBrainDelta: (cb: (t: string) => void) => {

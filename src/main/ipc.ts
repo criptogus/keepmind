@@ -17,7 +17,7 @@ import { checkForUpdates, installUpdate, updaterStatus } from './services/update
 import { listModels, deleteModel } from './services/models'
 import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
 import { analyzeHealth, applyHealth } from './services/health'
-import { listVaultSkills, suggestSkills, installSkill } from './services/skillsHub'
+import { evolutionHints, installSkill, listVaultSkills, loadSakNotes, loadSkillThreats, reviewVaultSkill, scanSkillThreats, searchRegistry, skillTrust, skillsSnapshot } from './services/skillsHub'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
 import type { McpServerConfig } from './store'
 import type { HookServer } from './services/hooks'
@@ -500,19 +500,34 @@ export function registerIpc(
     applyHealth(store, brain.getMemory(), automations, String(recId ?? ''))
   )
 
-  // ── Skills bank: vault skills + registry suggestions + install ──
-  ipcMain.handle('brain:skills', async () => {
-    const memory = brain.getMemory()
-    const [items, suggestions] = await Promise.all([
-      Promise.resolve(listVaultSkills(memory)),
-      suggestSkills(memory).catch(() => [])
-    ])
-    return { items, suggestions }
-  })
-  ipcMain.handle('brain:skillInstall', async (_e, slug: string) => {
+  // ── Skills bank: vault segments, SuperagentSkill registry, reviews ──
+  const skillSlug = (slug: unknown) => {
     const s = String(slug ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '')
     if (!s || s.length > 80) throw new Error('invalid skill slug')
-    return installSkill(brain.getMemory(), s)
+    return s
+  }
+  const skillPath = (rel: unknown) => {
+    const s = String(rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
+    if (!s.endsWith('.md') || s.includes('..') || s.length > 240 || !/^[a-zA-Z0-9._/-]+$/.test(s)) {
+      throw new Error('caminho de skill inválido')
+    }
+    return s
+  }
+  ipcMain.handle('brain:skills', () => skillsSnapshot(brain.getMemory()))
+  ipcMain.handle('brain:skillInstall', (_e, slug: string) => installSkill(brain.getMemory(), skillSlug(slug)))
+  ipcMain.handle('brain:skillSearch', (_e, query: string, type?: string) => {
+    const q = String(query ?? '').trim().slice(0, 80)
+    if (q.length < 2) return []
+    const kind = ['skill', 'playbook', 'soul', 'guardrail'].includes(String(type)) ? String(type) : undefined
+    return searchRegistry(brain.getMemory(), q, kind)
+  })
+  ipcMain.handle('brain:skillReview', (_e, rel: string) => reviewVaultSkill(brain.getMemory(), skillPath(rel)))
+  ipcMain.handle('brain:skillTrust', (_e, slug: string) => skillTrust(skillSlug(slug)))
+  ipcMain.handle('brain:skillThreatScan', () => scanSkillThreats(brain.getMemory()))
+  ipcMain.handle('brain:skillEvolve', async () => {
+    const report = await brain.evolveSkills()
+    const memory = brain.getMemory()
+    return { report, hints: evolutionHints(listVaultSkills(memory), loadSakNotes(memory), loadSkillThreats(memory)) }
   })
 
   ipcMain.handle('brain:activity', (_e, limit?: number) => brain.getMemory().activity(limit ?? 200))

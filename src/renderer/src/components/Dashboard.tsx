@@ -111,7 +111,7 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
       <div className="card card-pad" style={{ maxWidth: 900, display: 'flex', alignItems: 'center', gap: 12 }}>
         <IconSparkle size={16} />
         <p className="faint" style={{ fontSize: 12.5, margin: 0 }}>
-          Procedural memory — the skills your brain accumulated and can install new ones — lives on the <strong style={{ color: 'var(--text)' }}>Skills</strong> page.
+          As habilidades ficam em <strong style={{ color: 'var(--text)' }}>Habilidades</strong>: o cofre segmentado, o catálogo do SuperagentSkill e a evolução por uso e por nota.
         </p>
       </div>
     </div>
