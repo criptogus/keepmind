@@ -1223,6 +1223,70 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
       content: this.memory.read(`summaries/${f}`) ?? ''
     }))
   }
+
+  readMemoryFile(rel: string): string | null {
+    try { return this.memory.read(rel) } catch { return null }
+  }
+
+  // Wikilink graph of the whole vault — powers the 3D neural view.
+  // Cached for 60s: scanning ~10k files is too slow per frame.
+  private graphCache: { at: number; data: any } | null = null
+  memoryGraph() {
+    if (this.graphCache && Date.now() - this.graphCache.at < 60_000) return this.graphCache.data
+    const files = this.memory.allRelFiles()
+      .filter(f => f.endsWith('.md') && !f.split('/').slice(0, -1).some(s => s.startsWith('.')))
+    const idOf = (f: string) => f.replace(/\.md$/, '')
+    const byBase = new Map<string, string>()
+    const nodes = new Map<string, { id: string; label: string; dir: string; links: number }>()
+    for (const f of files) {
+      const id = idOf(f)
+      const base = f.split('/').pop()!.replace(/\.md$/, '')
+      byBase.set(base.toLowerCase(), id)
+      nodes.set(id, { id, label: base, dir: f.split('/')[0] ?? '', links: 0 })
+    }
+    const linkRe = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]|\]\(([^)\s]+?\.md)(?:#[^)\s]*)?[^)]*\)/g
+    const edgeSet = new Set<string>()
+    for (const f of files) {
+      const src = idOf(f)
+      const content = this.memory.read(f)
+      if (!content) continue
+      const dir = f.split('/').slice(0, -1).join('/')
+      for (const m of content.matchAll(linkRe)) {
+        let target = (m[1] ?? m[2] ?? '').split('#')[0]
+        try { target = decodeURIComponent(target) } catch { /* keep raw */ }
+        target = target.replace(/\.md$/, '').replace(/^\.\//, '')
+        if (!target) continue
+        let tid: string | undefined
+        if (nodes.has(target)) tid = target
+        else {
+          const base = target.split('/').pop()!.toLowerCase()
+          tid = byBase.get(base)
+          if (!tid && dir) {
+            const rel = `${dir}/${target}`
+            if (nodes.has(rel)) tid = rel
+          }
+        }
+        if (tid && tid !== src && nodes.has(tid)) {
+          edgeSet.add(`${src}→${tid}`)
+          const n = nodes.get(src)!
+          n.links++
+        }
+      }
+    }
+    // Cap: keep the most-connected nodes so the 3D view stays interactive
+    let nodeList = [...nodes.values()]
+    if (nodeList.length > 3000) {
+      nodeList = nodeList.sort((a, b) => b.links - a.links).slice(0, 3000)
+    }
+    const keep = new Set(nodeList.map(n => n.id))
+    const links = [...edgeSet]
+      .map(e => e.split('→'))
+      .filter(([s, t]) => keep.has(s) && keep.has(t))
+      .map(([s, t]) => [s, t])
+    const data = { nodes: nodeList, links, totalFiles: files.length }
+    this.graphCache = { at: Date.now(), data }
+    return data
+  }
 }
 
 function slug(s: string): string {

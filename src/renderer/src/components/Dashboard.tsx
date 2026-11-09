@@ -14,6 +14,7 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
   const [tiers, setTiers] = useState<any>(null)
   const [sync, setSync] = useState<any>(null)
   const [sleeping, setSleeping] = useState(false)
+  const [memFilter, setMemFilter] = useState<string | null>(null)
 
   const refresh = async () => {
     const [i, s, m, c, t, sy] = await Promise.all([
@@ -220,7 +221,25 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
           Memory ({memory.length} files)
           {tiers && (
             <span className="faint mono" style={{ fontSize: 10.5, fontWeight: 400, marginLeft: 10 }}>
-              short {tiers.shortTerm} · medium {tiers.mediumTerm} · long {tiers.longTerm} · sleep {tiers.sleepCycles}
+              {([
+                ['short', tiers.shortTerm, 'short-term/'],
+                ['medium', tiers.mediumTerm, 'medium-term/'],
+                ['long', tiers.longTerm, 'long-term/'],
+                ['sleep', tiers.sleepCycles, 'sleep/']
+              ] as const).map(([label, count, prefix]) => (
+                <button
+                  key={label}
+                  onClick={() => setMemFilter(memFilter === prefix ? null : prefix)}
+                  title={`Show ${label}-term memory files`}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px',
+                    font: 'inherit', color: memFilter === prefix ? 'var(--cyan)' : 'inherit',
+                    textDecoration: memFilter === prefix ? 'underline' : 'none'
+                  }}
+                >
+                  {label} {count} ·
+                </button>
+              ))}
             </span>
           )}
           {sync?.connected && (
@@ -230,7 +249,13 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
           )}
         </h2>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
-          {memory.slice(0, 60).map((m: any) => (
+          {memFilter && (
+            <div className="faint mono" style={{ fontSize: 11, marginBottom: 4 }}>
+              filtering: <span style={{ color: 'var(--cyan)' }}>{memFilter}</span>
+              {' '}— <button className="btn btn--ghost btn--sm" style={{ padding: '1px 8px', fontSize: 10 }} onClick={() => setMemFilter(null)}>show all</button>
+            </div>
+          )}
+          {(memFilter ? memory.filter((m: any) => m.path.startsWith(memFilter)) : memory).slice(0, 60).map((m: any) => (
             <details key={m.path} className="insight-item" style={{ cursor: 'pointer' }}>
               <summary style={{ flex: 1, listStyle: 'none' }}>
                 <span className="mono" style={{ fontSize: 12 }}>{m.path}</span>

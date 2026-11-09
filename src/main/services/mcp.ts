@@ -150,12 +150,18 @@ export class McpManager extends EventEmitter {
       }
     }
     if (cfg.kind === 'telegram' && !cfg.command) {
-      // Community Telegram MCP server via npx (uses bot token from env)
+      // Bundled GramJS server — QR login as a real user account (not bot token)
+      const bundled = join(__dirname, 'mcp', 'telegram-server.js')
       return {
         ...cfg,
-        command: 'npx',
-        args: ['-y', '@chaindead/telegram-mcp'],
-        env: { TELEGRAM_BOT_TOKEN: cfg.env?.TELEGRAM_BOT_TOKEN ?? '' }
+        command: process.execPath,
+        args: [bundled],
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          TG_SESSION_DIR: cfg.sessionDir ?? join(this.sessionDir, 'telegram'),
+          TELEGRAM_API_ID: cfg.env?.TELEGRAM_API_ID ?? '',
+          TELEGRAM_API_HASH: cfg.env?.TELEGRAM_API_HASH ?? ''
+        }
       }
     }
     if (cfg.kind === 'postgres' && !cfg.command) {

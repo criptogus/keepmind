@@ -9,7 +9,7 @@ interface Props {
 export default function Connectors({ onActivity, onToast }: Props) {
   const [config, setConfig] = useState<any>(null)
   const [status, setStatus] = useState<any>({ running: [], allTools: [] })
-  const [waQr, setWaQr] = useState<any>(null)
+  const [qrs, setQrs] = useState<Record<string, any>>({})
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [showCustom, setShowCustom] = useState(false)
   const [custom, setCustom] = useState({ name: '', command: '', args: '' })
@@ -23,8 +23,11 @@ export default function Connectors({ onActivity, onToast }: Props) {
 
   useEffect(() => {
     const t = setInterval(async () => {
-      const qr = await window.sb.whatsappQr()
-      setWaQr(qr)
+      const [w, g] = await Promise.all([
+        window.sb.whatsappQr().catch(() => null),
+        window.sb.connectorQr?.('telegram').catch(() => null)
+      ])
+      setQrs({ whatsapp: w, telegram: g })
     }, 3000)
     return () => clearInterval(t)
   }, [])
@@ -78,7 +81,7 @@ export default function Connectors({ onActivity, onToast }: Props) {
 
   const meta: Record<string, { emoji: string; desc: string; hint: string }> = {
     whatsapp: { emoji: '🟢', desc: 'WhatsApp via QR code (WhatsApp Web style, unofficial)', hint: 'Scan the QR with WhatsApp → Linked devices' },
-    telegram: { emoji: '✈️', desc: 'Telegram bot — chat with your KeepMind anywhere', hint: 'Bot token from @BotFather' },
+    telegram: { emoji: '✈️', desc: 'Telegram via QR code (scan with Telegram → Devices → Link Desktop)', hint: 'Scan the QR with Telegram' },
     postgres: { emoji: '🐘', desc: 'Postgres database in read-only mode', hint: 'postgres://user:pass@host:5432/db' }
   }
 
@@ -179,7 +182,7 @@ export default function Connectors({ onActivity, onToast }: Props) {
                 </div>
               </div>
 
-              {!running && !isCustom && srv.kind !== 'whatsapp' && (
+              {!running && !isCustom && !['whatsapp', 'telegram'].includes(srv.kind) && (
                 <input
                   value={inputs[srv.id] ?? ''}
                   onChange={e => setInputs(s => ({ ...s, [srv.id]: e.target.value }))}
@@ -189,14 +192,21 @@ export default function Connectors({ onActivity, onToast }: Props) {
                 />
               )}
 
-              {srv.id === 'whatsapp' && waQr?.status === 'qr' && (
+              {['whatsapp', 'telegram'].includes(srv.kind) && qrs[srv.kind]?.status === 'qr' && (
                 <div className="qr-box" style={{ marginTop: 14 }}>
-                  <img src={waQr.dataUrl} alt="QR" style={{ width: 200, height: 200 }} />
-                  <p style={{ color: '#333', fontSize: 12 }}>Scan with WhatsApp → Linked devices</p>
+                  <img src={qrs[srv.kind].dataUrl} alt="QR" style={{ width: 200, height: 200 }} />
+                  <p style={{ color: '#333', fontSize: 12 }}>
+                    {srv.kind === 'whatsapp' ? 'Scan with WhatsApp → Linked devices' : 'Scan with Telegram → Settings → Devices → Link Desktop'}
+                  </p>
                 </div>
               )}
-              {srv.id === 'whatsapp' && waQr?.status === 'connected' && (
-                <p style={{ color: 'var(--green)', fontSize: 12.5, marginTop: 10 }}>✓ WhatsApp connected</p>
+              {['whatsapp', 'telegram'].includes(srv.kind) && qrs[srv.kind]?.status === 'connected' && (
+                <p style={{ color: 'var(--green)', fontSize: 12.5, marginTop: 10 }}>✓ {srv.name} connected</p>
+              )}
+              {['whatsapp', 'telegram'].includes(srv.kind) && qrs[srv.kind]?.status === 'error' && (
+                <p style={{ color: 'var(--amber)', fontSize: 12.5, marginTop: 10 }}>
+                  ⚠ {srv.name}: {qrs[srv.kind].code === 'QR_EXPIRED' ? 'QR expired — click Connect again' : 'connection error — click Connect to retry'}
+                </p>
               )}
             </div>
           )

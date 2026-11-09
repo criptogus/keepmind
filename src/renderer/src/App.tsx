@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import NeuralField from './components/NeuralField'
-import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconToday, IconNotes, IconTasks } from './components/icons'
+import { BrainMark, IconDashboard, IconChat, IconPlug, IconSettings, IconClock, IconToday, IconNotes, IconTasks, IconSparkle } from './components/icons'
 import Wizard from './components/Wizard'
 import Chat from './components/Chat'
 import Dashboard from './components/Dashboard'
@@ -10,9 +10,10 @@ import Tasks from './components/Tasks'
 import Connectors from './components/Connectors'
 import Automations from './components/Automations'
 import Settings from './components/Settings'
+import GraphView from './components/GraphView'
 import Login from './components/Login'
 
-type View = 'today' | 'dashboard' | 'chat' | 'notes' | 'tasks' | 'connectors' | 'automations' | 'settings'
+type View = 'today' | 'dashboard' | 'chat' | 'notes' | 'tasks' | 'graph' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 
@@ -22,6 +23,7 @@ const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Elemen
   { id: 'chat', label: 'Chat', Icon: IconChat },
   { id: 'notes', label: 'Notes', Icon: IconNotes },
   { id: 'tasks', label: 'Tasks', Icon: IconTasks },
+  { id: 'graph', label: 'Graph', Icon: IconSparkle },
   { id: 'connectors', label: 'Connectors', Icon: IconPlug },
   { id: 'automations', label: 'Automations', Icon: IconClock },
   { id: 'settings', label: 'Settings', Icon: IconSettings }
@@ -152,6 +154,7 @@ export default function App() {
         {view === 'chat' && <Chat onActivity={pulse} />}
         {view === 'notes' && <Notes onActivity={pulse} />}
         {view === 'tasks' && <Tasks onActivity={pulse} />}
+        {view === 'graph' && <GraphView />}
         {view === 'connectors' && <Connectors onActivity={pulse} onToast={toast} />}
         {view === 'automations' && <Automations onActivity={pulse} onToast={toast} />}
         {view === 'settings' && <Settings onToast={toast} onActivity={pulse} />}

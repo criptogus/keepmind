@@ -121,7 +121,7 @@ function defaultConfig(): AppConfig {
     github: {},
     mcpServers: [
       { id: 'whatsapp', name: 'WhatsApp', kind: 'whatsapp', enabled: false, sessionDir: join(app.getPath('userData'), 'wa-session') },
-      { id: 'telegram', name: 'Telegram', kind: 'telegram', enabled: false },
+      { id: 'telegram', name: 'Telegram', kind: 'telegram', enabled: false, sessionDir: join(app.getPath('userData'), 'tg-session') },
       { id: 'postgres', name: 'Postgres (read-only)', kind: 'postgres', enabled: false }
     ],
     agents: DEFAULT_AGENTS,

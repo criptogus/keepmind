@@ -41,6 +41,7 @@ const api = {
   mcpStop: (id: string) => ipcRenderer.invoke('mcp:stop', id),
   mcpStatus: () => ipcRenderer.invoke('mcp:status'),
   whatsappQr: () => ipcRenderer.invoke('mcp:whatsappQr'),
+  connectorQr: (id: string) => ipcRenderer.invoke('mcp:connectorQr', id),
   mcpLogs: () => ipcRenderer.invoke('mcp:logs'),
 
   // auth
@@ -99,6 +100,8 @@ const api = {
   brainListInsights: () => ipcRenderer.invoke('brain:listInsights'),
   brainListSummaries: () => ipcRenderer.invoke('brain:listSummaries'),
   brainListMemory: () => ipcRenderer.invoke('brain:listMemory'),
+  brainGraph: () => ipcRenderer.invoke('brain:graph'),
+  brainMemoryFile: (rel: string) => ipcRenderer.invoke('brain:memoryFile', rel),
   brainActivity: (limit?: number) => ipcRenderer.invoke('brain:activity', limit),
   brainExportConfig: () => ipcRenderer.invoke('brain:exportConfig'),
   onBrainDelta: (cb: (t: string) => void) => {

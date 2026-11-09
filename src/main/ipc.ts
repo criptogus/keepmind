@@ -1,4 +1,4 @@
-import { ipcMain, shell, BrowserWindow } from 'electron'
+import { ipcMain, shell, BrowserWindow, app } from 'electron'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Store, type Automation } from './store'
@@ -290,6 +290,21 @@ export function registerIpc(
     running: mcp?.runningServers ?? [],
     allTools: mcp?.allTools().map(({ serverId, tool }) => ({ serverId, name: tool.name, description: tool.description })) ?? []
   }))
+  ipcMain.handle('mcp:connectorQr', (_e, id: string) => {
+    const srv = store.get().mcpServers.find(s => s.id === id)
+    if (!srv) return null
+    // legacy configs may lack sessionDir — fall back to the default locations
+    const sessionDir = srv.sessionDir
+      ?? (id === 'whatsapp' ? join(app.getPath('userData'), 'wa-session') : null)
+      ?? (id === 'telegram' ? join(app.getPath('userData'), 'tg-session') : null)
+    if (!sessionDir) return null
+    const qrFile = join(sessionDir, 'qr.txt')
+    if (!existsSync(qrFile)) return null
+    const v = readFileSync(qrFile, 'utf8')
+    if (v === 'CONNECTED') return { status: 'connected' }
+    if (/^(LOGGED_OUT|ERROR|LOGIN_FAILED|QR_EXPIRED)$/.test(v)) return { status: 'error', code: v }
+    return { status: 'qr', dataUrl: v }
+  })
   ipcMain.handle('mcp:whatsappQr', () => {
     const qrFile = join(store.get().mcpServers.find(s => s.id === 'whatsapp')?.sessionDir ?? '', 'qr.txt')
     if (!existsSync(qrFile)) return null
@@ -408,7 +423,12 @@ export function registerIpc(
   ipcMain.handle('brain:listSummaries', () => brain.listSummaries())
   ipcMain.handle('brain:listMemory', () => {
     const memDir = store.memoryDir
-    return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 4000) }))
+    return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 1500) }))
+  })
+  ipcMain.handle('brain:graph', () => brain.memoryGraph())
+  ipcMain.handle('brain:memoryFile', (_e, rel: string) => {
+    if (typeof rel !== 'string' || rel.length > 500) return null
+    return brain.readMemoryFile(rel)
   })
   ipcMain.handle('brain:exportConfig', async () => {
     const gh = store.get().github
