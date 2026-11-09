@@ -43,6 +43,7 @@ const api = {
   whatsappQr: () => ipcRenderer.invoke('mcp:whatsappQr'),
   connectorQr: (id: string) => ipcRenderer.invoke('mcp:connectorQr', id),
   mcpLogs: () => ipcRenderer.invoke('mcp:logs'),
+  connectInfo: () => ipcRenderer.invoke('connect:info'),
 
   // auth
   authState: () => ipcRenderer.invoke('auth:state'),

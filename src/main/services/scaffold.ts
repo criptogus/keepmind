@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { app } from 'electron'
 import type { AppConfig, GitHubConfig } from '../store'
 import * as github from './github'
 
@@ -101,6 +102,17 @@ function mcpServerSource(): string {
     try { return readFileSync(p, 'utf8') } catch { /* try next */ }
   }
   throw new Error('keepmind-mcp.mjs not found')
+}
+
+// Materialize the zero-dep MCP server on disk so EXTERNAL agents/CLIs
+// (Codex, Claude Code, Cursor, bots on a VPS…) can spawn it — files inside
+// app.asar are not executable by a plain `node` process.
+export function ensureMcpServerScript(): string {
+  const dir = join(app.getPath('userData'), 'mcp')
+  mkdirSync(dir, { recursive: true })
+  const dest = join(dir, 'keepmind-mcp.mjs')
+  writeFileSync(dest, mcpServerSource(), 'utf8')
+  return dest
 }
 
 export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {

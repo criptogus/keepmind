@@ -26,7 +26,7 @@ const NAV: { id: View; label: string; Icon: (p: { size?: number }) => JSX.Elemen
   { id: 'tasks', label: 'Tasks', Icon: IconTasks },
   { id: 'graph', label: 'Graph', Icon: IconSparkle },
   { id: 'activity', label: 'Activity', Icon: IconSync },
-  { id: 'connectors', label: 'Connectors', Icon: IconPlug },
+  { id: 'connectors', label: 'Agents', Icon: IconPlug },
   { id: 'automations', label: 'Automations', Icon: IconClock },
   { id: 'settings', label: 'Settings', Icon: IconSettings }
 ]

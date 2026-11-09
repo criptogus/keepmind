@@ -15,7 +15,7 @@ import * as llm from './services/llm'
 import * as github from './services/github'
 import { checkForUpdates, installUpdate, updaterStatus } from './services/updater'
 import { listModels, deleteModel } from './services/models'
-import { exportBrainConfig } from './services/scaffold'
+import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
 import type { McpServerConfig } from './store'
 import type { HookServer } from './services/hooks'
@@ -314,6 +314,18 @@ export function registerIpc(
     return { status: 'qr', dataUrl: v }
   })
   ipcMain.handle('mcp:logs', () => mcpLogs)
+
+  // ── Agent connections: paths/prompts for external LLMs & bots ──
+  ipcMain.handle('connect:info', () => {
+    const gh = store.get().github
+    return {
+      mcpScript: ensureMcpServerScript(),
+      memoryDir: store.memoryDir,
+      repoUrl: gh.repoUrl ?? null,
+      repoOwner: gh.repoOwner ?? null,
+      repoName: gh.repoName ?? null
+    }
+  })
 
   // ── GitHub sync (bidirectional) ──
   ipcMain.handle('sync:status', () => sync?.status() ?? { connected: false, pending: 0, lastPull: null, lastPush: null, syncing: false })

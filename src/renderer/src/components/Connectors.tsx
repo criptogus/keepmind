@@ -1,36 +1,41 @@
 import { useEffect, useState } from 'react'
 import { IconPlus, IconTrash } from './icons'
+import { buildAgentCatalog, buildConnectPrompt, type AgentCard, type ConnectInfo } from '../lib/connectPrompt'
 
 interface Props {
   onActivity?: () => void
   onToast: (m: string, k?: 'info' | 'error' | 'success') => void
 }
 
+const HIDDEN_KINDS = new Set(['whatsapp', 'telegram'])
+
 export default function Connectors({ onActivity, onToast }: Props) {
+  const [info, setInfo] = useState<ConnectInfo | null>(null)
   const [config, setConfig] = useState<any>(null)
   const [status, setStatus] = useState<any>({ running: [], allTools: [] })
-  const [qrs, setQrs] = useState<Record<string, any>>({})
-  const [inputs, setInputs] = useState<Record<string, string>>({})
   const [showCustom, setShowCustom] = useState(false)
   const [custom, setCustom] = useState({ name: '', command: '', args: '' })
+  const [open, setOpen] = useState<string | null>(null)
+  const [copied, setCopied] = useState('')
 
   const refresh = async () => {
-    const [c, s] = await Promise.all([window.sb.getConfig(), window.sb.mcpStatus()])
-    setConfig(c); setStatus(s)
+    const [c, s, i] = await Promise.all([
+      window.sb.getConfig(), window.sb.mcpStatus(), window.sb.connectInfo().catch(() => null)
+    ])
+    setConfig(c); setStatus(s); if (i) setInfo(i)
   }
 
   useEffect(() => { refresh() }, [])
 
-  useEffect(() => {
-    const t = setInterval(async () => {
-      const [w, g] = await Promise.all([
-        window.sb.whatsappQr().catch(() => null),
-        window.sb.connectorQr?.('telegram').catch(() => null)
-      ])
-      setQrs({ whatsapp: w, telegram: g })
-    }, 3000)
-    return () => clearInterval(t)
-  }, [])
+  const copy = async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(key)
+      setTimeout(() => setCopied(c => c === key ? '' : c), 1600)
+    } catch {
+      onToast('Copy failed — select the text manually', 'error')
+    }
+  }
 
   const toggle = async (srv: any) => {
     onActivity?.()
@@ -39,11 +44,7 @@ export default function Connectors({ onActivity, onToast }: Props) {
         await window.sb.mcpStop(srv.id)
         await window.sb.updateMcp(srv.id, { enabled: false })
       } else {
-        const env: Record<string, string> = {}
-        if (srv.kind === 'telegram' && inputs.telegram) env.TELEGRAM_BOT_TOKEN = inputs.telegram
-        if (srv.kind === 'postgres' && inputs.postgres) env.DATABASE_URL = inputs.postgres
-        if (Object.keys(env).length) await window.sb.updateMcp(srv.id, { env, enabled: true })
-        else await window.sb.updateMcp(srv.id, { enabled: true })
+        await window.sb.updateMcp(srv.id, { enabled: true })
         const res = await window.sb.mcpStart(srv.id)
         onToast(`${srv.name}: ${res.tools.length} tools active`, 'success')
       }
@@ -59,7 +60,6 @@ export default function Connectors({ onActivity, onToast }: Props) {
     }
     const id = `custom-${Date.now()}`
     const args = custom.args.trim() ? custom.args.trim().split(/\s+/) : []
-    // persist via config patch — mcpServers lives inside config
     const cfg = await window.sb.getConfig()
     const servers = [...(cfg.mcpServers ?? []), {
       id, name: custom.name.trim(), kind: 'custom', enabled: false,
@@ -69,7 +69,7 @@ export default function Connectors({ onActivity, onToast }: Props) {
     setShowCustom(false)
     setCustom({ name: '', command: '', args: '' })
     await refresh()
-    onToast('Custom connector added — click Connect to start it', 'success')
+    onToast('Custom MCP server added — click Connect to start it', 'success')
   }
 
   const removeCustom = async (srv: any) => {
@@ -79,20 +79,35 @@ export default function Connectors({ onActivity, onToast }: Props) {
     await refresh()
   }
 
-  const meta: Record<string, { emoji: string; desc: string; hint: string }> = {
-    whatsapp: { emoji: '🟢', desc: 'WhatsApp via QR code (WhatsApp Web style, unofficial)', hint: 'Scan the QR with WhatsApp → Linked devices' },
-    telegram: { emoji: '✈️', desc: 'Telegram via QR code (scan with Telegram → Devices → Link Desktop)', hint: 'Scan the QR with Telegram' },
-    postgres: { emoji: '🐘', desc: 'Postgres database in read-only mode', hint: 'postgres://user:pass@host:5432/db' }
-  }
+  const agents: AgentCard[] = info ? buildAgentCatalog(info) : []
+  const servers = (config?.mcpServers ?? []).filter((s: any) => !HIDDEN_KINDS.has(s.kind))
+  const promptText = info?.repoUrl ? buildConnectPrompt(info.repoUrl) : ''
+
+  const renderSnippet = (a: AgentCard, sn: { label: string; language: string; content: string }) => (
+    <div key={sn.label} style={{ marginTop: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <span className="faint mono" style={{ fontSize: 10.5 }}>{sn.label}</span>
+        <button className="btn btn--ghost btn--sm" onClick={() => copy(`${a.id}:${sn.label}`, sn.content)}>
+          {copied === `${a.id}:${sn.label}` ? '✓ copied' : '⧉ copy'}
+        </button>
+      </div>
+      <pre className="mono" style={{
+        fontSize: 11, lineHeight: 1.5, padding: '10px 12px', borderRadius: 8,
+        background: 'rgba(3,7,18,.75)', border: '1px solid var(--line)',
+        overflowX: 'auto', whiteSpace: 'pre', margin: 0, color: '#b8d4ec'
+      }}>{sn.content}</pre>
+    </div>
+  )
 
   return (
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>MCP CONNECTORS</div>
-          <h1>Connectors</h1>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>AGENT CONNECTIONS</div>
+          <h1>Agents</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Apps and data sources feeding your KeepMind via MCP.
+            Your information flows in through LLMs and bots — this page shows how each one plugs into the brain.
+            Writes land in the <b>Activity</b> feed.
           </p>
         </div>
         <button className="btn" onClick={() => setShowCustom(s => !s)}>
@@ -100,8 +115,49 @@ export default function Connectors({ onActivity, onToast }: Props) {
         </button>
       </div>
 
+      {!info && <p className="faint" style={{ fontSize: 13 }}>Loading connection details…</p>}
+
+      <div className="grid" style={{ maxWidth: 980 }}>
+        {agents.map(a => (
+          <div key={a.id} className="card card-pad">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <h3>{a.name}</h3>
+                  <span className="badge badge--custom" style={{ fontSize: 9.5 }}>{a.tag}</span>
+                </div>
+                <div className="faint mono" style={{ fontSize: 10.5, marginTop: 3 }}>{a.where}</div>
+              </div>
+              {a.prompt && (
+                <button
+                  className="btn btn--sm btn--primary"
+                  disabled={!promptText}
+                  title={promptText ? 'Copy the connect prompt for this agent' : 'Connect GitHub first to generate the prompt'}
+                  onClick={() => copy(`${a.id}:prompt`, promptText)}
+                >
+                  {copied === `${a.id}:prompt` ? '✓ copied' : '⧉ prompt'}
+                </button>
+              )}
+            </div>
+            <p className="faint" style={{ fontSize: 12.5, marginTop: 8, lineHeight: 1.5 }}>{a.blurb}</p>
+            {a.note && <p className="faint" style={{ fontSize: 11.5, marginTop: 6, fontStyle: 'italic' }}>{a.note}</p>}
+
+            {a.snippets.length > 0 && (
+              <button
+                className="btn btn--ghost btn--sm"
+                style={{ marginTop: 10, fontSize: 11 }}
+                onClick={() => setOpen(o => o === a.id ? null : a.id)}
+              >
+                {open === a.id ? '▾ hide config' : '▸ show config'}
+              </button>
+            )}
+            {open === a.id && a.snippets.map(sn => renderSnippet(a, sn))}
+          </div>
+        ))}
+      </div>
+
       {showCustom && (
-        <div className="card card-pad" style={{ marginBottom: 16, maxWidth: 860 }}>
+        <div className="card card-pad" style={{ marginTop: 20, maxWidth: 860 }}>
           <h2 style={{ marginBottom: 12 }}>Add custom MCP server</h2>
           <div className="grid grid-3">
             <div className="field">
@@ -121,97 +177,94 @@ export default function Connectors({ onActivity, onToast }: Props) {
         </div>
       )}
 
-      <div className="grid" style={{ maxWidth: 860 }}>
-        {(config?.mcpServers ?? []).map((srv: any) => {
-          const m = meta[srv.id] ?? { emoji: '🔌', desc: srv.kind === 'custom' ? 'Custom MCP server' : srv.name, hint: '' }
-          const running = status.running.includes(srv.id)
-          const isCustom = srv.kind === 'custom'
-          return (
-            <div key={srv.id} className="card card-pad">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <span className="conn-emoji" style={{ fontSize: 30 }}>{m.emoji}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <h3>{srv.name}</h3>
-                    {isCustom && <span className="badge badge--custom">custom</span>}
-                    <span className="m-status" style={{
-                      fontSize: 11, fontFamily: 'var(--mono)', padding: '3px 10px', borderRadius: 20,
-                      border: '1px solid', borderColor: running ? 'rgba(52,211,153,.4)' : 'var(--line)',
-                      color: running ? 'var(--green)' : 'var(--text-faint)'
-                    }}>
-                      {running ? '● connected' : '○ offline'}
-                    </span>
+      {servers.length > 0 && (
+        <div style={{ marginTop: 24, maxWidth: 980 }}>
+          <div className="hud-tag" style={{ marginBottom: 10 }}>CUSTOM MCP SERVERS</div>
+          <div className="grid">
+            {servers.map((srv: any) => {
+              const running = status.running.includes(srv.id)
+              const isCustom = srv.kind === 'custom'
+              return (
+                <div key={srv.id} className="card card-pad">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <span className="conn-emoji" style={{ fontSize: 26 }}>{isCustom ? '🔌' : '🐘'}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <h3 style={{ fontSize: 15 }}>{srv.name}</h3>
+                        {isCustom && <span className="badge badge--custom">custom</span>}
+                        <span className="m-status" style={{
+                          fontSize: 11, fontFamily: 'var(--mono)', padding: '3px 10px', borderRadius: 20,
+                          border: '1px solid', borderColor: running ? 'rgba(52,211,153,.4)' : 'var(--line)',
+                          color: running ? 'var(--green)' : 'var(--text-faint)'
+                        }}>
+                          {running ? '● connected' : '○ offline'}
+                        </span>
+                      </div>
+                      {isCustom && (
+                        <div className="faint mono" style={{ fontSize: 11, marginTop: 6, wordBreak: 'break-all' }}>
+                          {srv.command} {(srv.args ?? []).join(' ')}
+                        </div>
+                      )}
+                      {running && (
+                        <div className="faint mono" style={{ fontSize: 11, marginTop: 6 }}>
+                          {status.allTools.filter((t: any) => t.serverId === srv.id).map((t: any) => t.name).join(' · ') || 'starting…'}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                      <select
+                        value={srv.permission ?? 'allow'}
+                        title="Permission: allow = may auto-start · ask = manual connect only · block = never runs"
+                        onChange={async e => {
+                          await window.sb.updateMcp(srv.id, { permission: e.target.value })
+                          await refresh()
+                        }}
+                        style={{
+                          background: 'rgba(3,7,18,.7)', color: 'var(--text)', border: '1px solid var(--line)',
+                          borderRadius: 8, fontFamily: 'var(--mono)', fontSize: 10, padding: '6px 6px'
+                        }}
+                      >
+                        <option value="allow">⚡ allow</option>
+                        <option value="ask">⏳ ask</option>
+                        <option value="block">⛔ block</option>
+                      </select>
+                      <button className={`btn btn--sm ${running ? 'btn--danger' : 'btn--primary'}`} onClick={() => toggle(srv)}>
+                        {running ? 'Disconnect' : 'Connect'}
+                      </button>
+                      {isCustom && (
+                        <button className="btn btn--ghost btn--sm" onClick={() => removeCustom(srv)} title="Remove">
+                          <IconTrash size={13} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <p className="faint" style={{ fontSize: 12.5, marginTop: 3 }}>{m.desc}</p>
-                  {isCustom && (
-                    <div className="faint mono" style={{ fontSize: 11, marginTop: 6, wordBreak: 'break-all' }}>
-                      {srv.command} {(srv.args ?? []).join(' ')}
-                    </div>
-                  )}
-                  {running && (
-                    <div className="faint mono" style={{ fontSize: 11, marginTop: 6 }}>
-                      {status.allTools.filter((t: any) => t.serverId === srv.id).map((t: any) => t.name).join(' · ') || 'starting…'}
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
-                  <select
-                    value={srv.permission ?? 'allow'}
-                    title="Connector permission: allow = may auto-start · ask = manual connect only · block = never runs"
-                    onChange={async e => {
-                      await window.sb.updateMcp(srv.id, { permission: e.target.value })
-                      await refresh()
-                    }}
-                    style={{
-                      background: 'rgba(3,7,18,.7)', color: 'var(--text)', border: '1px solid var(--line)',
-                      borderRadius: 8, fontFamily: 'var(--mono)', fontSize: 10, padding: '6px 6px'
-                    }}
-                  >
-                    <option value="allow">⚡ allow</option>
-                    <option value="ask">⏳ ask</option>
-                    <option value="block">⛔ block</option>
-                  </select>
-                  <button className={`btn btn--sm ${running ? 'btn--danger' : 'btn--primary'}`} onClick={() => toggle(srv)}>
-                    {running ? 'Disconnect' : 'Connect'}
-                  </button>
-                  {isCustom && (
-                    <button className="btn btn--ghost btn--sm" onClick={() => removeCustom(srv)} title="Remove">
-                      <IconTrash size={13} />
-                    </button>
+                  {!running && !isCustom && (
+                    <input
+                      placeholder="postgres://user:pass@host:5432/db"
+                      className="mono"
+                      style={{ marginTop: 12, width: '100%', maxWidth: 520, background: 'rgba(3,7,18,.7)', border: '1px solid var(--line)', borderRadius: 8, padding: '9px 12px', color: 'var(--text)', fontSize: 12.5 }}
+                      onKeyDown={async e => {
+                        if (e.key === 'Enter') {
+                          const v = (e.target as HTMLInputElement).value.trim()
+                          if (!v) return
+                          try {
+                            await window.sb.updateMcp(srv.id, { env: { DATABASE_URL: v }, enabled: true })
+                            const res = await window.sb.mcpStart(srv.id)
+                            onToast(`${srv.name}: ${res.tools.length} tools active`, 'success')
+                            await refresh()
+                          } catch (err: any) {
+                            onToast(`${srv.name}: ${err?.message ?? err}`, 'error')
+                          }
+                        }
+                      }}
+                    />
                   )}
                 </div>
-              </div>
-
-              {!running && !isCustom && !['whatsapp', 'telegram'].includes(srv.kind) && (
-                <input
-                  value={inputs[srv.id] ?? ''}
-                  onChange={e => setInputs(s => ({ ...s, [srv.id]: e.target.value }))}
-                  placeholder={m.hint}
-                  className="mono"
-                  style={{ marginTop: 12, width: '100%', maxWidth: 520, background: 'rgba(3,7,18,.7)', border: '1px solid var(--line)', borderRadius: 8, padding: '9px 12px', color: 'var(--text)', fontSize: 12.5 }}
-                />
-              )}
-
-              {['whatsapp', 'telegram'].includes(srv.kind) && qrs[srv.kind]?.status === 'qr' && (
-                <div className="qr-box" style={{ marginTop: 14 }}>
-                  <img src={qrs[srv.kind].dataUrl} alt="QR" style={{ width: 200, height: 200 }} />
-                  <p style={{ color: '#333', fontSize: 12 }}>
-                    {srv.kind === 'whatsapp' ? 'Scan with WhatsApp → Linked devices' : 'Scan with Telegram → Settings → Devices → Link Desktop'}
-                  </p>
-                </div>
-              )}
-              {['whatsapp', 'telegram'].includes(srv.kind) && qrs[srv.kind]?.status === 'connected' && (
-                <p style={{ color: 'var(--green)', fontSize: 12.5, marginTop: 10 }}>✓ {srv.name} connected</p>
-              )}
-              {['whatsapp', 'telegram'].includes(srv.kind) && qrs[srv.kind]?.status === 'error' && (
-                <p style={{ color: 'var(--amber)', fontSize: 12.5, marginTop: 10 }}>
-                  ⚠ {srv.name}: {qrs[srv.kind].code === 'QR_EXPIRED' ? 'QR expired — click Connect again' : 'connection error — click Connect to retry'}
-                </p>
-              )}
-            </div>
-          )
-        })}
-      </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
