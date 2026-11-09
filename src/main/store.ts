@@ -97,6 +97,8 @@ export interface AppConfig {
   pro: ProConfig
   hooks: { lan: boolean }    // webhook listener: localhost-only vs LAN
   memoryDir?: string
+  background?: boolean       // keep services (sync/crons/MCP) alive when window closes
+  launchAtLogin?: boolean    // open KeepMind at OS login
 }
 
 export interface AgentPersona {
@@ -124,6 +126,7 @@ function defaultConfig(): AppConfig {
     ],
     agents: DEFAULT_AGENTS,
     hooks: { lan: false },
+    background: true,
     // Self-learning defaults: nightly sleep, morning summary, weekly
     // librarian hygiene, weekly evolution review, nightly note enrichment.
     automations: [

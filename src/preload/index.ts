@@ -115,6 +115,8 @@ const api = {
   brainHealthApply: (recId: string) => ipcRenderer.invoke('brain:healthApply', recId),
   brainSkills: () => ipcRenderer.invoke('brain:skills'),
   brainSkillInstall: (slug: string) => ipcRenderer.invoke('brain:skillInstall', slug),
+  appLaunchAtLogin: () => ipcRenderer.invoke('app:launchAtLogin'),
+  appSetLaunchAtLogin: (enabled: boolean) => ipcRenderer.invoke('app:setLaunchAtLogin', enabled),
   onBrainDelta: (cb: (t: string) => void) => {
     const handler = (_e: any, t: string) => cb(t)
     ipcRenderer.on('brain:delta', handler)

@@ -100,7 +100,7 @@ export default function Settings({ onToast, onActivity }: Props) {
       </div>
 
       <nav className="settings-nav">
-        {([['AI', 'sec-ai'], ['Models', 'sec-models'], ['Sync', 'sec-memory'], ['Account', 'sec-account'],
+        {([['General', 'sec-general'], ['AI', 'sec-ai'], ['Models', 'sec-models'], ['Sync', 'sec-memory'], ['Account', 'sec-account'],
            ['Pro', 'sec-pro'], ['Search', 'sec-rag'], ['Decisions', 'sec-laya'], ['Updates', 'sec-updates'], ['About', 'sec-about']] as const)
           .map(([label, id]) => (
             <button key={id} className="chip" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
@@ -110,6 +110,7 @@ export default function Settings({ onToast, onActivity }: Props) {
       </nav>
 
       <div className="grid" style={{ maxWidth: 860 }}>
+        <GeneralCard onToast={onToast} />
         {/* AI provider */}
         <div className="card card-pad" id="sec-ai">
           <h2 style={{ marginBottom: 14 }}>AI provider</h2>
@@ -260,6 +261,54 @@ export default function Settings({ onToast, onActivity }: Props) {
 
         {/* About */}
         <AboutCard />
+      </div>
+    </div>
+  )
+}
+
+function GeneralCard({ onToast }: { onToast: Props['onToast'] }) {
+  const [background, setBackground] = useState(true)
+  const [login, setLogin] = useState(false)
+
+  useEffect(() => {
+    window.sb.getConfig?.().then((c: any) => setBackground(c?.background !== false)).catch(() => {})
+    window.sb.appLaunchAtLogin?.().then((s: any) => setLogin(!!s?.enabled)).catch(() => {})
+  }, [])
+
+  const toggleBackground = async (v: boolean) => {
+    setBackground(v)
+    try {
+      await window.sb.setConfig({ background: v })
+      onToast(v ? 'Background mode on — brain keeps running when window closes' : 'Background mode off — closing window quits KeepMind', 'success')
+    } catch (e: any) { setBackground(!v); onToast(String(e?.message ?? e), 'error') }
+  }
+
+  const toggleLogin = async (v: boolean) => {
+    setLogin(v)
+    try {
+      await window.sb.appSetLaunchAtLogin(v)
+      onToast(v ? 'KeepMind will open at login' : 'Removed from login items', 'success')
+    } catch (e: any) { setLogin(!v); onToast(String(e?.message ?? e), 'error') }
+  }
+
+  return (
+    <div className="card card-pad" id="sec-general">
+      <h2 style={{ marginBottom: 14 }}>General</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={background} onChange={e => toggleBackground(e.target.checked)} />
+          <span>
+            <strong style={{ color: 'var(--text)' }}>Keep running in background</strong>
+            <div className="faint" style={{ fontSize: 12 }}>Closing the window keeps GitHub sync, crons and MCP agents alive — find KeepMind in the menu bar.</div>
+          </span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={login} onChange={e => toggleLogin(e.target.checked)} />
+          <span>
+            <strong style={{ color: 'var(--text)' }}>Open at login</strong>
+            <div className="faint" style={{ fontSize: 12 }}>Start KeepMind automatically when this computer boots.</div>
+          </span>
+        </label>
       </div>
     </div>
   )

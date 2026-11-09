@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, Tray, Menu, nativeImage } from 'electron'
 import { join } from 'node:path'
 import { Store } from './store'
 import { Brain } from './services/brain'
@@ -13,8 +13,10 @@ import { LayaService } from './services/laya'
 import { Planner } from './services/planner'
 import { registerIpc, pushMcpLog } from './ipc'
 import { initUpdater } from './services/updater'
+import { TRAY_ICON_B64 } from './tray-icon'
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 let store: Store
 let brain: Brain
 let mcp: McpManager | null = null
@@ -33,6 +35,56 @@ function openExternalSafe(url: string) {
     const u = new URL(url)
     if (u.protocol === 'https:' || u.protocol === 'mailto:') shell.openExternal(url)
   } catch { /* malformed url — ignore */ }
+}
+
+function stopServices() {
+  mcp?.stopAll()
+  localLlmGlobal?.stop()
+  gitSyncGlobal?.stop()
+  autoSchedulerGlobal?.stop()
+}
+
+function showWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show()
+    mainWindow.focus()
+  } else {
+    createWindow()
+  }
+}
+
+function setupTray() {
+  if (tray) return
+  const icon = nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_ICON_B64}`)
+  if (process.platform === 'darwin') icon.setTemplateImage(true)
+  tray = new Tray(icon)
+  tray.setToolTip('KeepMind — your second brain is running')
+  const rebuild = () => {
+    if (!tray) return
+    const login = app.getLoginItemSettings().openAtLogin
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Open KeepMind', click: showWindow },
+      { type: 'separator' },
+      {
+        label: 'Sync & automations running',
+        enabled: false
+      },
+      {
+        label: 'Open at login',
+        type: 'checkbox',
+        checked: login,
+        click: (item) => {
+          app.setLoginItemSettings({ openAtLogin: item.checked })
+          store?.set({ launchAtLogin: item.checked })
+          rebuild()
+        }
+      },
+      { type: 'separator' },
+      { label: 'Quit KeepMind', click: () => app.quit() }
+    ]))
+  }
+  rebuild()
+  tray.on('click', showWindow)
 }
 
 function createWindow() {
@@ -91,7 +143,7 @@ app.whenReady().then(() => {
   const planner = new Planner(brain.getMemory(), store, localLlm)
   registerIpc(store, brain, mcp, localLlm, gitSync, autoScheduler, auth, rag, planner, laya, hookServer)
   initUpdater()
-  if (!HEADLESS) createWindow()
+  if (!HEADLESS) { createWindow(); setupTray() }
   else console.log('[keepmind] headless mode — services only, no window')
 
   // Continuous GitHub sync — push local writes, pull remote memory
@@ -155,11 +207,21 @@ app.whenReady().then(() => {
   })
 })
 
+let quitting = false
+app.on('before-quit', () => {
+  quitting = true
+  stopServices()
+})
+
 app.on('window-all-closed', () => {
-  if (HEADLESS) return // services keep running until SIGTERM
-  mcp?.stopAll()
-  localLlmGlobal?.stop()
-  gitSyncGlobal?.stop()
-  autoSchedulerGlobal?.stop()
-  if (process.platform !== 'darwin') app.quit()
+  if (quitting || HEADLESS) return
+  // Background mode (default): closing the window keeps the brain alive —
+  // GitHub sync, crons and MCP servers continue in the tray. With
+  // background off, closing the last window quits the app entirely.
+  if (store?.get().background === false) {
+    stopServices()
+    app.quit()
+  }
+  // darwin keeps running regardless (menu-bar convention); other
+  // platforms rely on the background toggle above.
 })

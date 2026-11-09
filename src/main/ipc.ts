@@ -30,7 +30,7 @@ import type { HookServer } from './services/hooks'
 
 const AI_PROVIDERS = new Set(['local', 'anthropic', 'claude-oauth', 'openai', 'codex', 'gemini', 'grok', 'ollama'])
 const MCP_KINDS = new Set(['whatsapp', 'telegram', 'postgres', 'custom'])
-const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone'])
+const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone', 'background'])
 const MCP_PATCH_KEYS = new Set(['id', 'name', 'kind', 'enabled', 'command', 'args', 'env', 'sessionDir', 'permission'])
 const MCP_PERMISSIONS = new Set(['allow', 'ask', 'block'])
 const AUTOMATION_PATCH_KEYS = new Set(['name', 'instruction', 'kind', 'schedule', 'time', 'everyMinutes', 'weekday', 'enabled', 'mode'])
@@ -146,6 +146,7 @@ export function registerIpc(
     if (!isPlainObject(patch)) bad('config patch')
     for (const k of Object.keys(patch)) if (!CONFIG_SET_KEYS.has(k)) bad(`config.${k}`)
     if (patch.onboardingDone !== undefined && typeof patch.onboardingDone !== 'boolean') bad('onboardingDone')
+    if (patch.background !== undefined && typeof patch.background !== 'boolean') bad('background')
     if (patch.mcpServers !== undefined) {
       if (!Array.isArray(patch.mcpServers) || patch.mcpServers.length > 32) bad('mcpServers')
       for (const s of patch.mcpServers) validateMcpServerShape(s, false)
@@ -458,6 +459,17 @@ export function registerIpc(
     await exportBrainConfig(gh, store.get())
     return true
   })
+  // ── Background / launch-at-login ──
+  ipcMain.handle('app:launchAtLogin', () => ({
+    enabled: store.get().launchAtLogin ?? false,
+    openAtLogin: app.getLoginItemSettings().openAtLogin
+  }))
+  ipcMain.handle('app:setLaunchAtLogin', (_e, enabled: boolean) => {
+    if (typeof enabled !== 'boolean') bad('launchAtLogin')
+    app.setLoginItemSettings({ openAtLogin: enabled })
+    return store.set({ launchAtLogin: enabled })
+  })
+
   // ── Brain health: meta-insights about the second brain itself ──
   ipcMain.handle('brain:health', () => analyzeHealth(store, brain.getMemory()))
   ipcMain.handle('brain:healthApply', async (_e, recId: string) =>
