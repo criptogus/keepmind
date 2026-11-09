@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { mdToHtml } from '../lib/markdown'
 
 interface LedgerEntry {
   ts: number
@@ -8,9 +7,18 @@ interface LedgerEntry {
   path?: string
 }
 
-interface Card { q: string; a: string }
-interface Task { id: string; title: string; done: boolean; due: string | null; priority: string }
 interface Pending { id: string; name: string; instruction: string; kind: string }
+interface Fact { id: string; text: string; since: string; origin: string; source: string; previous: string }
+interface HealthStats {
+  files: number
+  mdFiles: number
+  entities: number
+  writes7d: number
+  topSources: { source: string; count: number }[]
+  automationsEnabled: number
+  automationsTotal: number
+  skills: number
+}
 
 const VERB: Record<LedgerEntry['verb'], string> = {
   processed: 'Processado',
@@ -19,36 +27,34 @@ const VERB: Record<LedgerEntry['verb'], string> = {
   'needs-you': 'Pedindo você'
 }
 
+// Hoje é um observatório, não um app de produtividade: o usuário abre para ver
+// o que o cérebro fez, o que melhorou e o que precisa de decisão. Tarefas,
+// briefing pessoal e estudo ficam com o LLM/agente dele — aqui é telemetria
+// do segundo brain.
 export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 'error' | 'success') => void }) {
   const [ledger, setLedger] = useState<LedgerEntry[]>([])
-  const [tasks, setTasks] = useState<Task[]>([])
   const [pending, setPending] = useState<Pending[]>([])
-  const [cards, setCards] = useState<Card[]>([])
-  const [revealed, setRevealed] = useState<string | null>(null)
-  const [briefing, setBriefing] = useState('')
-  const [briefingState, setBriefingState] = useState('Preparando o briefing de hoje…')
+  const [facts, setFacts] = useState<Fact[]>([])
   const [policy, setPolicy] = useState<{ active: string; proposals: string[] } | null>(null)
+  const [health, setHealth] = useState<HealthStats | null>(null)
   const [sleepLine, setSleepLine] = useState('')
-  const [facts, setFacts] = useState<{ id: string; text: string; since: string; origin: string; source: string; previous: string }[]>([])
   const [evalScore, setEvalScore] = useState<{ day: string; hit: number; total: number } | null>(null)
 
   const load = useCallback(async () => {
-    const [led, taskList, pend, due, pol, sleeps, queue, scored] = await Promise.all([
+    const [led, pend, queue, pol, hl, sleeps, scored] = await Promise.all([
       window.sb.brainLedger(40).catch(() => []),
-      window.sb.tasksList().catch(() => []),
       window.sb.automationPending().catch(() => []),
-      window.sb.brainCards().catch(() => []),
-      window.sb.brainPolicy().catch(() => null),
-      window.sb.brainListSleep().catch(() => []),
       window.sb.brainFacts().catch(() => []),
+      window.sb.brainPolicy().catch(() => null),
+      window.sb.brainHealth().catch(() => null),
+      window.sb.brainListSleep().catch(() => []),
       window.sb.brainEval().catch(() => null)
     ])
     setLedger(led ?? [])
-    setTasks((taskList ?? []).filter((t: Task) => !t.done).slice(0, 8))
     setPending(pend ?? [])
-    setCards(due ?? [])
-    setPolicy(pol)
     setFacts(queue ?? [])
+    setPolicy(pol)
+    setHealth(hl?.stats ?? null)
     setEvalScore(scored?.last ?? null)
     const last = (sleeps ?? [])[0]
     if (last) {
@@ -64,31 +70,14 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
     return () => { off?.() }
   }, [load])
 
-  useEffect(() => {
-    let dead = false
-    window.sb.brainBriefing(false).then(text => {
-      if (dead) return
-      setBriefing(String(text ?? '').replace(/^# .+\n+/, '').trim())
-      setBriefingState('')
-    }).catch(() => {
-      if (!dead) setBriefingState('O briefing de hoje ainda não pôde ser escrito. O restante do dia continua aqui.')
-    })
-    return () => { dead = true }
-  }, [])
-
   const approve = async (p: Pending) => {
     await window.sb.automationApprove(p.id)
-    onToast?.(`“${p.name}” aprovado e em execução.`, 'success')
+    onToast?.(`"${p.name}" aprovado e em execução.`, 'success')
     await load()
   }
   const reject = async (p: Pending) => {
     await window.sb.automationReject(p.id)
     await load()
-  }
-  const grade = async (card: Card, rating: 'again' | 'hard' | 'good' | 'easy') => {
-    await window.sb.brainGradeCard(card.q, rating)
-    setCards(list => list.filter(c => c.q !== card.q))
-    setRevealed(null)
   }
   const applyPolicy = async () => {
     const msg = await window.sb.brainPolicyApply()
@@ -96,46 +85,106 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
     await load()
   }
 
+  const todayCount = ledger.filter(e => Date.now() - e.ts < 86_400_000).length
+  const decisions = pending.length + facts.length + ((policy?.proposals.length ?? 0) > 0 ? 1 : 0)
+  const topSources = (health?.topSources ?? []).slice(0, 4)
+
   const groups: LedgerEntry['verb'][] = ['needs-you', 'discovered', 'improved', 'processed']
 
   return (
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>Hoje</div>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>HOJE</div>
           <h1>O que o cérebro fez</h1>
           <p className="dim" style={{ fontSize: 14, marginTop: 6, maxWidth: 640, lineHeight: 1.5 }}>
-            Cada linha é um trabalho concluído, uma descoberta ou algo que espera você. O mapa continua em Mapa.
+            Telemetria do segundo brain: trabalho concluído, descobertas e melhorias — mais o que precisa de decisão sua. Interação do dia a dia acontece no seu LLM.
           </p>
         </div>
       </div>
 
-      <div className="grid grid-2" style={{ marginBottom: 18 }}>
-        <div className="card card-pad">
-          <h2>Briefing</h2>
-          {briefingState && <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>{briefingState}</p>}
-          {briefing && (
-            <div className="msg__body" style={{ marginTop: 10, fontSize: 14, lineHeight: 1.55 }} dangerouslySetInnerHTML={{ __html: mdToHtml(briefing) }} />
-          )}
-          {sleepLine && <p className="dim" style={{ marginTop: 12, fontSize: 13 }}>Último sono — {sleepLine}</p>}
-          {evalScore && (
-            <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>
-              Placar de {evalScore.day}: {evalScore.hit} de {evalScore.total}.
-            </p>
-          )}
-        </div>
-        <div className="card card-pad">
-          <h2>Tarefas abertas</h2>
-          {tasks.length === 0 && <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>Nenhuma tarefa aberta no planner.</p>}
-          {tasks.map(t => (
-            <div key={t.id} className="note-row" style={{ cursor: 'default' }}>
-              <span className="note-row__title">{t.title}</span>
-              <span className="faint mono" style={{ fontSize: 11 }}>{t.due ?? t.priority}</span>
+      {/* vitals */}
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 22, maxWidth: 1000 }}>
+        {[
+          { k: 'eventos hoje', v: todayCount, sub: `${ledger.length} recentes` },
+          { k: 'escritas 7d', v: health?.writes7d ?? '—', sub: 'no vault' },
+          { k: 'fontes ativas', v: topSources.length, sub: topSources.map(s => s.source).join(', ') || '—' },
+          { k: 'crons ativos', v: health ? `${health.automationsEnabled}/${health.automationsTotal}` : '—', sub: 'automations' },
+          { k: 'decisões', v: decisions, sub: decisions ? 'precisam de você' : 'tudo em dia' },
+          { k: 'memória', v: health?.mdFiles ?? '—', sub: `${health?.skills ?? 0} skills` }
+        ].map(m => (
+          <div key={m.k} className="card stat" style={{ padding: '12px 14px' }}>
+            <div className="stat__num" style={{ fontSize: 20 }}>{m.v}</div>
+            <div className="stat__label">{m.k}</div>
+            <div className="faint" style={{ fontSize: 9.5, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {(sleepLine || evalScore) && (
+        <p className="faint" style={{ fontSize: 12, marginBottom: 18 }}>
+          {sleepLine && <>Último sono — {sleepLine}</>}
+          {sleepLine && evalScore && ' · '}
+          {evalScore && <>Placar de {evalScore.day}: {evalScore.hit}/{evalScore.total}</>}
+        </p>
+      )}
+
+      {/* ── decisions ── */}
+      <div className="hud-tag" style={{ marginBottom: 10 }}>PRECISA DE VOCÊ</div>
+
+      {pending.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 16 }}>
+          <h2>Aprovações de cron ({pending.length})</h2>
+          {pending.map(p => (
+            <div key={p.id} className="note-row" style={{ alignItems: 'flex-start', cursor: 'default' }}>
+              <div style={{ flex: 1 }}>
+                <strong>{p.name}</strong>
+                <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>{p.instruction}</p>
+              </div>
+              <button className="btn btn--primary btn--sm" onClick={() => approve(p)}>Aprovar</button>
+              <button className="btn btn--ghost btn--sm" onClick={() => reject(p)}>Recusar</button>
             </div>
           ))}
         </div>
-      </div>
+      )}
 
+      {facts.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 16 }}>
+          <h2>Fatos propostos pelo cérebro ({facts.length})</h2>
+          <p className="dim" style={{ fontSize: 13, margin: '6px 0 10px' }}>
+            Sono, conversa, webhook e agente deixam propostas. Só o que você aceita passa a valer.
+          </p>
+          {facts.map(f => (
+            <div key={f.id} style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontSize: 14 }}>{f.text}</div>
+              <p className="faint" style={{ fontSize: 12, marginTop: 4 }}>{f.since} · {f.origin} · {f.source}</p>
+              {f.previous && (
+                <p className="dim" style={{ fontSize: 13, marginTop: 6 }}>No lugar de: {f.previous}</p>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <button className="btn btn--primary btn--sm" onClick={async () => { await window.sb.brainFactAccept(f.id); onToast?.('Fato aceito.', 'success'); await load() }}>Aceitar</button>
+                <button className="btn btn--ghost btn--sm" onClick={async () => { await window.sb.brainFactDiscard(f.id); await load() }}>Descartar</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(policy?.proposals.length ?? 0) > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 22 }}>
+          <h2>Proposta de política do cérebro</h2>
+          <p className="dim" style={{ fontSize: 13, marginTop: 6 }}>{policy?.active}</p>
+          <p style={{ fontSize: 13, marginTop: 8 }}>{policy?.proposals[policy.proposals.length - 1]}</p>
+          <button className="btn btn--primary btn--sm" style={{ marginTop: 10 }} onClick={applyPolicy}>Aplicar na política ativa</button>
+        </div>
+      )}
+
+      {decisions === 0 && (
+        <p className="faint" style={{ fontSize: 13, marginBottom: 22 }}>Nada pendente — o cérebro está operando dentro da política atual.</p>
+      )}
+
+      {/* ── what the brain did ── */}
+      <div className="hud-tag" style={{ marginBottom: 10 }}>ATIVIDADE RECENTE</div>
       {groups.map(verb => {
         const items = ledger.filter(e => e.verb === verb).slice(0, 6)
         if (!items.length) return null
@@ -156,82 +205,11 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
           </div>
         )
       })}
-
-      {facts.length > 0 && (
-        <div className="card card-pad" style={{ marginBottom: 16 }}>
-          <h2>Fatos para aceitar ({facts.length})</h2>
-          <p className="dim" style={{ fontSize: 13, margin: '6px 0 10px' }}>
-            Sono, conversa, webhook e agente deixam propostas. Só o que você aceita passa a valer.
-          </p>
-          {facts.map(f => (
-            <div key={f.id} style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
-              <div style={{ fontSize: 14 }}>{f.text}</div>
-              <p className="faint" style={{ fontSize: 12, marginTop: 4 }}>{f.since} · {f.origin} · {f.source}</p>
-              {f.previous && (
-                <p className="dim" style={{ fontSize: 13, marginTop: 6 }}>No lugar de: {f.previous}</p>
-              )}
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <button className="btn btn--primary btn--sm" onClick={async () => { await window.sb.brainFactAccept(f.id); onToast?.('Fato aceito.', 'success'); await load() }}>Aceitar</button>
-                <button className="btn btn--ghost btn--sm" onClick={async () => { await window.sb.brainFactDiscard(f.id); await load() }}>Descartar</button>
-              </div>
-            </div>
-          ))}
+      {ledger.length === 0 && (
+        <div className="card card-pad">
+          <p className="dim" style={{ fontSize: 13 }}>Nenhuma atividade registrada ainda. Conecte um agente ou rode um cron para o cérebro começar a registrar trabalho.</p>
         </div>
       )}
-
-      {pending.length > 0 && (
-        <div className="card card-pad" style={{ marginBottom: 16 }}>
-          <h2>Aprovações ({pending.length})</h2>
-          {pending.map(p => (
-            <div key={p.id} className="note-row" style={{ alignItems: 'flex-start', cursor: 'default' }}>
-              <div style={{ flex: 1 }}>
-                <strong>{p.name}</strong>
-                <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>{p.instruction}</p>
-              </div>
-              <button className="btn btn--primary btn--sm" onClick={() => approve(p)}>Aprovar</button>
-              <button className="btn btn--ghost btn--sm" onClick={() => reject(p)}>Recusar</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-2">
-        <div className="card card-pad">
-          <h2>Revisão para você</h2>
-          <p className="dim" style={{ fontSize: 13, margin: '6px 0 10px' }}>
-            Estes cards saíram da memória longa. A nota é sua, não a do modelo.
-          </p>
-          {cards.length === 0 && <p className="dim" style={{ fontSize: 13 }}>Nenhum card vencido. O sono cria cards quando há fato durável.</p>}
-          {cards.map(c => (
-            <div key={c.q} style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
-              <div style={{ fontSize: 14 }}>{c.q}</div>
-              {revealed === c.q && <p className="dim" style={{ marginTop: 6, fontSize: 13 }}>{c.a}</p>}
-              <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                {revealed !== c.q && <button className="btn btn--ghost btn--sm" onClick={() => setRevealed(c.q)}>Mostrar resposta</button>}
-                {revealed === c.q && (
-                  <>
-                    <button className="btn btn--ghost btn--sm" onClick={() => grade(c, 'again')}>De novo</button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => grade(c, 'hard')}>Difícil</button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => grade(c, 'good')}>Bom</button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => grade(c, 'easy')}>Fácil</button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="card card-pad">
-          <h2>Política do cérebro</h2>
-          <p className="dim" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>{policy?.active || 'Ainda sem política ativa.'}</p>
-          {(policy?.proposals.length ?? 0) > 0 && (
-            <>
-              <p className="dim" style={{ fontSize: 12, marginTop: 12 }}>Última proposta</p>
-              <p style={{ fontSize: 13, marginTop: 4 }}>{policy?.proposals[policy.proposals.length - 1]}</p>
-              <button className="btn btn--primary btn--sm" style={{ marginTop: 10 }} onClick={applyPolicy}>Aplicar na política ativa</button>
-            </>
-          )}
-        </div>
-      </div>
     </div>
   )
 }
