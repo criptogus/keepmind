@@ -86,7 +86,7 @@ function hintLabel(kind: Hint['kind']): string {
     case 'idle': return 'Parada'
     case 'note': return 'Nota'
     case 'duplicate': return 'Duplicada'
-    case 'threat': return 'Ameaça'
+    case 'threat': return 'Threat'
     default: {
       const unreachable: never = kind
       return unreachable
@@ -146,7 +146,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
       setResults(null)
       await refresh()
     } catch (e: any) {
-      onToast?.(e?.message ?? 'Não foi possível instalar.', 'error')
+      onToast?.(e?.message ?? 'Could not install.', 'error')
     } finally { setBusy(null) }
   }
 
@@ -161,7 +161,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
       const hits = await window.sb.brainSkillSearch(q, registryType || undefined)
       setResults(hits)
     } catch (e: any) {
-      onToast?.(e?.message ?? 'O SuperagentSkill não respondeu.', 'error')
+      onToast?.(e?.message ?? 'SuperagentSkill did not respond.', 'error')
     } finally { setBusy(null) }
   }
 
@@ -174,7 +174,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
       onToast?.(next.score != null ? `Nota ${next.score} no SuperagentSkill.` : 'Nota recebida.', 'success')
       await refresh()
     } catch (e: any) {
-      onToast?.(e?.message ?? 'A avaliação falhou.', 'error')
+      onToast?.(e?.message ?? 'Scoring failed.', 'error')
     } finally { setBusy(null) }
   }
 
@@ -185,9 +185,9 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
       const out = await window.sb.brainSkillEvolve()
       setReport(out.report)
       setData(d => d ? { ...d, hints: out.hints } : d)
-      onToast?.('A evolução das skills foi gravada em insights/.', 'success')
+      onToast?.('Skill evolution saved to insights/.', 'success')
     } catch (e: any) {
-      onToast?.(e?.message ?? 'A evolução falhou.', 'error')
+      onToast?.(e?.message ?? 'Evolution failed.', 'error')
     } finally { setBusy(null) }
   }
 
@@ -202,11 +202,11 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
       onToast?.(
         blocked || review
           ? `${blocked} bloqueada(s), ${review} para revisar.`
-          : 'Nenhuma skill do cofre foi marcada como maliciosa.',
+          : 'No vault skill was flagged as malicious.',
         blocked ? 'error' : 'success'
       )
     } catch (e: any) {
-      onToast?.(e?.message ?? 'A análise de ameaças falhou.', 'error')
+      onToast?.(e?.message ?? 'Threat analysis failed.', 'error')
     } finally { setBusy(null) }
   }
 
@@ -216,7 +216,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
       const t = await window.sb.brainSkillTrust(slug)
       setTrust(t.summary)
     } catch (e: any) {
-      onToast?.(e?.message ?? 'Sem relatório de confiança.', 'error')
+      onToast?.(e?.message ?? 'No trust report.', 'error')
     } finally { setBusy(null) }
   }
 
@@ -225,18 +225,18 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
       <div className="view-head">
         <div>
           <div className="hud-tag" style={{ marginBottom: 6 }}>HABILIDADES</div>
-          <h1>O que o cérebro sabe fazer</h1>
+          <h1>What the brain can do</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4, maxWidth: 680 }}>
-            Suas skills, separadas por origem. O uso vem das conversas e do diário. A nota e a análise de skill maliciosa vêm do SuperagentSkill, quando você pede.
+            Your skills, split by origin. Usage comes from chats and the journal. Scores and malicious-skill analysis come from SuperagentSkill, on demand.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn btn--ghost btn--sm" onClick={refresh}>Atualizar</button>
+          <button className="btn btn--ghost btn--sm" onClick={refresh}>Refresh</button>
           <button className="btn btn--ghost btn--sm" disabled={busy === 'threat'} onClick={scanThreats}>
-            {busy === 'threat' ? 'Analisando…' : 'Analisar ameaças'}
+            {busy === 'threat' ? 'Analyzing…' : 'Scan threats'}
           </button>
           <button className="btn btn--sm" disabled={busy === 'evolve'} onClick={evolve}>
-            {busy === 'evolve' ? 'Evoluindo…' : 'Evoluir com o cérebro'}
+            {busy === 'evolve' ? 'Evolving…' : 'Evolve with the brain'}
           </button>
         </div>
       </div>
@@ -251,12 +251,12 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
       />
 
       <div className="card card-pad" style={{ maxWidth: 1100, marginBottom: 16 }}>
-        <h2 style={{ marginBottom: 8 }}>Skills maliciosas</h2>
+        <h2 style={{ marginBottom: 8 }}>Malicious skills</h2>
         <p className="faint" style={{ fontSize: 13, lineHeight: 1.5, marginTop: 0 }}>
-          O SuperagentSkill faz as duas checagens. No pacote publicado, o relatório de confiança traz os achados de robustez: injeção, vazamento e jailbreak. No arquivo do cofre, o dry-run do upload roda o guarda de prompt injection e não publica nada. Um achado crítico impede a instalação.
+          SuperagentSkill runs both checks. For a published package, the trust report carries robustness findings: injection, leakage and jailbreak. For a vault file, the upload dry-run runs the prompt-injection guard and publishes nothing. A critical finding blocks install.
         </p>
         {(data?.threats.length ?? 0) === 0 && (
-          <p className="faint" style={{ fontSize: 13, marginBottom: 0 }}>Ainda não rodou nesta máquina. O botão acima analisa o que está no cofre.</p>
+          <p className="faint" style={{ fontSize: 13, marginBottom: 0 }}>Has not run on this machine yet. The button above analyzes what is in the vault.</p>
         )}
         {(data?.threats.length ?? 0) > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -279,7 +279,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
 
       {(data?.hints.length ?? 0) > 0 && (
         <div className="card card-pad" style={{ maxWidth: 1100, marginBottom: 16 }}>
-          <h2 style={{ marginBottom: 10 }}>Próximas melhorias</h2>
+          <h2 style={{ marginBottom: 10 }}>Next improvements</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {(data?.hints ?? []).slice(0, 6).map((h, i) => (
               <button
@@ -300,7 +300,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
 
       {report && (
         <div className="card card-pad" style={{ maxWidth: 1100, marginBottom: 16 }}>
-          <h2 style={{ marginBottom: 8 }}>Última evolução</h2>
+          <h2 style={{ marginBottom: 8 }}>Last evolution</h2>
           <pre className="faint" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font)', fontSize: 13, lineHeight: 1.5, margin: 0 }}>{report}</pre>
         </div>
       )}
@@ -313,7 +313,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
           </h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
             <button className={`chip ${segment === 'todas' ? 'chip--lime' : ''}`} onClick={() => setSegment('todas')}>
-              Todas {data ? data.items.length : ''}
+              All {data ? data.items.length : ''}
             </button>
             {(data?.segments ?? []).map(s => (
               <button key={s.id} className={`chip ${segment === s.id ? 'chip--lime' : ''}`} onClick={() => setSegment(s.id)}>
@@ -321,10 +321,10 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
               </button>
             ))}
           </div>
-          {!data && <p className="faint" style={{ fontSize: 13 }}>Carregando o cofre…</p>}
+          {!data && <p className="faint" style={{ fontSize: 13 }}>Loading the vault…</p>}
           {data && items.length === 0 && (
             <p className="faint" style={{ fontSize: 13 }}>
-              Nenhuma skill neste segmento. Instale uma do SuperagentSkill ou deixe o sono gravar um procedimento.
+              No skills in this segment. Install one from SuperagentSkill or let sleep record a procedure.
             </p>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
@@ -362,13 +362,13 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
                 <span className="chip">{current.kind}</span>
               </div>
               <p className="faint" style={{ fontSize: 12.5, margin: '8px 0' }}>
-                {current.uses} gravações no diário · {current.mentions} menções nas conversas recentes
+                {current.uses} journal writes · {current.mentions} mentions in recent chats
                 {current.ageDays === 0 ? ' · hoje' : ` · ${current.ageDays} dias`}
               </p>
               <p style={{ fontSize: 13.5, lineHeight: 1.5 }}>{current.excerpt}</p>
               {threat && (
                 <div style={{ marginTop: 10 }}>
-                  <div className="hud-tag" style={{ marginBottom: 6 }}>Ameaça · {threatLabel(threat.status)}</div>
+                  <div className="hud-tag" style={{ marginBottom: 6 }}>Threat · {threatLabel(threat.status)}</div>
                   <p style={{ fontSize: 13, lineHeight: 1.5 }}>{threat.summary}</p>
                   {threat.injection && <p className="faint" style={{ fontSize: 12.5 }}>{threat.injection}</p>}
                   {threat.findings.length > 0 && (
@@ -380,7 +380,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
               )}
               {note && (
                 <p className="faint" style={{ fontSize: 12.5, marginTop: 8 }}>
-                  Nota {note.score ?? 'sem número'} no boletim do SuperagentSkill, acima.
+                  Score {note.score ?? 'unscored'} on the SuperagentSkill board, above.
                 </p>
               )}
               {hints.filter(h => h.path === current.path).map(h => (
@@ -393,7 +393,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
                 </button>
                 {current.slug && (
                   <button className="btn btn--ghost btn--sm" disabled={busy === 'trust'} onClick={() => showTrust(current.slug)}>
-                    Confiança
+                    Trust
                   </button>
                 )}
                 {current.slug && (
@@ -401,7 +401,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
                     className="btn btn--ghost btn--sm"
                     onClick={() => window.sb.openExternal(`https://superagentskill.com/marketplace/trust/${current.slug}`)}
                   >
-                    Abrir no site
+                    Open on site
                   </button>
                 )}
               </div>
@@ -414,7 +414,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
             <IconSparkle size={14} /> SuperagentSkill
           </h2>
           <p className="faint" style={{ fontSize: 12.5, marginBottom: 12 }}>
-            O catálogo público entra no cofre como uma skill sua. Ela sincroniza e qualquer agente ligado passa a usá-la.
+            The public catalog lands in the vault as your skill. It syncs and any connected agent can use it.
           </p>
           <form
             onSubmit={e => { e.preventDefault(); search() }}
@@ -423,11 +423,11 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Buscar no catálogo"
+              placeholder="Search the catalog"
               style={{ flex: 1, minWidth: 0 }}
             />
             <button className="btn btn--sm" type="submit" disabled={busy === 'search'}>
-              {busy === 'search' ? '…' : 'Buscar'}
+              {busy === 'search' ? '…' : 'Search'}
             </button>
           </form>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
@@ -442,9 +442,9 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
               </button>
             ))}
           </div>
-          {!data && results === null && <p className="faint" style={{ fontSize: 13 }}>Consultando o catálogo…</p>}
+          {!data && results === null && <p className="faint" style={{ fontSize: 13 }}>Searching the catalog…</p>}
           {catalog.length === 0 && (
-            <p className="faint" style={{ fontSize: 13 }}>Nada encontrado. Tente outra palavra, com pelo menos duas letras.</p>
+            <p className="faint" style={{ fontSize: 13 }}>Nothing found. Try another word, at least two letters.</p>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto' }}>
             {catalog.map(s => (
@@ -457,11 +457,11 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
                 {s.description && <p className="faint" style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.45 }}>{s.description}</p>}
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
                   <span className="faint" style={{ fontSize: 11, marginRight: 'auto' }}>
-                    {s.installs > 0 ? `${s.installs.toLocaleString('pt-BR')} instalações` : s.slug}
+                    {s.installs > 0 ? `${s.installs.toLocaleString('pt-BR')} installs` : s.slug}
                   </span>
                   {!s.alreadyHave && (
                     <button className="btn btn--sm" disabled={busy === `install-${s.slug}`} onClick={() => install(s.slug)}>
-                      {busy === `install-${s.slug}` ? '…' : 'Instalar'}
+                      {busy === `install-${s.slug}` ? '…' : 'Install'}
                     </button>
                   )}
                   <button
@@ -479,7 +479,7 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
             style={{ marginTop: 12 }}
             onClick={() => window.sb.openExternal('https://superagentskill.com')}
           >
-            Abrir superagentskill.com
+            Open superagentskill.com
           </button>
         </div>
       </div>

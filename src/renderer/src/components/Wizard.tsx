@@ -197,7 +197,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
           <div className="hud-tag" style={{ marginBottom: 8 }}>KEEPMIND · SETUP</div>
           <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>KeepMind</h1>
           <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>
-            Vamos ligar o cérebro em poucos minutos. A memória fica no seu repositório.
+            Let's connect the brain in a few minutes. Memory lives in your repository.
           </p>
         </div>
 
@@ -210,27 +210,27 @@ export default function Wizard({ config, onDone, onToast }: Props) {
         {/* STEP 0 — welcome */}
         {step === 0 && (
           <div className="card wizard__card">
-            <h2>Seus agentes passam a ter memória</h2>
+            <h2>Your agents get memory</h2>
             <p className="sub">
-              O KeepMind é a memória persistente em que seus agentes leem e escrevem.
-              Codex, Claude, Cursor ou qualquer cliente MCP grava no mesmo repositório.
-              O que eles fizerem aparece em Hoje e em Atividade.
+              KeepMind is the persistent memory your agents read and write.
+              Codex, Claude, Cursor or any MCP client writes to the same repository.
+              Whatever they do shows up in Today and Activity.
             </p>
             <div className="card card-pad" style={{ padding: '14px 18px', marginBottom: 16, borderColor: 'rgba(34,211,238,.35)' }}>
               <p className="faint" style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                <strong style={{ color: 'var(--text)' }}>O modelo pode mudar. A memória fica.</strong>{' '}
-                Tudo é Markdown no <em>seu</em> repositório. Trocar Codex por Claude, ou o modelo local
-                por um da nuvem, não pede exportação. Os agentes são substituíveis. O repositório é seu.
+                <strong style={{ color: 'var(--text)' }}>The model can change. Memory stays.</strong>{' '}
+                Everything is Markdown in <em>your</em> repository. Swapping Codex for Claude, or the
+                local model for a cloud one, needs no export. Agents are replaceable. The repo is yours.
               </p>
             </div>
             <div className="grid grid-2" style={{ marginBottom: 8 }}>
               {[
-                ['🧠', 'Memória para agentes', 'O cliente MCP lê e escreve no mesmo repositório. O que foi gravado aparece em Hoje.'],
-                ['🔁', 'O modelo pode mudar', 'Trocar o provedor não exporta nada. Fatos, lições e habilidades continuam no repositório.'],
-                ['🌙', 'Sono que consolida', 'De noite o dia vira fatos, lições e habilidades. A frase do que saiu fica em Hoje.'],
-                ['🧬', 'Mapa das ligações', 'O mapa mostra as notas ligadas. Os pulsos são gravações, não enfeite.'],
-                ['🗂️', 'Memória em camadas', 'O curto prazo vira semana. O longo prazo entra de novo no próximo prompt, pelo final do arquivo.'],
-                ['⚙️', 'Trabalhos com resultado', 'Agenda, triagem e faxina deixam uma frase. A evolução só muda a política quando você aplica.']
+                ['🧠', 'Memory for agents', 'The MCP client reads and writes the same repo. What gets saved shows up in Today.'],
+                ['🔁', 'The model can change', 'Switching providers exports nothing. Facts, lessons and skills stay in the repo.'],
+                ['🌙', 'Sleep that consolidates', 'At night the day becomes facts, lessons and skills. The outcome line lands in Today.'],
+                ['🧬', 'Map of connections', 'The map shows linked notes. The pulses are live writes, not decoration.'],
+                ['🗂️', 'Tiered memory', 'Short-term becomes the week. Long-term re-enters the next prompt via the file tail.'],
+                ['⚙️', 'Jobs with receipts', 'Schedules, triage and cleanup leave a line. Evolution only changes policy when you apply it.']
               ].map(([e, t, d]) => (
                 <div key={t} className="card card-pad" style={{ padding: '16px 18px' }}>
                   <div className="feat-emoji" style={{ fontSize: 22, marginBottom: 8 }}>{e}</div>
@@ -240,10 +240,10 @@ export default function Wizard({ config, onDone, onToast }: Props) {
               ))}
             </div>
             <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={() => setStep(1)}>
-              Começar →
+              Get started →
             </button>
             <button className="btn btn--ghost" style={{ width: '100%', marginTop: 10 }} onClick={skipConnectors}>
-              Deixar a conexão para depois
+              Skip connecting for now
             </button>
           </div>
         )}
@@ -254,7 +254,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             <h2>1 · Connect GitHub</h2>
             <p className="sub">
               KeepMind stores all memory in <strong>a private repository you own</strong>.
-              Você autoriza no navegador. O token fica neste computador e não entra no repositório.
+              You authorize in the browser. The token stays on this computer and never enters the repo.
             </p>
             {!ghDevice && !ghLogin && (
               <button className="btn btn--primary btn--lg" onClick={startGithub} disabled={busy}>

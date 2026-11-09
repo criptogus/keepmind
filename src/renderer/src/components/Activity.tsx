@@ -85,7 +85,7 @@ export default function Activity() {
           <div className="hud-tag" style={{ marginBottom: 6 }}>Registro</div>
           <h1>Atividade</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Cada arquivo que o cérebro escreveu, completou ou apagou, e quem fez isso. O dia segue o relógio deste computador.
+            Every file the brain wrote, completed or deleted, and who did it. The day follows this computer's clock.
           </p>
         </div>
         <button className="btn btn--ghost" onClick={refresh} disabled={loading}>
@@ -134,7 +134,7 @@ export default function Activity() {
         {groups.map(([day, items]) => (
           <div key={day}>
             <div className="faint mono" style={{ fontSize: 11, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.08em' }}>
-              {day === today ? 'Hoje' : day}
+              {day === today ? 'Today' : day}
             </div>
             <div className="card" style={{ padding: '4px 0' }}>
               {items.map((e, i) => {
@@ -181,7 +181,7 @@ export default function Activity() {
         {!filtered.length && !loading && (
           <div className="card card-pad">
             <p className="faint" style={{ fontSize: 13 }}>
-              Ainda não há atividade. Conversas, sono, agenda e conectores aparecem aqui no momento em que gravam alguma coisa.
+              No activity yet. Chats, sleep, schedules and connectors show up here the moment they write something.
             </p>
           </div>
         )}

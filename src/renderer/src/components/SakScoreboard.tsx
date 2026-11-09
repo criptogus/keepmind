@@ -29,7 +29,7 @@ function tone(score: number | null): string {
 }
 
 function band(score: number | null): string {
-  if (score == null) return 'Sem número'
+  if (score == null) return 'Unscored'
   if (score >= 85) return 'Alta'
   if (score >= 70) return 'Boa'
   if (score >= 50) return 'No meio'
@@ -84,7 +84,7 @@ export default function SakScoreboard({
           <div className="hud-tag" style={{ marginBottom: 6 }}>SUPERAGENTSKILL</div>
           <h2>Notas</h2>
           <p className="faint" style={{ fontSize: 13 }}>
-            A nota geral fica grande. Formato é a estrutura do arquivo. Substância é o que o texto realmente diz.
+            The overall score is big. Format is the file structure. Substance is what the text actually says.
           </p>
         </div>
       </div>
@@ -93,8 +93,8 @@ export default function SakScoreboard({
         <div className={`sak-score ${tone(null)}`}>
           <div className="sak-score__top">
             <div>
-              <div className="sak-score__title">Nenhuma nota ainda</div>
-              <p className="faint sak-score__when">Peça uma avaliação e o boletim aparece aqui.</p>
+              <div className="sak-score__title">No scores yet</div>
+              <p className="faint sak-score__when">Request a review and the report shows up here.</p>
             </div>
             <div className="sak-score__num">—<small>SAK</small></div>
           </div>
@@ -126,7 +126,7 @@ export default function SakScoreboard({
                   <Meter score={n.formatScore} />
                 </div>
                 <div className="sak-axis">
-                  <span><em>Substância</em><b>{n.substanceScore ?? '—'}</b></span>
+                  <span><em>Substance</em><b>{n.substanceScore ?? '—'}</b></span>
                   <Meter score={n.substanceScore} />
                 </div>
               </div>
@@ -139,7 +139,7 @@ export default function SakScoreboard({
         <div className="sak-sheet">
           <h2 style={{ margin: 0 }}>{titleOf(selectedPath)}</h2>
           <p className="faint" style={{ fontSize: 13, margin: '6px 0 12px' }}>
-            Esta skill ainda não tem nota no SuperagentSkill.
+            This skill has no SuperagentSkill score yet.
           </p>
           <button className="btn btn--sm" type="button" disabled={busy} onClick={() => onReview(selectedPath)}>
             {busy ? 'Avaliando…' : 'Avaliar no SuperagentSkill'}
@@ -163,7 +163,7 @@ export default function SakScoreboard({
                   <Meter score={open.formatScore} />
                 </div>
                 <div className="sak-axis">
-                  <span><em>Substância</em><b>{open.substanceScore ?? '—'}</b></span>
+                  <span><em>Substance</em><b>{open.substanceScore ?? '—'}</b></span>
                   <Meter score={open.substanceScore} />
                 </div>
               </div>

@@ -43,7 +43,7 @@ const demoTasks: any[] = [
   { id: 't3', title: 'Renew domain superbrains.dev', done: true, priority: 'normal', due: null, created: '2026-11-01T09:00:00Z', notes: '' }
 ]
 let demoFacts = [
-  { id: 'p-demo', text: 'O repositório privado é a fonte da memória.', since: todayStr(), origin: 'sleep', source: 'sono', previous: '' }
+  { id: 'p-demo', text: 'The private repo is the source of memory.', since: todayStr(), origin: 'sleep', source: 'sono', previous: '' }
 ]
 const demoGoals: any[] = [
   { text: '90 minutes of deep work on the product', done: false },
@@ -189,40 +189,40 @@ const demo = {
   goalsSuggest: async () => ['Ship the proposal draft', '30-min walk outside', 'Review open tasks'],
 
   brainLedger: async () => [
-    { ts: Date.now() - 3600_000, verb: 'processed', sentence: 'Sono de ontem consolidou 2 logs e gravou o relatório.', path: 'sleep/2026-11-08.md' },
-    { ts: Date.now() - 1800_000, verb: 'discovered', sentence: 'A conversa guardou 1 item na memória longa.', path: 'long-term/facts.md' },
-    { ts: Date.now() - 600_000, verb: 'needs-you', sentence: 'Uma evolução deixou uma proposta na política do cérebro.', path: 'ops/policy.md' }
+    { ts: Date.now() - 3600_000, verb: 'processed', sentence: "Last night's sleep consolidated 2 logs and wrote the report.", path: 'sleep/2026-11-08.md' },
+    { ts: Date.now() - 1800_000, verb: 'discovered', sentence: 'The chat stored 1 item in long-term memory.', path: 'long-term/facts.md' },
+    { ts: Date.now() - 600_000, verb: 'needs-you', sentence: 'An evolution left a proposal in the brain policy.', path: 'ops/policy.md' }
   ],
   brainSearch: async (query: string) => {
     const q = String(query)
     const temporal = /o que valia|valia em|valiam|na [eé]poca|as of|no dia|na data/i.test(q)
     const hits = demoMemory.filter(m => m.content.toLowerCase().includes(q.toLowerCase())).map(m => ({ path: m.path, title: m.path, snippet: m.content.slice(0, 120) }))
-    if (temporal) return { hits: [], semantic: false, notice: 'Não há fato datado que valesse nessa data. Texto sem data não entra nessa consulta.', asOf: '2026-03-31' }
-    return { hits, semantic: false, notice: hits.length ? 'A busca semântica está parada. Estes resultados são só por texto.' : 'A busca semântica está parada. Nada casou por texto.', asOf: null }
+    if (temporal) return { hits: [], semantic: false, notice: 'No dated fact applied on that date. Undated text does not enter this query.', asOf: '2026-03-31' }
+    return { hits, semantic: false, notice: hits.length ? 'Semantic search is idle. These results are text-only.' : 'Semantic search is idle. Nothing matched by text.', asOf: null }
   },
   brainFacts: async () => demoFacts,
-  brainFactAccept: async (id: string) => { demoFacts = demoFacts.filter(f => f.id !== id); return 'Fato aceito. O próximo prompt já pode usá-lo.' },
+  brainFactAccept: async (id: string) => { demoFacts = demoFacts.filter(f => f.id !== id); return 'Fact accepted. The next prompt can use it.' },
   brainFactDiscard: async (id: string) => { demoFacts = demoFacts.filter(f => f.id !== id); return 'Proposta descartada.' },
-  brainCapture: async () => 'Frase guardada. Ela já vale.',
-  brainCorrect: async () => 'Correção gravada. Ela já vale, e a avaliação vai conferir isso no próximo sono.',
-  brainEval: async () => ({ questions: [{ q: 'Onde a memória durável fica?', source: 'gap' }], last: { day: todayStr(), hit: 1, total: 1 } }),
-  brainBriefing: async () => 'Briefing de demonstração. Os fatos novos esperam você abaixo.',
+  brainCapture: async () => 'Sentence saved. It counts immediately.',
+  brainCorrect: async () => 'Correction saved. It counts now, and the eval will check it next sleep.',
+  brainEval: async () => ({ questions: [{ q: 'Where does durable memory live?', source: 'gap' }], last: { day: todayStr(), hit: 1, total: 1 } }),
+  brainBriefing: async () => 'Demo briefing. New facts are waiting for you below.',
   automationPending: async () => [],
   automationApprove: async () => true,
   automationReject: async () => true,
   onCapture: () => () => {},
-  brainCards: async () => [{ q: 'Onde a memória durável fica?', a: 'Em long-term/, dentro do repositório.' }],
+  brainCards: async () => [{ q: 'Where does durable memory live?', a: 'In long-term/, inside the repo.' }],
   brainGradeCard: async () => ({ due: Date.now() + 86_400_000 }),
-  brainPolicy: async () => ({ active: 'Sem instruções extras ainda.', proposals: ['- 2026-11-08: Separar fatos de pessoas em páginas de entidade.'] }),
-  brainPolicyApply: async () => 'Política ativa atualizada.',
+  brainPolicy: async () => ({ active: 'No extra instructions yet.', proposals: ['- 2026-11-08: Split person facts into entity pages.'] }),
+  brainPolicyApply: async () => 'Active policy updated.',
   brainSkills: async () => ({
     items: [{
       file: 'research.md', path: 'skills/research.md', group: 'keepmind', segment: 'KeepMind',
       title: 'Pesquisar antes de responder', ageDays: 4, uses: 3, mentions: 2, kind: 'skill',
-      slug: 'research', excerpt: 'Antes de afirmar um fato, busque na memória.'
+      slug: 'research', excerpt: 'Before stating a fact, search memory.'
     }],
     suggestions: [{
-      slug: 'research-skill', name: 'Research', description: 'Pacote público de pesquisa.', type: 'skill', installs: 120, alreadyHave: false
+      slug: 'research-skill', name: 'Research', description: 'Public research package.', type: 'skill', installs: 120, alreadyHave: false
     }],
     hints: [{
       path: 'skills/research.md', title: 'Pesquisar antes de responder', segment: 'KeepMind', kind: 'use' as const,
@@ -230,11 +230,11 @@ const demo = {
     }],
     notes: [{
       path: 'skills/research.md', at: new Date().toISOString(), score: 72, formatScore: 84, substanceScore: 61,
-      rationale: 'A estrutura está clara e o exemplo ainda é genérico.',
-      actions: ['Acrescente um exemplo com o vocabulário do usuário.'],
+      rationale: 'The structure is clear and the example is still generic.',
+      actions: ["Add an example using the user's vocabulary."],
       pillars: [
-        { name: 'Escopo', score: 80, rationale: 'Dá para ver onde a skill começa e termina.' },
-        { name: 'Exemplo', score: 58, rationale: 'O exemplo não usa o vocabulário da pessoa.' }
+        { name: 'Scope', score: 80, rationale: 'You can see where the skill starts and ends.' },
+        { name: 'Example', score: 58, rationale: "The example does not use the person's vocabulary." }
       ]
     }],
     segments: [{ id: 'KeepMind', count: 1 }],
@@ -244,8 +244,8 @@ const demo = {
     threats: [{
       path: 'skills/research.md', slug: 'research', at: new Date().toISOString(),
       status: 'clean' as const, score: 7.5, findingsCritical: 0, findingsPublic: 0,
-      injection: 'Guarda de injeção: limpo.',
-      summary: 'confiança 7.5 · nenhum achado público de robustez',
+      injection: 'Injection guard: clean.',
+      summary: 'trust 7.5 · no public robustness findings',
       findings: []
     }],
     hints: []
@@ -255,16 +255,16 @@ const demo = {
     title: slug, ageDays: 0, uses: 0, mentions: 0, kind: 'skill', slug, excerpt: ''
   }),
   brainSkillSearch: async (query: string) => [{
-    slug: 'demo', name: query, description: 'Resultado de demonstração.', type: 'skill', installs: 1, alreadyHave: false
+    slug: 'demo', name: query, description: 'Demo result.', type: 'skill', installs: 1, alreadyHave: false
   }],
   brainSkillReview: async (path: string) => ({
     path, at: new Date().toISOString(), score: 70, formatScore: 80, substanceScore: 60,
-    rationale: 'A estrutura está clara e o exemplo ainda é genérico.',
-    actions: ['Acrescente um exemplo com o vocabulário do usuário.'],
+    rationale: 'The structure is clear and the example is still generic.',
+    actions: ["Add an example using the user's vocabulary."],
     pillars: []
   }),
-  brainSkillTrust: async (slug: string) => ({ slug, score: 80, summary: 'Confiança de demonstração, 80/100.' }),
-  brainSkillEvolve: async () => ({ report: 'Evolução de demonstração.', hints: [] }),
+  brainSkillTrust: async (slug: string) => ({ slug, score: 80, summary: 'Demo trust score, 80/100.' }),
+  brainSkillEvolve: async () => ({ report: 'Demo evolution.', hints: [] }),
   onJob: () => () => {},
   onBrainStep: () => () => {},
 

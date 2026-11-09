@@ -132,7 +132,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
           <div>
             <h3>KeepMind</h3>
             <div className="dim" style={{ fontSize: 13 }}>
-              A resposta mostra o que foi consultado e o que foi gravado.
+              The reply shows what was consulted and what was written.
             </div>
           </div>
         </div>
@@ -140,17 +140,16 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
         <div className="chat-messages">
           {messages.length === 0 && (
             <div className="empty">
-              <h3>Pergunte ao seu KeepMind</h3>
+              <h3>Ask your KeepMind</h3>
               <p>
-                A resposta usa a memória que já está no repositório. Embaixo de cada resposta
-                aparece o que foi encontrado e o arquivo que a conversa gravou.
+                The answer uses memory already in the repo. Under each reply you see what was found and which file the turn wrote.
               </p>
             </div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role === 'user' ? 'msg--user' : ''}`}>
               <div className="msg__col">
-                <div className="msg__who">{m.role === 'user' ? 'Você' : 'KeepMind'}</div>
+                <div className="msg__who">{m.role === 'user' ? 'You' : 'KeepMind'}</div>
                 <div className="msg__bubble msg__body">
                   {m.streaming && !m.content ? (
                     <span className="typing"><span /><span /><span /></span>
@@ -161,9 +160,9 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
                 {m.role === 'assistant' && (m.steps?.length || m.memories?.length || m.saved?.length) ? (
                   <div className="msg__trace">
                     {m.steps?.map((s, n) => <div key={n}>{s}</div>)}
-                    {!!m.memories?.length && <div>Memórias: {m.memories.join(', ')}</div>}
-                    {!!m.saved?.length && <div>Gravou: {m.saved.join(', ')}</div>}
-                    {!m.saved?.length && !m.streaming && <div>Gravou a troca no log de hoje.</div>}
+                    {!!m.memories?.length && <div>Memories: {m.memories.join(', ')}</div>}
+                    {!!m.saved?.length && <div>Wrote: {m.saved.join(', ')}</div>}
+                    {!m.saved?.length && !m.streaming && <div>Turn logged to today's journal.</div>}
                   </div>
                 ) : null}
                 <div className="msg__meta" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -171,9 +170,9 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
                     <button className="msg__copy" onClick={() => copyMsg(m.content)} title="Copiar" aria-label="Copiar mensagem">Copiar</button>
                   )}
                   {m.role === 'assistant' && m.content && !m.streaming && !m.corrected && (
-                    <button className="msg__copy" onClick={() => { setFixing(i); setFixText('') }}>Isto está errado</button>
+                    <button className="msg__copy" onClick={() => { setFixing(i); setFixText('') }}>This is wrong</button>
                   )}
-                  {m.corrected && <span className="faint" style={{ fontSize: 12 }}>Correção gravada. Ela já vale.</span>}
+                  {m.corrected && <span className="faint" style={{ fontSize: 12 }}>Correction saved. It counts now.</span>}
                 </div>
                 {fixing === i && (
                   <form
@@ -183,10 +182,10 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
                     <input
                       value={fixText}
                       onChange={e => setFixText(e.target.value)}
-                      placeholder="Como deveria ser?"
+                      placeholder="What should it be?"
                       style={{ flex: 1, minWidth: 0 }}
                     />
-                    <button className="btn btn--sm" type="submit" disabled={busy}>Guardar</button>
+                    <button className="btn btn--sm" type="submit" disabled={busy}>Save</button>
                   </form>
                 )}
               </div>
@@ -208,7 +207,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
             }}
-            placeholder="Escreva para o KeepMind… (Enter envia)"
+            placeholder="Message KeepMind… (Enter to send)"
             rows={1}
           />
           <button className="btn btn--primary" onClick={send} disabled={busy || !input.trim()} style={{ borderRadius: 999, padding: '0 18px', height: 42 }}>

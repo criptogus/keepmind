@@ -103,10 +103,10 @@ export default function Connectors({ onActivity, onToast }: Props) {
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>Conectar</div>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>Connect</div>
           <h1>Agentes</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Cada agente que escreve na memória deixa o arquivo em Atividade e uma frase em Hoje.
+            Every agent that writes to memory leaves the file in Activity and a line in Today.
           </p>
         </div>
         <button className="btn" onClick={() => setShowCustom(s => !s)}>

@@ -24,7 +24,7 @@ type NavItem = { id: View; label: string; Icon: (p: { size?: number }) => JSX.El
 
 const NAV: { section: string; items: NavItem[] }[] = [
   { section: 'Brain', items: [
-    { id: 'today', label: 'Hoje', Icon: IconToday },
+    { id: 'today', label: 'Today', Icon: IconToday },
     { id: 'graph', label: 'Brain', Icon: IconSparkle },
     { id: 'activity', label: 'Activity', Icon: IconSync }
   ]},
@@ -59,6 +59,7 @@ export default function App() {
   const [opened, setOpened] = useState<{ path: string; content: string } | null>(null)
   const [capture, setCapture] = useState(false)
   const [captureText, setCaptureText] = useState('')
+  const [codexOk, setCodexOk] = useState<boolean | null>(null)
 
   const toast = useCallback((msg: string, kind: Toast['kind'] = 'info') => {
     const id = Date.now() + Math.random()
@@ -80,6 +81,13 @@ export default function App() {
     loadConfig()
     window.sb.authState?.().then(setAuthState).catch(() => setAuthState({ needsSetup: false, user: { id: 0, email: 'local', name: 'Local' } }))
   }, [loadConfig])
+
+  // Codex auth lives in the CLI login, not config.apiKey — probe it so the
+  // model pill can show a truthful green/red dot.
+  useEffect(() => {
+    if (config?.ai?.provider !== 'codex') { setCodexOk(null); return }
+    window.sb.aiCodexStatus?.().then((s: any) => setCodexOk(!!s?.loggedIn)).catch(() => setCodexOk(false))
+  }, [config?.ai?.provider])
 
   useEffect(() => {
     const offJob = window.sb.onJob?.((e: Job) => {
@@ -171,10 +179,10 @@ export default function App() {
   }
 
   const jobLine = job?.phase === 'start'
-    ? `Agora: ${job.name}`
+    ? `Now: ${job.name}`
     : job?.summary
       ? `${job.name}: ${job.summary}`
-      : 'O cérebro está acordado. Nenhum trabalho em curso.'
+      : 'The brain is awake. No work in progress.'
 
   return (
     <div className="app">
@@ -209,7 +217,7 @@ export default function App() {
           ))}
         </nav>
         <button className="status-pill" onClick={() => setPalette(true)} style={{ width: '100%', cursor: 'pointer' }}>
-          <span>Buscar na memória</span>
+          <span>Search memory</span>
           <span className="mono" style={{ marginLeft: 'auto' }}>Ctrl K</span>
         </button>
         <div className="sidebar__foot">
@@ -219,12 +227,23 @@ export default function App() {
           </div>
           <div className="status-pill">
             <span className={`dot ${config?.github?.repoUrl ? '' : 'off'}`} />
-            <span>{config?.github?.repoUrl ? 'Repositório ligado' : 'Repositório desligado'}</span>
+            <span>{config?.github?.repoUrl ? 'Repo connected' : 'Repo disconnected'}</span>
           </div>
-          <div className="status-pill">
-            <span className={`dot ${config?.ai?.provider === 'local' || config?.ai?.apiKey ? '' : 'off'}`} />
-            <span>Modelo · {config?.ai?.provider ?? '—'}</span>
-          </div>
+          <button
+            className="status-pill"
+            onClick={() => { setView('settings'); setTimeout(() => document.getElementById('sec-ai')?.scrollIntoView({ behavior: 'smooth' }), 120) }}
+            style={{ cursor: 'pointer' }}
+            title="Active AI model — click to change"
+          >
+            {(() => {
+              const p = config?.ai?.provider
+              const active = p === 'local' || p === 'ollama' ? true
+                : p === 'codex' ? codexOk === true
+                : !!config?.ai?.apiKey
+              return <span className={`dot ${active ? '' : 'off'}`} />
+            })()}
+            <span>Model · {config?.ai?.provider ?? '—'}</span>
+          </button>
         </div>
       </aside>
 
@@ -263,7 +282,7 @@ export default function App() {
               autoFocus
               value={query}
               onChange={e => { setQuery(e.target.value); setOpened(null) }}
-              placeholder="Buscar nota, fato, tarefa, relatório… ou o que valia em março"
+              placeholder="Search note, fact, task, report… or what was true in March"
             />
             {searchNotice && <p className="dim" style={{ padding: '8px 12px 0', fontSize: 13 }}>{searchNotice}</p>}
             <div className="palette__list">
@@ -274,7 +293,7 @@ export default function App() {
                   <span className="mono faint">{h.path}</span>
                 </button>
               ))}
-              {query.trim().length >= 2 && hits.length === 0 && <p className="dim" style={{ padding: 12 }}>Nada com esse texto.</p>}
+              {query.trim().length >= 2 && hits.length === 0 && <p className="dim" style={{ padding: 12 }}>Nothing matches that text.</p>}
             </div>
             {opened && (
               <div className="palette__file">
@@ -295,16 +314,16 @@ export default function App() {
               e.preventDefault()
               const text = captureText.trim()
               if (!text) return
-              const msg = await window.sb.brainCapture(text).catch(() => 'Não deu para guardar.')
+              const msg = await window.sb.brainCapture(text).catch(() => 'Could not save that.')
               toast(String(msg), 'success')
               setCaptureText('')
               setCapture(false)
             }}
           >
-            <p className="dim" style={{ margin: '0 0 8px', fontSize: 13 }}>Guardar um fato. Ele já vale.</p>
-            <input autoFocus value={captureText} onChange={e => setCaptureText(e.target.value)} placeholder="Uma frase que deve ser lembrada" />
+            <p className="dim" style={{ margin: '0 0 8px', fontSize: 13 }}>Save a fact. It counts immediately.</p>
+            <input autoFocus value={captureText} onChange={e => setCaptureText(e.target.value)} placeholder="A sentence worth remembering" />
             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: 12 }}>
-              <button className="btn btn--primary btn--sm" type="submit">Guardar</button>
+              <button className="btn btn--primary btn--sm" type="submit">Save</button>
             </div>
           </form>
         </div>

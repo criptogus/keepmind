@@ -46,10 +46,10 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>Saúde</div>
-          <h1>Diagnóstico do cérebro</h1>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>Health</div>
+          <h1>Brain diagnostics</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            O que falta automatizar, o que está parado e o que deixa a memória mais útil. O que aconteceu hoje está em Hoje.
+            What still needs automating, what is idle and what makes memory more useful. What happened today lives in Today.
             {report && <> Generated {new Date(report.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · recomputed from journal + vault on every load.</>}
           </p>
         </div>
@@ -111,7 +111,7 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
       <div className="card card-pad" style={{ maxWidth: 900, display: 'flex', alignItems: 'center', gap: 12 }}>
         <IconSparkle size={16} />
         <p className="faint" style={{ fontSize: 12.5, margin: 0 }}>
-          As habilidades ficam em <strong style={{ color: 'var(--text)' }}>Habilidades</strong>: o cofre segmentado, o catálogo do SuperagentSkill e a evolução por uso e por nota.
+          Skills live in <strong style={{ color: 'var(--text)' }}>Skills</strong>: the segmented vault, the SuperagentSkill catalog and evolution by use and by note.
         </p>
       </div>
     </div>

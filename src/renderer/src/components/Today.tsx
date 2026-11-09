@@ -21,10 +21,10 @@ interface HealthStats {
 }
 
 const VERB: Record<LedgerEntry['verb'], string> = {
-  processed: 'Processado',
-  discovered: 'Descoberto',
-  improved: 'Melhorado',
-  'needs-you': 'Pedindo você'
+  processed: 'Processed',
+  discovered: 'Discovered',
+  improved: 'Improved',
+  'needs-you': 'Needs you'
 }
 
 // Hoje é um observatório, não um app de produtividade: o usuário abre para ver
@@ -59,7 +59,7 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
     const last = (sleeps ?? [])[0]
     if (last) {
       const line = String(last.content ?? '').split('\n').map((l: string) => l.trim()).find((l: string) => l && !l.startsWith('#') && !l.startsWith('_'))
-      setSleepLine(line ? `${last.date}: ${line.slice(0, 180)}` : `Último sono em ${last.date}.`)
+      setSleepLine(line ? `${last.date}: ${line.slice(0, 180)}` : `Last sleep on ${last.date}.`)
     }
   }, [])
 
@@ -72,7 +72,7 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
 
   const approve = async (p: Pending) => {
     await window.sb.automationApprove(p.id)
-    onToast?.(`"${p.name}" aprovado e em execução.`, 'success')
+    onToast?.(`"${p.name}" approved and running.`, 'success')
     await load()
   }
   const reject = async (p: Pending) => {
@@ -96,9 +96,9 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
       <div className="view-head">
         <div>
           <div className="hud-tag" style={{ marginBottom: 6 }}>HOJE</div>
-          <h1>O que o cérebro fez</h1>
+          <h1>What the brain did</h1>
           <p className="dim" style={{ fontSize: 14, marginTop: 6, maxWidth: 640, lineHeight: 1.5 }}>
-            Telemetria do segundo brain: trabalho concluído, descobertas e melhorias — mais o que precisa de decisão sua. Interação do dia a dia acontece no seu LLM.
+            Second-brain telemetry: completed work, discoveries and improvements — plus what needs your decision. Day-to-day interaction happens in your LLM.
           </p>
         </div>
       </div>
@@ -106,12 +106,12 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
       {/* vitals */}
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 22, maxWidth: 1000 }}>
         {[
-          { k: 'eventos hoje', v: todayCount, sub: `${ledger.length} recentes` },
-          { k: 'escritas 7d', v: health?.writes7d ?? '—', sub: 'no vault' },
-          { k: 'fontes ativas', v: topSources.length, sub: topSources.map(s => s.source).join(', ') || '—' },
-          { k: 'crons ativos', v: health ? `${health.automationsEnabled}/${health.automationsTotal}` : '—', sub: 'automations' },
-          { k: 'decisões', v: decisions, sub: decisions ? 'precisam de você' : 'tudo em dia' },
-          { k: 'memória', v: health?.mdFiles ?? '—', sub: `${health?.skills ?? 0} skills` }
+          { k: 'events today', v: todayCount, sub: `${ledger.length} recentes` },
+          { k: 'writes 7d', v: health?.writes7d ?? '—', sub: 'in the vault' },
+          { k: 'active sources', v: topSources.length, sub: topSources.map(s => s.source).join(', ') || '—' },
+          { k: 'active crons', v: health ? `${health.automationsEnabled}/${health.automationsTotal}` : '—', sub: 'automations' },
+          { k: 'decisions', v: decisions, sub: decisions ? 'need you' : 'all clear' },
+          { k: 'memory', v: health?.mdFiles ?? '—', sub: `${health?.skills ?? 0} skills` }
         ].map(m => (
           <div key={m.k} className="card stat" style={{ padding: '12px 14px' }}>
             <div className="stat__num" style={{ fontSize: 20 }}>{m.v}</div>
@@ -123,18 +123,18 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
 
       {(sleepLine || evalScore) && (
         <p className="faint" style={{ fontSize: 12, marginBottom: 18 }}>
-          {sleepLine && <>Último sono — {sleepLine}</>}
+          {sleepLine && <>Last sleep — {sleepLine}</>}
           {sleepLine && evalScore && ' · '}
-          {evalScore && <>Placar de {evalScore.day}: {evalScore.hit}/{evalScore.total}</>}
+          {evalScore && <>Score on {evalScore.day}: {evalScore.hit}/{evalScore.total}</>}
         </p>
       )}
 
       {/* ── decisions ── */}
-      <div className="hud-tag" style={{ marginBottom: 10 }}>PRECISA DE VOCÊ</div>
+      <div className="hud-tag" style={{ marginBottom: 10 }}>NEEDS YOU</div>
 
       {pending.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 16 }}>
-          <h2>Aprovações de cron ({pending.length})</h2>
+          <h2>Cron approvals ({pending.length})</h2>
           {pending.map(p => (
             <div key={p.id} className="note-row" style={{ alignItems: 'flex-start', cursor: 'default' }}>
               <div style={{ flex: 1 }}>
@@ -150,19 +150,19 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
 
       {facts.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 16 }}>
-          <h2>Fatos propostos pelo cérebro ({facts.length})</h2>
+          <h2>Facts proposed by the brain ({facts.length})</h2>
           <p className="dim" style={{ fontSize: 13, margin: '6px 0 10px' }}>
-            Sono, conversa, webhook e agente deixam propostas. Só o que você aceita passa a valer.
+            Sleep, chat, webhooks and agents leave proposals. Only what you accept becomes fact.
           </p>
           {facts.map(f => (
             <div key={f.id} style={{ padding: '10px 0', borderTop: '1px solid var(--line)' }}>
               <div style={{ fontSize: 14 }}>{f.text}</div>
               <p className="faint" style={{ fontSize: 12, marginTop: 4 }}>{f.since} · {f.origin} · {f.source}</p>
               {f.previous && (
-                <p className="dim" style={{ fontSize: 13, marginTop: 6 }}>No lugar de: {f.previous}</p>
+                <p className="dim" style={{ fontSize: 13, marginTop: 6 }}>Replacing: {f.previous}</p>
               )}
               <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <button className="btn btn--primary btn--sm" onClick={async () => { await window.sb.brainFactAccept(f.id); onToast?.('Fato aceito.', 'success'); await load() }}>Aceitar</button>
+                <button className="btn btn--primary btn--sm" onClick={async () => { await window.sb.brainFactAccept(f.id); onToast?.('Fact accepted.', 'success'); await load() }}>Aceitar</button>
                 <button className="btn btn--ghost btn--sm" onClick={async () => { await window.sb.brainFactDiscard(f.id); await load() }}>Descartar</button>
               </div>
             </div>
@@ -172,19 +172,19 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
 
       {(policy?.proposals.length ?? 0) > 0 && (
         <div className="card card-pad" style={{ marginBottom: 22 }}>
-          <h2>Proposta de política do cérebro</h2>
+          <h2>Brain policy proposal</h2>
           <p className="dim" style={{ fontSize: 13, marginTop: 6 }}>{policy?.active}</p>
           <p style={{ fontSize: 13, marginTop: 8 }}>{policy?.proposals[policy.proposals.length - 1]}</p>
-          <button className="btn btn--primary btn--sm" style={{ marginTop: 10 }} onClick={applyPolicy}>Aplicar na política ativa</button>
+          <button className="btn btn--primary btn--sm" style={{ marginTop: 10 }} onClick={applyPolicy}>Apply to active policy</button>
         </div>
       )}
 
       {decisions === 0 && (
-        <p className="faint" style={{ fontSize: 13, marginBottom: 22 }}>Nada pendente — o cérebro está operando dentro da política atual.</p>
+        <p className="faint" style={{ fontSize: 13, marginBottom: 22 }}>Nothing pending — the brain is operating within the current policy.</p>
       )}
 
       {/* ── what the brain did ── */}
-      <div className="hud-tag" style={{ marginBottom: 10 }}>ATIVIDADE RECENTE</div>
+      <div className="hud-tag" style={{ marginBottom: 10 }}>RECENT ACTIVITY</div>
       {groups.map(verb => {
         const items = ledger.filter(e => e.verb === verb).slice(0, 6)
         if (!items.length) return null
@@ -207,7 +207,7 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
       })}
       {ledger.length === 0 && (
         <div className="card card-pad">
-          <p className="dim" style={{ fontSize: 13 }}>Nenhuma atividade registrada ainda. Conecte um agente ou rode um cron para o cérebro começar a registrar trabalho.</p>
+          <p className="dim" style={{ fontSize: 13 }}>No activity recorded yet. Connect an agent or run a cron for the brain to start logging work.</p>
         </div>
       )}
     </div>

@@ -51,7 +51,7 @@ export default function Login({ needsSetup, googleConfigured, onDone }: Props) {
           </div>
           <h1 style={{ fontSize: 18 }}>KeepMind</h1>
           <p className="faint" style={{ fontSize: 12, marginTop: 6 }}>
-            {needsSetup ? 'Crie a conta deste computador para começar' : 'Entre para ver o que o cérebro fez'}
+            {needsSetup ? 'Create this computer\'s account to begin' : 'Sign in to see what the brain did'}
           </p>
         </div>
 

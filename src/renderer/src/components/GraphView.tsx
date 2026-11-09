@@ -45,11 +45,11 @@ const PULSE_COUNT = 130
 
 function ago(ts: number, now: number): string {
   const s = Math.max(0, Math.round((now - ts) / 1000))
-  if (s < 60) return `há ${s} s`
+  if (s < 60) return `${s}s ago`
   const m = Math.floor(s / 60)
-  if (m < 60) return `há ${m} min ${s % 60} s`
+  if (m < 60) return `${m}m ${s % 60}s ago`
   const h = Math.floor(m / 60)
-  return `há ${h} h ${m % 60} min`
+  return `${h}h ${m % 60}m ago`
 }
 
 function applyActivity(acts: any[]) {
@@ -373,10 +373,10 @@ export default function GraphView() {
       <div className="view-head" style={{ position: 'absolute', zIndex: 5, pointerEvents: 'none' }}>
         <div style={{ pointerEvents: 'auto', maxWidth: 560 }}>
           <div className="hud-tag" style={{ marginBottom: 6 }}>Mapa</div>
-          <h1 style={{ fontSize: 22 }}>Memória ligada</h1>
+          <h1 style={{ fontSize: 22 }}>Connected memory</h1>
           <p className="dim" style={{ fontSize: 12.5, marginTop: 4 }}>
-            {stats ? `${stats.nodes} notas · ${stats.links} ligações · ${stats.total} arquivos` : 'Lendo a memória…'}
-            {' '}Os pulsos são gravações ao vivo. Arraste para girar, role para aproximar, clique em um nó.
+            {stats ? `${stats.nodes} notes · ${stats.links} links · ${stats.total} files` : 'Reading memory…'}
+            {' '}Pulses are live writes. Drag to orbit, scroll to zoom, click a node.
           </p>
         </div>
       </div>
@@ -388,15 +388,15 @@ export default function GraphView() {
         border: '1px solid rgba(56,189,248,.18)', borderRadius: 14,
         padding: '14px 16px', pointerEvents: 'auto'
       }}>
-        <div className="hud-tag" style={{ fontSize: 9, marginBottom: 4 }}>O que acabou de ser gravado</div>
+        <div className="hud-tag" style={{ fontSize: 9, marginBottom: 4 }}>What was just written</div>
         <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '.02em', marginBottom: 10 }}>
-          Memória em movimento
+          Memory in motion
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', marginBottom: 12 }}>
           {[
-            { k: 'arquivos', v: stats ? stats.total.toLocaleString() : '—' },
-            { k: 'ligações', v: stats ? stats.links.toLocaleString() : '—' },
-            { k: 'gravações hoje', v: todayWrites.toLocaleString() },
+            { k: 'files', v: stats ? stats.total.toLocaleString() : '—' },
+            { k: 'links', v: stats ? stats.links.toLocaleString() : '—' },
+            { k: 'writes today', v: todayWrites.toLocaleString() },
             { k: 'origens hoje', v: sourceCount || '—' }
           ].map(m => (
             <div key={m.k}>
@@ -407,14 +407,14 @@ export default function GraphView() {
         </div>
         <p className="faint" style={{ fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
           {lastWrite
-            ? `Última gravação ${ago(lastWrite, now)}. Arquivos e ligações são relidos a cada 15 s.`
-            : 'O diário ainda está vazio. Esses números mudam quando o cérebro grava um arquivo.'}
+            ? `Last write ${ago(lastWrite, now)}. Files and links are re-read every 15s.`
+            : 'The journal is still empty. These numbers move when the brain writes a file.'}
         </p>
         <div className="faint" style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
-          últimas gravações
+          latest writes
         </div>
         <div style={{ maxHeight: 148, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {feed.length === 0 && <p className="faint" style={{ fontSize: 11 }}>Ainda não houve gravação nesta sessão.</p>}
+          {feed.length === 0 && <p className="faint" style={{ fontSize: 11 }}>No writes yet this session.</p>}
           {feed.slice(0, 7).map((e, i) => (
             <div key={`${e.ts}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11 }}>
               <span className="mono faint" style={{ fontSize: 9.5, flexShrink: 0 }}>
@@ -457,12 +457,12 @@ export default function GraphView() {
           boxShadow: showLinks ? '0 0 8px #38bdf8' : 'none',
           transition: 'all .2s'
         }} />
-        {showLinks ? 'ligações visíveis' : 'ligações ocultas'}
+        {showLinks ? 'links visible' : 'links hidden'}
       </button>
 
       {loading && (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4 }}>
-          <p className="faint" style={{ fontSize: 13 }}>Ligando o mapa…</p>
+          <p className="faint" style={{ fontSize: 13 }}>Waking up the map…</p>
         </div>
       )}
       <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />

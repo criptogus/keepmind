@@ -95,13 +95,13 @@ export default function Settings({ onToast, onActivity }: Props) {
       <div className="view-head">
         <div>
           <div className="hud-tag" style={{ marginBottom: 6 }}>Ajustes</div>
-          <h1>Configuração</h1>
+          <h1>Settings</h1>
         </div>
       </div>
 
       <nav className="settings-nav">
-        {([['Geral', 'sec-general'], ['Modelo', 'sec-ai'], ['Arquivos', 'sec-models'], ['Sync', 'sec-memory'], ['Conta', 'sec-account'],
-           ['Pro', 'sec-pro'], ['Busca', 'sec-rag'], ['Decisões', 'sec-laya'], ['Atualizações', 'sec-updates'], ['Sobre', 'sec-about']] as const)
+        {([['General', 'sec-general'], ['Model', 'sec-ai'], ['Files', 'sec-models'], ['Sync', 'sec-memory'], ['Account', 'sec-account'],
+           ['Pro', 'sec-pro'], ['Search', 'sec-rag'], ['Decisions', 'sec-laya'], ['Updates', 'sec-updates'], ['About', 'sec-about']] as const)
           .map(([label, id]) => (
             <button key={id} className="chip" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
               {label}
