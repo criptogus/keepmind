@@ -162,6 +162,34 @@ Then point the bot's MCP config at `tools/keepmind-mcp.mjs` — it wakes up
 with your full persistent memory, and anything it writes syncs back to
 your repo (and to your desktop app) automatically.
 
+## Webhook triggers (external apps → automations)
+
+Any automation can expose an HTTP trigger. Enable **HOOK** on an
+automation card and the app listens locally:
+
+```bash
+curl -X POST http://127.0.0.1:4789/hook/<automation-id> \
+  -H "x-hook-token: <token shown in the UI>" \
+  -d '{"source":"zapier"}'
+```
+
+- Token auth via `x-hook-token` header, `?token=` query, or `Authorization: Bearer`
+- Responds `202` immediately; the job runs in background
+- Approval-mode automations queue for your OK instead of running
+- 5s debounce per automation; body capped at 64KB
+- Binds `127.0.0.1` by default — for remote triggers (VPS, n8n, Zapier)
+  use an SSH tunnel or reverse proxy, or enable LAN mode in the app
+
+Works with GitHub Actions, Zapier, n8n, Home Assistant, cron on another
+machine — anything that can POST.
+
+## keepmind.json (brain as code)
+
+The repo root contains `keepmind.json` — a sanitized snapshot of your
+agents, automations, connectors and model prefs (never secrets). Bots
+that clone the repo can read it to replicate your setup. Refresh it any
+time with the **BRAIN CONFIG** button or `brain:exportConfig`.
+
 ## Hermes, Dots, Muse & other custom agents
 
 Any agent that can run a command or read files works:

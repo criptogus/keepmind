@@ -67,8 +67,10 @@ export class AuthService {
     return res
   }
 
-  private static toUser(row: any): AuthUser {
-    return { id: row.id, email: row.email, name: row.name, googleSub: row.google_sub ?? undefined }
+  // sql.js exec() returns rows as positional arrays, not objects:
+  // users columns = id, email, name, pass_hash, salt, google_sub, created_at
+  private static toUser(row: any[]): AuthUser {
+    return { id: row[0], email: row[1], name: row[2], googleSub: row[5] ?? undefined }
   }
 
   async userCount(): Promise<number> {

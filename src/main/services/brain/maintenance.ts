@@ -1,8 +1,14 @@
-import type { AiProviderConfig } from '../../store'
+import { join } from 'node:path'
+
 import { chat } from '../llm'
+import type { AiProviderConfig } from '../../store'
+
+import { SECRET_PATTERNS } from '../redact'
+import { evolutionHints, listVaultSkills, loadSakNotes, loadSkillThreats } from '../skillsHub'
+
+import { splitBlocks, fnv } from './utils'
 
 import { BrainSleep } from './sleep'
-import { splitBlocks } from './utils'
 
 export class BrainMaintenance extends BrainSleep {
   async evolve(): Promise<string> {
@@ -44,6 +50,10 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
     const report = `# Evolution — ${day}\n\n_Generated ${new Date().toISOString()} · stats: ${JSON.stringify(stats)}_\n\n${res.text}\n`
     this.memory.write(this.memory.scopePath(`insights/evolution-${day}.md`), report)
     this.memory.append(this.memory.scopePath('long-term/evolution.md'), `\n\n## ${day}\n\n${res.text}\n`)
+    this.ensurePolicy()
+    const proposal = res.text.replace(/\s+/g, ' ').trim().slice(0, 420)
+    this.memory.append(this.memory.scopePath('ops/policy.md'), `\n- ${day}: ${proposal}\n`)
+    this.note('improved', `Evolução de ${day} deixou uma proposta na política do cérebro.`, 'ops/policy.md')
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()
@@ -53,50 +63,52 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
     return res.text
   }
 
-  // ── Enrich: note intelligence pass ──
-  // Picks recent notes missing frontmatter and asks the LLM to enrich them:
-  // summary, topic tags and [[wikilinks]] to known entities — written as
-  // YAML frontmatter at the top of the note (never rewrites user content).
-
-  protected async enrichNote(rel: string, entityNames: string[]): Promise<boolean> {
+  protected enrichNote(rel: string, entityNames: string[]): boolean {
     const content = this.memory.read(this.memory.scopePath(rel)) ?? ''
     if (!content.trim()) return false
-    // already enriched (frontmatter marker or legacy Enrichment section)
-    if (/^---\n[\s\S]*?enriched:/m.test(content) || content.includes('## Enrichment')) return false
+    if (content.includes('## Enrichment')) return false
+    const rawBody = content.replace(/^---\n[\s\S]*?\n---\n?/, '')
+    const hash = fnv(rawBody)
+    const had = /^---\n[\s\S]*?enriched:/m.test(content)
+    const prevHash = content.match(/^body: ([0-9a-f]+)$/m)?.[1]
+    // Notes enriched before hashes existed stay put. A later edit changes the hash and gets a new pass.
+    if (had && (!prevHash || prevHash === hash)) return false
 
-    const res = await chat(this.store.get().ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: `You enrich personal notes in a knowledge base. Given a note, output ONLY these three lines and nothing else:
+    const body = rawBody
+      .replace(/```[\s\S]*?```/g, ' ')               // drop code blocks
+      .replace(/^#{1,6}\s+.+$/gm, ' ')               // drop headings (title isn't summary)
+      .replace(/^>\s.*$/gm, ' ')                     // drop meta/blockquote lines
+      .replace(/[#>*_`\-[\]|]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
 
-summary: <one sentence, max 25 words>
-tags: <3-6 comma-separated lowercase tags>
-links: <comma-separated [[Entity]] wikilinks — ONLY from this list: ${entityNames.join(', ') || '(none yet)'}>
+    // summary: first ~30 words of prose
+    const summary = body.split(/(?<=[.!?])\s/)[0]?.slice(0, 220).trim() ?? ''
 
-If a field has nothing useful write "-". Write values in the user's language.`
-      },
-      { role: 'user', content: content.slice(0, 6000) }
-    ], [], this.localLlm?.endpoint)
+    // entity mentions (word-boundary, case-insensitive, len>3)
+    const mentioned = entityNames.filter(n => n.length > 3 && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(content))
 
-    const fields: Record<string, string> = {}
-    for (const line of res.text.split('\n')) {
-      const m = line.match(/^(summary|tags|links):\s*(.+)$/i)
-      if (m) fields[m[1].toLowerCase()] = m[2].trim()
-    }
-    if (!fields.summary && !fields.tags) return false
+    // wikilinks already in the note
+    const wikilinks = [...content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map(m => m[1].trim())
+    const links = [...new Set([...mentioned, ...wikilinks])].slice(0, 8)
+
+    // tags: mentioned entities lowercased + filename words
+    const fileTags = rel.replace(/^notes\//, '').replace(/\.md$/, '').toLowerCase().split(/[-_\s]+/).filter(w => w.length > 2)
+    const tags = [...new Set([...mentioned.map(n => n.toLowerCase()), ...fileTags])].slice(0, 6)
+
+    if (!summary && !tags.length) return false
 
     const day = new Date().toISOString().slice(0, 10)
-    const fmLines = ['---', `enriched: ${day}`]
-    if (fields.summary && fields.summary !== '-') fmLines.push(`summary: ${JSON.stringify(fields.summary)}`)
-    if (fields.tags && fields.tags !== '-') fmLines.push(`tags: ${fields.tags}`)
-    if (fields.links && fields.links !== '-') fmLines.push(`links: ${fields.links}`)
+    const fmLines = ['---', `enriched: ${day}`, `body: ${hash}`]
+    if (summary) fmLines.push(`summary: ${JSON.stringify(summary)}`)
+    if (tags.length) fmLines.push(`tags: ${tags.join(', ')}`)
+    if (links.length) fmLines.push(`links: ${links.map(l => `[[${l}]]`).join(', ')}`)
     fmLines.push('---', '')
     const fm = fmLines.join('\n')
 
     // replace existing frontmatter or prepend
-    let next: string
     const existing = content.match(/^---\n[\s\S]*?\n---\n?/)
-    next = existing ? fm + content.slice(existing[0].length) : fm + content
+    const next = existing ? fm + content.slice(existing[0].length) : fm + content
     this.memory.write(this.memory.scopePath(rel), next)
     return true
   }
@@ -110,13 +122,11 @@ If a field has nothing useful write "-". Write values in the user's language.`
     let enriched = 0
     const lines: string[] = []
     for (const f of notes) {
-      if (enriched >= 8) break // bound LLM calls per run
-      try {
-        if (await this.enrichNote(`notes/${f}`, entityNames)) {
-          enriched++
-          lines.push(`- \`${f}\` — enriched`)
-        }
-      } catch { /* skip note on failure */ }
+      // deterministic pass — no LLM budget needed, enrich everything scanned
+      if (this.enrichNote(`notes/${f}`, entityNames)) {
+        enriched++
+        lines.push(`- \`${f}\` — enriched`)
+      }
     }
 
     const report = [
@@ -132,91 +142,33 @@ If a field has nothing useful write "-". Write values in the user's language.`
       if (this.gitSync) await this.gitSync.syncNow()
     } catch { /* offline ok */ }
     void this.rag?.reindex().catch(() => {})
+    this.note('improved', `Enriquecimento de ${day}: ${enriched} nota(s) ganharam resumo e ligações.`, `insights/enrich-${day}.md`)
     return { enriched, report }
   }
 
-  // ── Spaced repetition: flashcards + review sessions ──
-  // Sleep distills durable learnings into Q/A cards in review/cards.md.
-  // The 'review' automation quizzes the brain against them nightly.
-
-  // Review session: sample cards, ask the LLM to answer blind, then grade.
   async review(): Promise<string> {
     const day = new Date().toISOString().slice(0, 10)
-    const raw = this.memory.read(this.memory.scopePath('review/cards.md')) ?? ''
-    const cards = [...raw.matchAll(/^Q:\s*(.+)\nA:\s*(.+)$/gm)]
-      .map(m => ({ q: m[1].trim(), a: m[2].trim() }))
-      .filter(c => c.q && c.a)
-
-    if (!cards.length) {
-      const msg = '# Review — no flashcards yet\n\nRun a sleep cycle first — it generates cards from long-term learnings.\n'
-      this.memory.write(this.memory.scopePath(`review/session-${day}.md`), msg)
-      return msg
-    }
-
-    // deterministic-ish sample of up to 8 cards
-    const sample = cards.sort(() => Math.random() - 0.5).slice(0, 8)
-    const questions = sample.map((c, i) => `${i + 1}. ${c.q}`).join('\n')
-
-    // blind self-test: can the brain answer its own cards?
-    const answers = await chat(this.store.get().ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: `You are taking a closed-book quiz on your own knowledge base. Answer each numbered question from memory — concise, one line each, format "N. answer". If unsure, say "don't know" honestly.`
-      },
-      { role: 'user', content: questions }
-    ], [], this.localLlm?.endpoint)
-
-    // grade: show correct answers next to model's attempt
-    const grade = await chat(this.store.get().ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: `Grade a quiz. For each question show: the model's answer, the correct answer, and PASS/FAIL (PASS = same fact, wording may differ). End with "Score: N/M". Be strict but fair.`
-      },
-      {
-        role: 'user',
-        content: `QUESTIONS:\n${questions}\n\nMODEL ANSWERS:\n${answers.text}\n\nCORRECT ANSWERS:\n${sample.map((c, i) => `${i + 1}. ${c.a}`).join('\n')}`
-      }
-    ], [], this.localLlm?.endpoint)
-
-    const report = [
-      `# Review session — ${day}`,
-      `_${sample.length} cards sampled from ${cards.length} total_`,
-      '',
-      '## Questions', '', questions, '',
-      '## Model answers (blind)', '', answers.text, '',
-      '## Grading', '', grade.text, ''
-    ].join('\n')
+    const due = this.dueCards(5)
+    const sentence = due.length
+      ? `${due.length} card(s) esperam sua revisão em Hoje.`
+      : 'Nenhum card vencido para revisar.'
+    const report = `# Revisão — ${day}\n\n${sentence}\n\nA nota é sua, na tela Hoje.\n`
     this.memory.write(this.memory.scopePath(`review/session-${day}.md`), report)
-
-    try {
-      if (this.gitSync) await this.gitSync.syncNow()
-    } catch { /* offline ok */ }
-    void this.rag?.reindex().catch(() => {})
-    return report
+    this.note(due.length ? 'needs-you' : 'processed', sentence, 'review/cards.md')
+    return sentence
   }
-
-  // ── Security audit: scan memory for leaked secrets ──
-  // Deterministic pattern scan (no LLM needed) — reports file+line but
-  // NEVER prints the secret value itself.
 
   async securityAudit(): Promise<string> {
     const day = new Date().toISOString().slice(0, 10)
-    const PATTERNS: [string, RegExp][] = [
-      ['openai/generic api key', /\b(sk-[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,})\b/],
-      ['github token', /\b(ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|gho_[A-Za-z0-9]{30,})\b/],
-      ['slack token', /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/],
-      ['aws key', /\bAKIA[0-9A-Z]{16}\b/],
-      ['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
-      ['password assignment', /(?:password|passwd|pwd|secret|api[_-]?key|token)\s*[:=]\s*['"][^'"\s]{8,}['"]/i],
-      ['bearer token', /bearer\s+[A-Za-z0-9._~+/=-]{20,}/i]
-    ]
+    const PATTERNS = SECRET_PATTERNS
     const hits: string[] = []
     for (const rel of this.memory.allRelFiles()) {
-      const content = this.memory.read(rel)
+      const content = this.memory.read(this.memory.scopePath(rel))
       if (!content) continue
       const lines = content.split('\n')
       for (let i = 0; i < lines.length; i++) {
         for (const [label, re] of PATTERNS) {
+          re.lastIndex = 0 // /g patterns are stateful across .test() calls
           if (re.test(lines[i])) {
             // redact: show only the key name/context, never the value
             hits.push(`- \`${rel}:${i + 1}\` — ${label}`)
@@ -230,13 +182,9 @@ If a field has nothing useful write "-". Write values in the user's language.`
       : [`# Security audit — ${day}`, '', '✅ No secret patterns detected in memory files.', '']
     const text = report.join('\n')
     this.memory.write(this.memory.scopePath(`insights/security-${day}.md`), text)
+    this.note(hits.length ? 'needs-you' : 'processed', hits.length ? `Auditoria achou ${hits.length} possível(is) segredo(s). O valor não foi exibido.` : `Auditoria de ${day} não achou segredos.`, `insights/security-${day}.md`)
     return text
   }
-
-  // ── Skills evolution: review + consolidate procedural memory ──
-  // Reviews long-term/skills.md and skills/*.md: dedupes, asks the LLM to
-  // consolidate, and appends a dated review section with proposals.
-  // Never deletes — everything becomes a reviewable proposal.
 
   async evolveSkills(): Promise<string> {
     const day = new Date().toISOString().slice(0, 10)
@@ -245,12 +193,12 @@ If a field has nothing useful write "-". Write values in the user's language.`
     const skillDocs = skillFiles.map(f => `### skills/${f}\n${(this.memory.read(this.memory.scopePath(`skills/${f}`)) ?? '').slice(0, 3000)}`)
 
     if (!skillsMd.trim() && !skillDocs.length) {
-      const msg = '# Skills evolution — nothing to review yet\n\nNo skills recorded. They accumulate from sleep cycles and `sb_remember kind=skill`.\n'
+      const msg = `# Evolução de skills — ${day}\n\nAinda não há skills. Elas entram pelo sono, por \`sb_remember kind=skill\`, ou quando você instala um pacote do SuperagentSkill.\n`
       this.memory.write(this.memory.scopePath(`insights/skills-${day}.md`), msg)
+      this.note('processed', 'Evolução de skills não tinha o que revisar.', `insights/skills-${day}.md`)
       return msg
     }
 
-    // 1) deterministic dedupe on skills.md bullets
     let deduped = 0
     if (skillsMd.trim()) {
       const seen = new Set<string>()
@@ -268,34 +216,67 @@ If a field has nothing useful write "-". Write values in the user's language.`
       if (next !== skillsMd) this.memory.write(this.memory.scopePath('long-term/skills.md'), next)
     }
 
-    // 2) LLM consolidation review
+    const vault = listVaultSkills(this.memory)
+    const notes = loadSakNotes(this.memory)
+    const threats = loadSkillThreats(this.memory)
+    const hints = evolutionHints(vault, notes, threats)
+    const guide = [
+      'Segmentos e uso (gravações no diário + menções nos logs recentes):',
+      ...vault.slice(0, 40).map(s => `- [${s.segment}] ${s.title} (${s.path}) · ${s.kind} · ${s.uses} gravações · ${s.mentions} menções · ${s.ageDays} dias`),
+      '',
+      'Notas do SuperagentSkill (só existem se a pessoa rodou a avaliação):',
+      ...(notes.length
+        ? notes.slice(0, 12).map(n => `- ${n.path}: nota ${n.score ?? 'sem número'} · ${n.rationale.slice(0, 240)} · ações: ${n.actions.join(' | ') || 'nenhuma'}`)
+        : ['- Nenhuma nota ainda. Não invente pontuação.']),
+      '',
+      'Análise de skill maliciosa (confiança do pacote + guarda de injeção no arquivo):',
+      ...(threats.length
+        ? threats.slice(0, 12).map(t => `- ${t.path}: ${t.status} · ${t.summary}`)
+        : ['- A análise ainda não rodou. Não invente achado.']),
+      '',
+      'Pistas já calculadas:',
+      ...(hints.length ? hints.map(h => `- (${h.kind}) ${h.sentence}`) : ['- Sem pista determinística.'])
+    ].join('\n')
+
     const corpus = [
-      skillsMd.slice(-8000),
-      ...skillDocs.slice(-10)
-    ].join('\n\n').slice(-20000)
+      guide,
+      skillsMd.slice(-6000),
+      ...skillDocs.slice(0, 8)
+    ].join('\n\n').slice(0, 20000)
 
     const res = await chat(this.store.get().ai as AiProviderConfig, [
       {
         role: 'system',
-        content: `You are the skills curator of a personal knowledge system. Review the procedural skills below and output a consolidation report:
+        content: `Você é o curador de habilidades do KeepMind. O texto junta a memória procedural, o uso real, as notas do SuperagentSkill e, se a pessoa tiver rodado, a análise de skill maliciosa.
 
-1. **Merge** — skills that are duplicates or should be one procedure
-2. **Prune** — skills that are stale, wrong, or superseded (say why)
-3. **Promote** — skills proven useful ≥2 times that deserve a dedicated page in skills/
-4. **Gap** — recurring tasks with NO skill yet that should get one
+Escreva um relatório curto, em português, com quatro blocos:
 
-Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every call in the text. Markdown, user's language, max ~400 words.`
+1. Segmentos — agrupe as skills por origem e diga o que cada grupo está fazendo.
+2. Evoluir — para cada skill com uso ou com nota, uma melhoria concreta. Cite o número de usos ou a nota. Não invente pontuação.
+3. Ameaças — o que a análise de robustez e de injeção pediu para tirar ou reescrever. Se a análise não rodou, diga isso. Não invente achado.
+4. Aposentar — skills sem uso, e por quê.
+
+Se não houver nota do SuperagentSkill, diga isso. Menos skills afiadas vencem uma lista vaga. No máximo 400 palavras.`
       },
       { role: 'user', content: corpus }
     ], [], this.localLlm?.endpoint)
 
+    const hintLines = hints.length ? hints.map(h => `- ${h.sentence}`).join('\n') : '- Nenhuma pista além do texto.'
     const report = [
-      `# Skills evolution — ${day}`,
-      `_${deduped} duplicate bullet(s) removed from skills.md · ${skillFiles.length} skill page(s)_`,
-      '', res.text, ''
+      `# Evolução de skills — ${day}`,
+      '',
+      `${vault.length} no cofre · ${notes.length} nota(s) do SuperagentSkill · ${deduped} duplicata(s) removida(s) de skills.md`,
+      '',
+      '## Pistas de uso e de nota',
+      '',
+      hintLines,
+      '',
+      res.text,
+      ''
     ].join('\n')
     this.memory.write(this.memory.scopePath(`insights/skills-${day}.md`), report)
-    this.memory.append(this.memory.scopePath('long-term/skills.md'), `\n\n## Evolution review ${day}\n\n${res.text}\n`)
+    this.memory.append(this.memory.scopePath('long-term/skills.md'), `\n\n## Evolução ${day}\n\n${res.text}\n`)
+    this.note('improved', `Evolução de skills: ${vault.length} no cofre, ${notes.length} nota(s) do SuperagentSkill.`, `insights/skills-${day}.md`)
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()
@@ -303,11 +284,6 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
     void this.rag?.reindex().catch(() => {})
     return report
   }
-
-  // ── Fast inbox triage (Laya System-1) ──
-  // Splits untriaged inbox captures into blocks, classifies each with a
-  // ~33ms local decision (no LLM), routes to the right memory dir, and
-  // dedupes long-term writes semantically. Fully autonomous and cheap.
 
   async triageInbox(): Promise<string> {
     const day = new Date().toISOString().slice(0, 10)
@@ -391,6 +367,9 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
       } else if (dest === 'crm') {
         this.memory.append(this.memory.scopePath(`crm/interactions/triage-${day}.md`),
           `\n## ${day}\n\n` + items.map(t => `- ${t}`).join('\n') + '\n')
+      } else if (dest === 'fact') {
+        for (const item of items) this.proposeFact(item, 'agent', 'triagem', false)
+        this.note('needs-you', `${items.length} fato(s) da triagem esperam você em Hoje.`, 'long-term/facts.md')
       } else {
         this.memory.append(this.memory.scopePath(`long-term/${dest}s.md`),
           `\n\n## ${day} (inbox triage)\n\n` + items.map(t => `- ${t}`).join('\n') + '\n')
@@ -406,7 +385,4 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
     void this.rag?.reindex().catch(() => {})
     return text
   }
-
-  // Semantic dedup gate: is `candidate` already captured in `existing`?
-  // Used by sleep extraction and anywhere durable writes need a cheap check.
 }

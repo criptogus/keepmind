@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 export default function MemorySecurity() {
   const [status, setStatus] = useState<any>(null), [passphrase, setPassphrase] = useState(''), [recoveryInput, setRecoveryInput] = useState('')
   const [recovery, setRecovery] = useState(''), [space, setSpace] = useState('personal'), [grants, setGrants] = useState(''), [error, setError] = useState('')
-  const refresh = async () => { const s = await window.sb.securityStatus(); setStatus(s); setSpace(s.space) }
+  const refresh = async () => { const s = await window.sb.memorySecurityStatus(); setStatus(s); setSpace(s.space) }
   useEffect(() => { void refresh().catch(() => setError('Memory security unavailable')) }, [])
   const run = async (fn: () => Promise<unknown>) => { try { setError(''); await fn(); setPassphrase(''); setRecoveryInput(''); await refresh() } catch { setError('Memory security operation failed. Check your credentials and OS keychain.') } }
   return <div className="card card-pad">
@@ -20,9 +20,9 @@ export default function MemorySecurity() {
     {status?.unlocked && <>
       <input aria-label="Active space" value={space} onChange={e => setSpace(e.target.value)} />
       <input aria-label="Explicit cross-space grants" value={grants} onChange={e => setGrants(e.target.value)} placeholder="Cross-space grants, comma separated" />
-      <button className="btn" onClick={() => run(() => window.sb.securityConfigure(space, grants.split(',').map(s => s.trim()).filter(Boolean), status.encryptAll))}>Apply spaces</button>
+      <button className="btn" onClick={() => run(() => window.sb.memorySecurityConfigure(space, grants.split(',').map(s => s.trim()).filter(Boolean), status.encryptAll))}>Apply spaces</button>
       <button className="btn" onClick={() => run(async () => { const config = await window.sb.getConfig(); await window.sb.securityConsent(config.ai.provider) })}>Allow configured cloud model for this space for 15 minutes (PII redacted)</button>
-      <label><input type="checkbox" checked={status.encryptAll} onChange={e => run(() => window.sb.securityConfigure(space, grants.split(',').map(s => s.trim()).filter(Boolean), e.target.checked))} />Encrypt all notes (recommended). Disabling explicitly permits public/internal plaintext; attachments stay encrypted.</label>
+      <label><input type="checkbox" checked={status.encryptAll} onChange={e => run(() => window.sb.memorySecurityConfigure(space, grants.split(',').map(s => s.trim()).filter(Boolean), e.target.checked))} />Encrypt all notes (recommended). Disabling explicitly permits public/internal plaintext; attachments stay encrypted.</label>
     </>}
     {error && <p role="alert">{error}</p>}
   </div>

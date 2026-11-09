@@ -1,52 +1,73 @@
-import type { AiProviderConfig } from '../../store'
+import { join } from 'node:path'
+
 import { chat } from '../llm'
+import type { AiProviderConfig } from '../../store'
+
+import { activeForPrompt } from '../facts'
 
 import { BrainContext } from './context'
 
 export class BrainInsights extends BrainContext {
   async generateInsights(): Promise<string[]> {
-    const cfg = this.store.get()
-    const memoryFiles = [...this.memory.shortTermFiles(), ...this.memory.list(this.memory.scopePath('inbox'))].slice(-10)
-    const corpus = memoryFiles.map(f => {
-      const dir = this.memory.read(this.memory.scopePath(`short-term/${f}`)) != null ? 'short-term' : 'inbox'
-      return this.memory.read(this.memory.scopePath(`${dir}/${f}`)) ?? ''
-    }).join('\n---\n').slice(-12000)
-    if (!corpus.trim()) return []
-
-    const res = await chat(cfg.ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: 'You are an insight engine for a personal second brain. From the memory below, produce 3-5 concise, actionable insights (what to do, what matters, patterns). One per line, starting with an emoji. Max 30 words each. Respond in the user\'s language.'
-      },
-      { role: 'user', content: corpus }
-    ], [], this.localLlm?.endpoint)
-    const lines = res.text.split('\n').map(l => l.trim()).filter(Boolean)
+    const lines = this.scriptedInsights()
     const day = new Date().toISOString().slice(0, 10)
     this.memory.write(this.memory.scopePath(`insights/${day}.md`), `# Insights — ${day}\n\n${lines.map(l => `- ${l}`).join('\n')}\n`)
     return lines
   }
 
   async dailySummary(): Promise<string> {
-    const cfg = this.store.get()
     const day = new Date().toISOString().slice(0, 10)
-    const today = this.memory.read(this.memory.scopePath(`short-term/${day}.md`)) ?? this.memory.read(this.memory.scopePath(`inbox/${day}.md`)) ?? '(no activity today)'
-    const res = await chat(cfg.ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: 'You write a warm, concise daily summary of a person\'s digital life. 5-8 bullet points max. Highlight what mattered, what\'s pending, one suggested focus for tomorrow. Plain language.'
-      },
-      { role: 'user', content: `Today\'s activity:\n${today.slice(-8000)}` }
-    ], [], this.localLlm?.endpoint)
-    this.memory.write(this.memory.scopePath(`summaries/${day}.md`), `# Daily summary — ${day}\n\n${res.text}\n`)
-    return res.text
-  }
+    const today = this.memory.read(this.memory.scopePath(`short-term/${day}.md`)) ?? this.memory.read(this.memory.scopePath(`inbox/${day}.md`)) ?? ''
+    const sections = (today.match(/^##\s+.+$/gm) ?? []).length
+    const bullets = (today.match(/^[-*]\s+/gm) ?? []).length
 
-  // ── Sleep mode: nightly learning cycle ──
-  // 1) Reads recent short-term memory + insights
-  // 2) Answers the 5 learning questions and writes a sleep report
-  // 3) Extracts durable facts / lessons / skills into long-term memory
-  // 4) Consolidates old short-term logs into medium-term weekly files
-  // 5) Syncs everything to the GitHub repo
+    const out = [`# Daily summary — ${day}`, '']
+    if (today.trim()) {
+      out.push(`- Captured ${sections} section(s), ${bullets} bullet(s) of activity`)
+      const heads = [...today.matchAll(/^#{2,3}\s+(.+)$/gm)].map(m => m[1].trim()).slice(0, 5)
+      if (heads.length) out.push(`- Topics: ${heads.join(' · ')}`)
+    } else {
+      out.push('- No short-term captures today')
+    }
+
+    // open loops: tasks due soonest
+    const open: { title: string; due?: string; priority?: string }[] = []
+    for (const f of this.memory.list(this.memory.scopePath('tasks'))) {
+      const c = this.memory.read(this.memory.scopePath(`tasks/${f}`)) ?? ''
+      const meta = c.match(/^>\s*(.+)$/m)?.[1] ?? ''
+      if (/status:\s*done/i.test(meta)) continue
+      open.push({
+        title: c.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? f.replace('.md', ''),
+        due: meta.match(/due:\s*(\d{4}-\d{2}-\d{2})/)?.[1],
+        priority: meta.match(/priority:\s*(\w+)/i)?.[1]?.toLowerCase()
+      })
+    }
+    const next = open.filter(t => !t.due || t.due >= day).sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999')).slice(0, 3)
+    if (next.length) out.push(`- Next up: ${next.map(t => `"${t.title}"${t.due ? ` (${t.due})` : ''}`).join(' · ')}`)
+    const overdue = open.filter(t => t.due && t.due < day).length
+    if (overdue) out.push(`- ⚠️ ${overdue} overdue task(s) still open`)
+
+    const pending = this.store.get().pendingApprovals.length
+    if (pending) out.push(`- ⏳ ${pending} automation(s) awaiting approval`)
+
+    // vault pulse — activity across the whole imported brain, not just captures
+    const recent = this.recentVaultNotes(7, 60)
+    if (recent.length) {
+      const todayCount = recent.filter(n => new Date(n.mtime).toISOString().slice(0, 10) === day).length
+      const weekCount = recent.length
+      out.push(`- Vault pulse: ${todayCount} note(s) touched today · ${weekCount} in the last 7 days`)
+      const hot = recent.slice(0, 3).map(n => `"${n.title}"`).join(' · ')
+      out.push(`- Recently active: ${hot}`)
+    }
+
+    const focus = next.find(t => t.priority === 'high') ?? next[0]
+    out.push('', focus ? `**Suggested focus:** "${focus.title}"${focus.due ? ` — due ${focus.due}` : ''}.` : '**Suggested focus:** review open tasks in the planner.')
+
+    const text = out.join('\n') + '\n'
+    this.memory.write(this.memory.scopePath(`summaries/${day}.md`), text)
+    this.note('processed', `Resumo de ${day} pronto.`, `summaries/${day}.md`)
+    return text
+  }
 
   protected recentCorpus(maxChars = 20000): string {
     const parts: string[] = []
@@ -74,10 +95,11 @@ export class BrainInsights extends BrainContext {
 
   protected async generateFlashcards(): Promise<number> {
     // source: recent long-term learnings
-    const src = ['facts.md', 'lessons.md', 'skills.md']
-      .map(f => this.memory.read(this.memory.scopePath(`long-term/${f}`)) ?? '')
-      .join('\n')
-      .slice(-12000)
+    const src = [
+      activeForPrompt(this.memory.read(this.memory.scopePath('long-term/facts.md')) ?? ''),
+      this.memory.read(this.memory.scopePath('long-term/lessons.md')) ?? '',
+      this.memory.read(this.memory.scopePath('long-term/skills.md')) ?? ''
+    ].join('\n').slice(-12000)
     if (src.trim().length < 200) return 0
 
     const res = await chat(this.store.get().ai as AiProviderConfig, [
@@ -109,5 +131,4 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
     this.memory.append(this.memory.scopePath('review/cards.md'), block)
     return fresh.length
   }
-
 }

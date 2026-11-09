@@ -33,3 +33,12 @@ export function isoWeek(d: Date): string {
   const week = 1 + Math.round((date.getTime() - firstThursday.getTime()) / (7 * 864e5))
   return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
 }
+
+export function fnv(s: string): string {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0).toString(16)
+}

@@ -1,12 +1,11 @@
 {
   "name": "keepmind",
-  "version": "0.1.1",
+  "version": "0.2.4",
   "description": "KeepMind — open-source installable second brain. Connects your apps, remembers everything, learns while you sleep.",
   "license": "MIT",
   "main": "./out/main/index.js",
   "bin": {
-    "keepmind-mcp": "./tools/keepmind-mcp.mjs",
-    "keepmind-cli": "./tools/keepmind-cli.mjs"
+    "keepmind-mcp": "./tools/keepmind-mcp.mjs"
   },
   "scripts": {
     "dev": "electron-vite dev",
@@ -15,7 +14,10 @@
     "start:headless": "electron-vite build && xvfb-run -a env SECOND_BRAIN_HEADLESS=1 electron .",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "dist": "electron-vite build && electron-builder",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dist:mac": "electron-vite build && node scripts/prune-onnxruntime.mjs darwin && electron-builder --mac dmg zip",
+    "dist:win": "electron-vite build && node scripts/prune-onnxruntime.mjs win32 && electron-builder --win nsis --x64 --arm64",
+    "dist:linux": "electron-vite build && node scripts/prune-onnxruntime.mjs linux && electron-builder --linux AppImage --x64"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
@@ -25,7 +27,9 @@
     "libsodium-wrappers-sumo": "^0.8.4",
     "onnxruntime-node": "^1.31.1",
     "qrcode": "^1.5.4",
-    "sql.js": "^1.12.0"
+    "sql.js": "^1.12.0",
+    "3d-force-graph": "^1.80.2",
+    "telegram": "^2.26.22"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
@@ -40,7 +44,8 @@
     "react-dom": "^18.3.1",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "@types/three": "^0.187.0"
   },
   "author": "KeepMind contributors",
   "files": [
@@ -51,5 +56,15 @@
     "LICENSE",
     "src/main/vendor/laya/LICENSE.laya",
     "tools/keepmind-cli.mjs"
-  ]
+  ],
+  "allowScripts": {
+    "esbuild@0.21.5": true,
+    "electron@33.4.11": true,
+    "onnxruntime-node@1.31.1": true,
+    "@whiskeysockets/baileys@6.7.24": true,
+    "protobufjs@7.6.6": true,
+    "es5-ext@0.10.64": true,
+    "bufferutil": false,
+    "utf-8-validate": false
+  }
 }

@@ -20,6 +20,55 @@ export class Memory {
   // Who is writing right now — Brain methods set this so the activity
   // journal can attribute each change (sleep cycle, chat, ui, automation…)
   activitySource = 'system'
+  onJournal: ((entry: ActivityEntry) => void) | null = null
+  vaultCrypto: {
+    encryptsPath(rel: string): boolean
+    isBlob(text: string): boolean
+    encrypt(text: string): string
+    decrypt(text: string): string
+  } | null = null
+  resolve(relative: string): string { return this.path(relative) }
+
+  fileMtime(relative: string): number | null {
+    try { return this.read(relative) === null ? null : statSync(this.path(relative)).mtimeMs } catch { return null }
+  }
+
+  // Operational data remains local and uses the same encrypted, scoped boundary.
+  appendJsonl(name: string, obj: unknown) {
+    const rel = this.scopePath(`ops/${name}`)
+    const prior = this.read(rel)?.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '') ?? ''
+    this.quietWrite(rel, prior + JSON.stringify(obj) + '\n')
+  }
+
+  readJsonl(name: string, limit = 40): unknown[] {
+    const raw = this.read(this.scopePath(`ops/${name}`))?.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '') ?? ''
+    return raw.trim().split('\n').filter(Boolean).slice(-limit).flatMap(line => {
+      try { return [JSON.parse(line)] } catch { return [] }
+    }).reverse()
+  }
+
+  readOpsJson<T>(name: string, fallback: T): T {
+    const raw = this.read(this.scopePath(`ops/${name}`))
+    if (!raw) return fallback
+    try { return JSON.parse(raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')) as T } catch { return fallback }
+  }
+
+  writeOpsJson(name: string, data: unknown) {
+    this.quietWrite(this.scopePath(`ops/${name}`), JSON.stringify(data))
+  }
+
+  syncWrite(relative: string, content: string) {
+    if (this.read(relative) === content) return
+    this.quietWrite(relative, content)
+    this.journalPush('write', relative, 'sync')
+  }
+
+  syncRemove(relative: string) {
+    if (this.read(relative) === null) return
+    this.quietRemove(relative)
+    this.journalPush('remove', relative, 'sync')
+  }
+
   private quiet = false
   private migrating = false
   private journal: ActivityEntry[] = []
@@ -71,7 +120,11 @@ export class Memory {
     const p = this.path(relative)
     mkdirSync(join(p, '..'), { recursive: true })
     if (!this.migrating && existsSync(p)) {
-      const raw = readFileSync(p, 'utf8')
+      let raw = readFileSync(p, 'utf8')
+      if (raw.startsWith('KMS1\n')) {
+        if (!this.vaultCrypto) throw new Error('Vault key unavailable')
+        raw = this.vaultCrypto.decrypt(raw)
+      }
       if (!raw.startsWith('KEEPMIND-ITEM:1\n') && this.encryptAll) throw new Error('Plaintext requires migration')
       if (this.read(relative) === null) throw new Error('Space access denied')
     }
@@ -92,6 +145,7 @@ export class Memory {
       this.onKeysChanged?.()
       content = 'KEEPMIND-ITEM:1\n' + JSON.stringify({ space: item.space, box: this.keys!.encrypt(content, item.space, relative) })
     }
+    if (this.vaultCrypto?.encryptsPath(relative)) content = this.vaultCrypto.encrypt(content)
     const temp = p + '.tmp'
     writeFileSync(temp, content, { encoding: 'utf8', mode: 0o600 })
     renameSync(temp, p)
@@ -162,8 +216,8 @@ export class Memory {
   // Activity journal — every local mutation is recorded to
   // ops/activity.jsonl (local-only, .jsonl so it never syncs to GitHub)
   // and kept in a ring buffer for the UI feed.
-  private journalPush(op: ActivityEntry['op'], rel: string) {
-    const entry: ActivityEntry = { ts: Date.now(), op, path: rel, source: this.activitySource }
+  private journalPush(op: ActivityEntry['op'], rel: string, source = this.activitySource) {
+    const entry: ActivityEntry = { ts: Date.now(), op, path: rel, source }
     this.journal.push(entry)
     if (this.journal.length > 600) this.journal.splice(0, this.journal.length - 600)
     try {
@@ -175,6 +229,7 @@ export class Memory {
         writeFileSync(this.journalFile, lines.slice(-2000).join('\n') + '\n', 'utf8')
       }
     } catch { /* journal is best-effort */ }
+    try { this.onJournal?.(entry) } catch { /* renderer gone */ }
   }
 
   private loadJournal() {
@@ -210,7 +265,11 @@ export class Memory {
     if (!this.keys) throw new Error('Memory locked')
     let protectedCount = 0
     for (const rel of this.allFiles('', '', true)) {
-      const text = readFileSync(this.path(rel), 'utf8')
+      let text = readFileSync(this.path(rel), 'utf8')
+      if (text.startsWith('KMS1\n')) {
+        if (!this.vaultCrypto) throw new Error('Vault key unavailable')
+        text = this.vaultCrypto.decrypt(text)
+      }
       if (text.startsWith('KEEPMIND-ITEM:1\n')) continue
       const item = policy(text)
       if (!allowedSpace(item.space, this.currentSpace, this.grants) || (!this.encryptAll && !restricted(item.class))) continue
@@ -224,6 +283,10 @@ export class Memory {
     const p = this.path(relative)
     if (!existsSync(p)) return null
     let text = readFileSync(p, 'utf8')
+    if (text.startsWith('KMS1\n')) {
+      if (!this.vaultCrypto) throw new Error('Vault key unavailable')
+      text = this.vaultCrypto.decrypt(text)
+    }
     const encrypted = text.startsWith('KEEPMIND-ITEM:1\n')
     let encryptedSpace: string | undefined
     if (encrypted) {
@@ -275,7 +338,7 @@ export class Memory {
     for (const rel of files.slice(0, 200)) {
       const content = this.read(rel)
       if (content != null) {
-        try { await github.pushFile(gh, `memory/${rel}`, content, message) } catch { /* keep going */ }
+        try { await github.pushFile(gh, `${gh.syncRoot ?? 'memory/'}${rel}`, content, message) } catch { /* keep going */ }
       }
     }
   }

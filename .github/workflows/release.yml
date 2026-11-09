@@ -15,10 +15,13 @@ jobs:
         include:
           - os: macos-latest
             args: --mac dmg zip --universal
+            onnx: darwin
           - os: windows-latest
             args: --win nsis --x64 --arm64
+            onnx: win32
           - os: ubuntu-latest
             args: --linux AppImage --x64
+            onnx: linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +30,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
       - run: npm run build
+      - name: Prune onnxruntime to target platform
+        run: node scripts/prune-onnxruntime.mjs ${{ matrix.onnx }}
       - name: Build installers
         run: npx electron-builder ${{ matrix.args }} --publish never
         env:

@@ -5,14 +5,17 @@ interface Automation {
   id: string
   name: string
   instruction: string
-  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review' | 'security' | 'skills' | 'triage'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review' | 'security' | 'skills' | 'triage' | 'briefing' | 'escalate' | 'compact' | 'gaps'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string
   everyMinutes?: number
   weekday?: number
   enabled: boolean
   mode?: 'auto' | 'approval'
+  webhook?: boolean
+  webhookToken?: string
   lastRunAt?: string
+  lastSummary?: string
   createdAt: string
 }
 
@@ -43,17 +46,23 @@ interface Parsed {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  brain: 'brain task',
-  sleep: 'sleep cycle',
+  brain: 'free task',
+  sleep: 'sleep',
   summary: 'summary',
-  librarian: 'librarian',
+  librarian: 'cleanup',
   evolve: 'evolution',
   enrich: 'enrichment',
-  review: 'review',
+  review: 'your review',
   security: 'security',
   skills: 'skills',
-  triage: 'triage'
+  triage: 'triage',
+  briefing: 'briefing',
+  escalate: 'tasks',
+  compact: 'compact',
+  gaps: 'gaps'
 }
+
+const KINDS = Object.keys(KIND_LABEL)
 
 // Ready-made self-learning crons — one click installs them.
 const TEMPLATES: { emoji: string; name: string; desc: string; input: any }[] = [
@@ -62,12 +71,13 @@ const TEMPLATES: { emoji: string; name: string; desc: string; input: any }[] = [
   { emoji: '🧹', name: 'Weekly librarian', desc: 'Mon 09:00 — consolidates old logs, dedupes long-term memory, refreshes entities.', input: { name: 'Weekly librarian', kind: 'librarian', schedule: 'weekly', weekday: 1, time: '09:00', instruction: 'Weekly vault hygiene: consolidate old logs, dedupe long-term memory, refresh entity pages.' } },
   { emoji: '🧬', name: 'Weekly evolution', desc: 'Sun 18:00 — the brain reviews its own reports and proposes upgrades to itself.', input: { name: 'Weekly evolution', kind: 'evolve', schedule: 'weekly', weekday: 0, time: '18:00', instruction: 'Meta-learning: review sleep reports and insights, propose improvements to the memory system itself.' } },
   { emoji: '✨', name: 'Nightly enrichment', desc: '02:30 — adds summaries, tags and [[wikilinks]] to recent notes.', input: { name: 'Nightly note enrichment', kind: 'enrich', schedule: 'daily', time: '02:30', instruction: 'Enrich recent notes with summaries, topic tags and entity wikilinks.' } },
-  { emoji: '🧠', name: 'Inbox triage', desc: 'Every 6h — sorts raw inbox captures into notes, tasks or memory.', input: { name: 'Inbox triage', kind: 'brain', schedule: 'interval', everyMinutes: 360, instruction: 'Triage the inbox: move valuable items into notes/tasks/long-term memory, discard noise, and report what you did.' } },
-  { emoji: '🃏', name: 'Spaced review', desc: 'Daily 20:00 — quizzes the brain on its own flashcards and grades retention.', input: { name: 'Spaced review', kind: 'review', schedule: 'daily', time: '20:00', instruction: 'Spaced-repetition review: quiz yourself on flashcards from long-term memory.' } },
+  { emoji: '🃏', name: 'Your review', desc: 'Daily 20:00 — puts due cards on Today. The note is yours.', input: { name: 'Human review queue', kind: 'review', schedule: 'daily', time: '20:00', instruction: 'Put due flashcards on Today for the person to grade.' } },
   { emoji: '🛡️', name: 'Security audit', desc: 'Weekly Sun 07:00 — scans memory for leaked secrets, API keys and credentials.', input: { name: 'Security audit', kind: 'security', schedule: 'weekly', weekday: 0, time: '07:00', instruction: 'Scan all memory files for leaked secrets and credentials; report exposures without printing values.' } },
   { emoji: '📈', name: 'Skills evolution', desc: 'Weekly Sat 10:00 — dedupes skills, consolidates procedures, proposes promotions to skills/.', input: { name: 'Skills evolution', kind: 'skills', schedule: 'weekly', weekday: 6, time: '10:00', instruction: 'Review procedural skills: dedupe, merge, prune stale ones, propose which deserve dedicated pages.' } },
   { emoji: '⚡', name: 'Fast inbox triage', desc: 'Every 6h — Laya decisions route each capture to notes/tasks/crm/long-term, no LLM needed.', input: { name: 'Fast inbox triage', kind: 'triage', schedule: 'interval', everyMinutes: 360, instruction: 'Triage inbox captures into the right memory destinations using fast decisions.' } },
-  { emoji: '🔍', name: 'Gap review', desc: 'Weekly Fri 18:00 — analyzes unanswered searches and writes the missing knowledge.', input: { name: 'Gap review', kind: 'brain', schedule: 'weekly', weekday: 5, time: '18:00', instruction: 'Review ops/search-gaps.md: for each repeated unanswered query, research the answer from memory + connectors and write it where it belongs (notes/long-term). Report what you filled.' } }
+  { emoji: '🔍', name: 'Search gaps', desc: 'Fri 18:00 — marks searches that already have a file in memory. No model call.', input: { name: 'Close search gaps', kind: 'gaps', schedule: 'weekly', weekday: 5, time: '18:00', instruction: 'Match unanswered searches to files already in memory.' } },
+  { emoji: '🗜️', name: 'Compact memory', desc: '23:20 — drops duplicate lines and keeps facts, lessons and skills inside the prompt budget.', input: { name: 'Compact long-term memory', kind: 'compact', schedule: 'daily', time: '23:20', instruction: 'Drop duplicate lines and keep long-term files inside the prompt budget.' } },
+  { emoji: '☀️', name: 'Briefing', desc: '08:05 — escreve o texto do dia a partir de tarefas, metas e notas recentes.', input: { name: 'Morning briefing', kind: 'briefing', schedule: 'daily', time: '08:05', instruction: 'Write the daily briefing from tasks, goals and recent notes.' } }
 ]
 
 function scheduleLabel(a: Automation): string {
@@ -91,8 +101,11 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
   const [sync, setSync] = useState<any>(null)
   const [text, setText] = useState('')
   const [parsed, setParsed] = useState<Parsed | null>(null)
+  const [draftKind, setDraftKind] = useState('brain')
+  const [draftTime, setDraftTime] = useState('08:00')
   const [busy, setBusy] = useState<string | null>(null)
   const [sleeping, setSleeping] = useState(false)
+  const [hookInfo, setHookInfo] = useState<Record<string, { url: string; token: string }>>({})
   const parseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refresh = async () => {
@@ -114,7 +127,12 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
     if (parseTimer.current) clearTimeout(parseTimer.current)
     if (!text.trim()) { setParsed(null); return }
     parseTimer.current = setTimeout(async () => {
-      try { setParsed(await window.sb.automationParse(text)) } catch { /* noop */ }
+      try {
+        const next = await window.sb.automationParse(text)
+        setParsed(next)
+        if (next?.kind) setDraftKind(next.kind)
+        if (next?.time) setDraftTime(next.time)
+      } catch { /* noop */ }
     }, 350)
     return () => { if (parseTimer.current) clearTimeout(parseTimer.current) }
   }, [text])
@@ -133,7 +151,11 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
     if (!text.trim()) return
     setBusy('create')
     try {
-      await window.sb.automationCreate({ instruction: text })
+      await window.sb.automationCreate({
+        instruction: text,
+        kind: draftKind,
+        time: draftTime || undefined
+      })
       setText(''); setParsed(null)
       onToast?.('Automation scheduled ✓', 'success')
       await refresh()
@@ -152,12 +174,30 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
     finally { setBusy(null) }
   }
   const remove = async (a: Automation) => {
+    if (!window.confirm(`Remove "${a.name}" from the schedule?`)) return
     await window.sb.automationRemove(a.id)
     await refresh()
   }
   const setMode = async (a: Automation, mode: 'auto' | 'approval') => {
     await window.sb.automationUpdate(a.id, { mode })
     await refresh()
+  }
+  const setWebhook = async (a: Automation) => {
+    setBusy(`wh-${a.id}`)
+    try {
+      const r: any = await window.sb.automationSetWebhook(a.id, !a.webhook)
+      if (r?.url) setHookInfo(prev => ({ ...prev, [a.id]: { url: r.url, token: r.token } }))
+      else setHookInfo(prev => { const n = { ...prev }; delete n[a.id]; return n })
+      onToast?.(r?.webhook ? `Webhook live: ${r.url}` : 'Webhook disabled', 'success')
+      await refresh()
+    } catch (e: any) { onToast?.(e?.message ?? String(e), 'error') }
+    finally { setBusy(null) }
+  }
+  const exportConfig = async () => {
+    setBusy('export')
+    try { await window.sb.brainExportConfig(); onToast?.('keepmind.json pushed to repo root ✓', 'success') }
+    catch (e: any) { onToast?.(e?.message ?? String(e), 'error') }
+    finally { setBusy(null) }
   }
   const approve = async (p: PendingApproval) => {
     setBusy(`ap-${p.id}`)
@@ -174,7 +214,7 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
     setSleeping(true); onActivity?.()
     try {
       const r = await window.sb.brainSleep()
-      onToast?.('Sleep cycle complete — the brain learned from today 🌙', 'success')
+      onToast?.(r?.summary || 'Sleep done. The report is in Today.', 'success')
       await refresh()
       // surface the report
       const reports = await window.sb.brainListSleep()
@@ -195,35 +235,36 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag hud-tag--amber" style={{ marginBottom: 6 }}>AUTOMATIONS · SLEEP CYCLES · SYNC</div>
-          <h1 style={{ textShadow: '0 0 24px rgba(163,230,53,.3)' }}>AUTOMATE</h1>
+          <div className="hud-tag hud-tag--amber" style={{ marginBottom: 6 }}>Agenda</div>
+          <h1>Brain jobs</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Schedule the brain in plain language. It runs even while you sleep — and learns from every cycle.
+            Every job leaves a line about what it did. The result also shows up in Today.
           </p>
         </div>
         <div className="actions">
+          <button className="btn btn--ghost" onClick={exportConfig} disabled={busy === 'export' || !sync?.connected} title="Push keepmind.json — declarative brain config — to the repo root">
+            ⤴ {busy === 'export' ? 'Exporting…' : 'Config'}
+          </button>
           <button className="btn btn--ghost" onClick={syncNow} disabled={busy === 'sync' || !sync?.connected}>
-            <IconSync size={12} /> {busy === 'sync' ? 'SYNCING…' : sync?.connected ? 'SYNC NOW' : 'NO REPO'}
+            <IconSync size={12} /> {busy === 'sync' ? 'Syncing…' : sync?.connected ? 'Sync now' : 'No repo'}
           </button>
         </div>
       </div>
 
       {/* Memory tiers */}
       <div className="grid grid-4" style={{ marginBottom: 20 }}>
-        <div className="card stat"><div className="stat__num" style={{ color: 'var(--cyan)' }}>{tiers?.shortTerm ?? '—'}</div><div className="stat__label">SHORT-TERM · daily logs</div></div>
-        <div className="card stat"><div className="stat__num" style={{ color: 'var(--amber)' }}>{tiers?.mediumTerm ?? '—'}</div><div className="stat__label">MEDIUM-TERM · weekly</div></div>
-        <div className="card stat"><div className="stat__num" style={{ color: 'var(--lime)' }}>{tiers?.longTerm ?? '—'}</div><div className="stat__label">LONG-TERM · facts & skills</div></div>
-        <div className="card stat"><div className="stat__num" style={{ color: 'var(--violet)' }}>{tiers?.sleepCycles ?? '—'}</div><div className="stat__label">SLEEP CYCLES</div></div>
+        <div className="card stat"><div className="stat__num" style={{ color: 'var(--cyan)' }}>{tiers?.shortTerm ?? '—'}</div><div className="stat__label">Short-term · days</div></div>
+        <div className="card stat"><div className="stat__num" style={{ color: 'var(--amber)' }}>{tiers?.mediumTerm ?? '—'}</div><div className="stat__label">Medium-term · weeks</div></div>
+        <div className="card stat"><div className="stat__num" style={{ color: 'var(--lime)' }}>{tiers?.longTerm ?? '—'}</div><div className="stat__label">Long-term · facts</div></div>
+        <div className="card stat"><div className="stat__num" style={{ color: 'var(--violet)' }}>{tiers?.sleepCycles ?? '—'}</div><div className="stat__label">Sleep cycles</div></div>
       </div>
 
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
         {/* New automation */}
         <div className="card card-pad">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><IconClock size={15} /> New automation</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><IconClock size={15} /> New job</h2>
           <p className="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.6 }}>
-            Describe it naturally — the brain figures out the schedule.
-            e.g. <em>"every day at 8am summarize my whatsapp and save important contacts"</em> or
-            {' '}<em>"every 2 hours check my email for urgent threads"</em>
+            Descreva em uma frase. A hora e o tipo aparecem abaixo e podem ser corrigidos antes de gravar.
           </p>
           <textarea
             value={text}
@@ -238,9 +279,12 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
             }}
           />
           {parsed && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, alignItems: 'center' }}>
               <span className="chip" style={{ borderColor: 'rgba(34,211,238,.35)', color: 'var(--cyan)' }}>{parsed.label}</span>
-              <span className="chip">{KIND_LABEL[parsed.kind] ?? parsed.kind}</span>
+              <select value={draftKind} onChange={e => setDraftKind(e.target.value)} style={{ background: 'transparent', color: 'var(--text)', border: '1px solid var(--line)', borderRadius: 8, padding: '4px 8px' }}>
+                {KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+              </select>
+              <input type="time" value={draftTime} onChange={e => setDraftTime(e.target.value)} style={{ background: 'transparent', color: 'var(--text)', border: '1px solid var(--line)', borderRadius: 8, padding: '4px 8px' }} />
             </div>
           )}
           <button
@@ -249,19 +293,15 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
             disabled={!text.trim() || busy === 'create'}
             onClick={create}
           >
-            <IconSparkle size={12} /> {busy === 'create' ? 'SCHEDULING…' : 'SCHEDULE'}
+            <IconSparkle size={12} /> {busy === 'create' ? 'Scheduling…' : 'Schedule'}
           </button>
         </div>
 
         {/* Sleep mode */}
         <div className="card card-pad" style={{ borderColor: 'rgba(167,139,250,.25)' }}>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><IconMoon size={15} /> Sleep mode</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><IconMoon size={15} /> Sono</h2>
           <p className="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.6 }}>
-            The brain's nightly cycle reviews the day and answers five questions:
-            what's <strong>working</strong>, what works but <strong>can improve</strong>,
-            what <strong>isn't working</strong> (fix it / <strong>stop it</strong>),
-            and what we're <strong>not doing yet</strong> that we should start.
-            Learnings go to long-term memory — facts, lessons and reusable skills.
+            The night cycle reads the day, stores facts, lessons and skills, and leaves a line in Today.
           </p>
           <button
             className="btn"
@@ -269,7 +309,7 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
             disabled={sleeping}
             onClick={sleepNow}
           >
-            <IconMoon size={12} /> {sleeping ? 'DREAMING…' : 'RUN SLEEP CYCLE NOW'}
+            <IconMoon size={12} /> {sleeping ? 'Consolidating…' : 'Run sleep now'}
           </button>
           {sync?.lastPull && (
             <p className="faint mono" style={{ fontSize: 10.5, marginTop: 12 }}>
@@ -315,9 +355,9 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
 
       {/* Learning templates */}
       <div className="card card-pad" style={{ marginBottom: 20 }}>
-        <h2>Self-learning templates</h2>
+          <h2>Modelos</h2>
         <p className="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.6 }}>
-          One click installs a proven learning cron — sleep cycles, summaries, hygiene, evolution.
+          The ones that ship enabled appear disabled here. Each leaves a line after it runs.
         </p>
         <div className="grid grid-3" style={{ marginTop: 14 }}>
           {TEMPLATES.map(t => {
@@ -371,12 +411,33 @@ export default function Automations({ onActivity, onToast }: { onActivity?: () =
                     >
                       {a.mode === 'approval' ? '⏳ APPROVAL' : '⚡ AUTO'}
                     </button>
+                    <button
+                      className="chip"
+                      title={a.webhook ? 'Webhook enabled — click to disable' : 'Enable webhook trigger (POST /hook/<id> with token)'}
+                      onClick={() => setWebhook(a)}
+                      style={{
+                        fontSize: 9.5, cursor: 'pointer',
+                        borderColor: a.webhook ? 'rgba(34,211,238,.5)' : 'var(--line)',
+                        color: a.webhook ? 'var(--cyan)' : 'var(--muted)',
+                        background: a.webhook ? 'rgba(34,211,238,.08)' : 'transparent'
+                      }}
+                    >
+                      {busy === `wh-${a.id}` ? '…' : a.webhook ? '🔗 HOOK' : '⊘ HOOK'}
+                    </button>
                     {!a.enabled && <span className="chip" style={{ fontSize: 9.5, opacity: .6 }}>paused</span>}
                   </div>
                   <p className="faint" style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>{a.instruction}</p>
                   <p className="faint mono" style={{ fontSize: 10.5, marginTop: 6 }}>
                     last run: {a.lastRunAt ? new Date(a.lastRunAt).toLocaleString() : 'never'}
+                    {a.lastSummary ? ` · ${a.lastSummary}` : ''}
                   </p>
+                  {a.webhook && (hookInfo[a.id] || a.webhookToken) && (
+                    <div className="mono" style={{ marginTop: 6, fontSize: 10, background: 'rgba(3,7,18,.6)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', wordBreak: 'break-all' }}>
+                      <div style={{ color: 'var(--muted)' }}>POST {(hookInfo[a.id]?.url) ?? `http://127.0.0.1:4789/hook/${a.id}`}</div>
+                      <div style={{ color: 'var(--cyan)', marginTop: 2 }}>token: ••••{(hookInfo[a.id]?.token ?? a.webhookToken ?? '').slice(-6)}</div>
+                      <div style={{ color: 'var(--muted)', marginTop: 4 }}>header: <code>x-hook-token</code> · approval-mode jobs queue for you</div>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button className="btn btn--ghost" style={{ padding: '6px 12px', fontSize: 10 }} disabled={busy === a.id} onClick={() => runNow(a)}>

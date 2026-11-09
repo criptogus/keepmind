@@ -1,0 +1,67 @@
+name: Continuous build
+
+# Every push to main produces a rolling "continuous" prerelease that the
+# installed apps poll for self-update (works unsigned — custom swapper).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac dmg zip --universal
+            onnx: darwin
+          - os: windows-latest
+            args: --win nsis --x64 --arm64
+            onnx: win32
+          - os: ubuntu-latest
+            args: --linux AppImage --x64
+            onnx: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Prune onnxruntime to target platform
+        run: node scripts/prune-onnxruntime.mjs ${{ matrix.onnx }}
+      - name: Drop optional ws natives
+        # bufferutil and utf-8-validate are optional speed-ups for `ws`.
+        # They have no Electron prebuild here, so electron-builder rebuilds
+        # them with node-gyp: macOS runners (Python 3.12) lack distutils, and
+        # windows-latest has no Visual Studio that this node-gyp can find.
+        # `ws` falls back to pure JS. Removing them lets the installer publish.
+        run: node -e "const fs=require('fs'); for (const p of ['node_modules/bufferutil','node_modules/utf-8-validate']) fs.rmSync(p,{recursive:true,force:true})"
+      - name: Build installers
+        run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Publish rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: continuous
+          name: Continuous build (main)
+          prerelease: true
+          make_latest: false
+          body: 'Auto-built from main @ ${{ github.sha }}. Apps self-update from this channel.'
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/latest*.yml
+            dist/*.blockmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

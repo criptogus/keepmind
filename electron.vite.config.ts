@@ -14,7 +14,8 @@ export default defineConfig({
           cli: resolve(__dirname, 'src/main/cli.ts'),
           'derived-learnings': resolve(__dirname, 'src/main/services/derived-learnings.ts'),
           'mcp-keys': resolve(__dirname, 'src/main/services/security/keys.ts'),
-          'mcp/whatsapp-server': resolve(__dirname, 'src/main/mcp/whatsapp-server.ts')
+          'mcp/whatsapp-server': resolve(__dirname, 'src/main/mcp/whatsapp-server.ts'),
+          'mcp/telegram-server': resolve(__dirname, 'src/main/mcp/telegram-server.ts')
         }
       }
     }

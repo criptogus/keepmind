@@ -1,12 +1,16 @@
-import type { AiProviderConfig } from '../../store'
-import { refreshEntities } from '../entities'
-import { chat } from '../llm'
+import { join } from 'node:path'
 
-import { BrainInsights } from './insights'
+import { chat } from '../llm'
+import type { AiProviderConfig } from '../../store'
+
+import { refreshEntities } from '../entities'
+
 import { isoWeek } from './utils'
 
+import { BrainInsights } from './insights'
+
 export class BrainSleep extends BrainInsights {
-  async sleep(): Promise<{ report: string; consolidated: number }> {
+  async sleep(): Promise<{ report: string; consolidated: number; summary: string }> {
     const cfg = this.store.get()
     const day = new Date().toISOString().slice(0, 10)
     const corpus = this.recentCorpus()
@@ -14,7 +18,9 @@ export class BrainSleep extends BrainInsights {
     if (!corpus.trim()) {
       const report = `# Sleep cycle — ${day}\n\nNo memory activity to process yet. The brain sleeps peacefully. 💤\n`
       this.memory.write(this.memory.scopePath(`sleep/${day}.md`), report)
-      return { report, consolidated: 0 }
+      const summary = `Sono de ${day}: nada novo para consolidar.`
+      this.note('processed', summary, `sleep/${day}.md`)
+      return { report, consolidated: 0, summary }
     }
 
     // 1) Nightly learning — the 5 questions
@@ -77,7 +83,15 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
         }
         this.memory.append(this.memory.scopePath(`long-term/${file}`), `\n\n## ${day}\n\n${clean}\n`)
       }
-      await appendIf('facts.md', '', grab('===FACTS===', '===LESSONS==='))
+      const factLines = grab('===FACTS===', '===LESSONS===')
+        .split('\n')
+        .map(l => l.replace(/^[-*•]\s*/, '').trim())
+        .filter(l => l && l !== '(none)')
+      let proposed = 0
+      for (const line of factLines) {
+        if (this.proposeFact(line, 'sleep', 'sono', false)) proposed++
+      }
+      if (proposed) this.note('needs-you', `${proposed} fato(s) do sono esperam você em Hoje.`, 'long-term/facts.md')
       await appendIf('lessons.md', '', grab('===LESSONS===', '===SKILLS==='))
       await appendIf('skills.md', '', grab('===SKILLS===', '$'))
     } catch (e) {
@@ -113,7 +127,13 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     //    semantically searchable immediately instead of waiting for lazy scan
     void this.rag?.reindex().catch(() => {})
 
-    return { report: res.text, consolidated }
+    this.harvestGapQuestions()
+    const scored = this.scoreQuestions(day)
+    const summary = scored.total
+      ? `Sono de ${day}: consolidou ${consolidated} log(s). Placar da avaliação: ${scored.hit} de ${scored.total}.`
+      : `Sono de ${day}: consolidou ${consolidated} log(s) e gravou o relatório.`
+    this.note('processed', summary, `sleep/${day}.md`)
+    return { report: res.text, consolidated, summary }
   }
 
   protected async consolidateShortTerm(): Promise<number> {
@@ -136,34 +156,43 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     let consolidated = 0
     for (const [week, files] of weeks) {
       const target = `medium-term/${week}.md`
-      if (this.memory.read(this.memory.scopePath(target))) {
-        // already consolidated — just drop the raw files
-        for (const f of files) this.memory.remove(this.memory.scopePath(`short-term/${f}`))
+      const existingWeek = this.memory.read(this.memory.scopePath(target))
+      if (existingWeek) {
+        // A previous pass already opened this week. Append days that are
+        // not in the file yet — never delete a log that was not copied.
+        const fresh = files.filter(f => !existingWeek.includes(`## ${f.replace('.md', '')}`))
+        if (fresh.length) {
+          const extra = fresh.map(f => {
+            const day = f.replace('.md', '')
+            const content = this.memory.read(this.memory.scopePath(`short-term/${f}`)) ?? ''
+            return `## ${day}\n\n${content.trim()}`
+          })
+          this.memory.append(this.memory.scopePath(target), `\n\n${extra.join('\n\n')}\n`)
+        }
+        for (const f of files) {
+          const day = f.replace('.md', '')
+          const merged = (this.memory.read(this.memory.scopePath(target)) ?? '').includes(`## ${day}`)
+          if (merged) this.memory.remove(`short-term/${f}`)
+        }
         consolidated += files.length
         continue
       }
-      const corpus = files.map(f => `### ${f}\n${this.memory.read(this.memory.scopePath(`short-term/${f}`)) ?? ''}`).join('\n\n').slice(-16000)
-      try {
-        const cfg = this.store.get()
-        const res = await chat(cfg.ai as AiProviderConfig, [
-          {
-            role: 'system',
-            content: 'You compress daily memory logs into a weekly medium-term memory. Produce a tight markdown digest: key events, decisions, open loops, patterns. Max ~400 words. No fluff.'
-          },
-          { role: 'user', content: corpus }
-        ], [], this.localLlm?.endpoint)
-        this.memory.write(this.memory.scopePath(target), `# Week ${week}\n\n${res.text}\n`)
-      } catch {
-        // LLM unavailable — still consolidate mechanically so short-term doesn't grow forever
-        this.memory.write(this.memory.scopePath(target), `# Week ${week}\n\n_Consolidated without LLM._\n\n${files.map(f => `- ${f}`).join('\n')}\n`)
-      }
-      for (const f of files) this.memory.remove(this.memory.scopePath(`short-term/${f}`))
+      // Scripted consolidation — lossless per-day digest, zero LLM tokens.
+      // Medium-term memory keeps every capture organized by date; the RAG
+      // index handles retrieval, so compression would only lose information.
+      const parts = files.map(f => {
+        const day = f.replace('.md', '')
+        const content = this.memory.read(this.memory.scopePath(`short-term/${f}`)) ?? ''
+        const stats = `${(content.match(/^##\s+/gm) ?? []).length} sections · ${(content.match(/^[-*]\s+/gm) ?? []).length} bullets · ${content.length} chars`
+        return `## ${day}\n\n_${stats}_\n\n${content.trim()}`
+      })
+      this.memory.write(this.memory.scopePath(target), `# Week ${week}\n\n${parts.join('\n\n')}\n`)
+      for (const f of files) this.memory.remove(`short-term/${f}`)
       consolidated += files.length
     }
     return consolidated
   }
 
-  // Single-shot LLM completion used by the entity layer (descriptions).
   protected entityCompleter(): (prompt: string) => Promise<string> {
     return async (prompt: string) => {
       const cfg = this.store.get()
@@ -175,13 +204,9 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     }
   }
 
-  // ── Librarian: weekly vault hygiene ──
-  // Consolidates old logs, dedupes long-term memory, refreshes entities,
-  // and writes a report. Runs as a scheduled automation (kind: 'librarian').
-
   protected dedupeLongTerm(): number {
     let removed = 0
-    for (const file of ['facts.md', 'lessons.md', 'skills.md']) {
+    for (const file of ['lessons.md', 'skills.md']) {
       const rel = `long-term/${file}`
       const content = this.memory.read(this.memory.scopePath(rel))
       if (!content) continue
@@ -226,14 +251,7 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
       ''
     ].join('\n')
     this.memory.write(this.memory.scopePath(`insights/librarian-${day}.md`), report)
+    this.note('improved', `Librarian de ${day}: ${consolidated} logs consolidados, ${deduped} duplicatas removidas, ${entities.created} entidades novas.`, `insights/librarian-${day}.md`)
     return report
   }
-
-  // ── Evolve: meta-learning cycle ──
-  // Reviews the brain's OWN outputs (sleep reports, insights, librarian runs)
-  // and asks the LLM how the memory system itself should improve: which
-  // questions to ask at night, which files to consolidate, which entities
-  // need pages, which automations to add/remove. Writes an evolution report
-  // and appends durable proposals to long-term/evolution.md.
-
 }

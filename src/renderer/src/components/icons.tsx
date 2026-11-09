@@ -35,10 +35,29 @@ export function IconPlug({ size = 18 }: { size?: number }) {
   )
 }
 
+export function IconSkill({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M12 3 3 8l9 5 9-5-9-5Z" />
+      <path d="M3 12l9 5 9-5" />
+      <path d="M3 16l9 5 9-5" />
+    </svg>
+  )
+}
+
 export function IconSparkle({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2l2 6.5L20.5 10 14 12l-2 6.5L10 12 3.5 10 10 8.5 12 2Z" />
+    </svg>
+  )
+}
+
+export function IconShield({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3Z" />
+      <path d="M9 12l2 2 4-4" />
     </svg>
   )
 }

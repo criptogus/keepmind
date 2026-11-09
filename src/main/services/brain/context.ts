@@ -1,8 +1,19 @@
-import type { AgentPersona, AiProviderConfig } from '../../store'
-import { chat, type ChatMessage, type ToolDefinition } from '../llm'
+import { join } from 'node:path'
 
-import { BrainRuntime } from './runtime'
+import { chat, chatLive, type ChatMessage, type ToolDefinition } from '../llm'
+import type { AiProviderConfig } from '../../store'
+
+import type { AgentPersona } from '../../store'
+import * as github from '../github'
+
+import { activeForPrompt, type FactOrigin } from '../facts'
+
 import { slug } from './utils'
+
+import type { ChatResult } from './runtime'
+
+function tail(text: string, max: number): string { return text.length <= max ? text : `…\n${text.slice(-max)}` }
+import { BrainRuntime } from './runtime'
 
 export class BrainContext extends BrainRuntime {
   protected buildSystemContext(agent: AgentPersona, recall = ''): string {
@@ -17,12 +28,17 @@ export class BrainContext extends BrainRuntime {
     ]
     // ── Tiered memory context (like human memory) ──
     // Long-term: durable facts, lessons and skills — always injected.
-    const facts = this.memory.read(this.memory.scopePath('long-term/facts.md'))
-    if (facts) parts.push('', '## Long-term memory — facts & preferences', facts.slice(0, 3000))
+    const facts = activeForPrompt(this.memory.read(this.memory.scopePath('long-term/facts.md')) ?? '')
+    if (facts) parts.push('', '## Long-term memory — facts & preferences', tail(facts, 3000))
     const skills = this.memory.read(this.memory.scopePath('long-term/skills.md'))
-    if (skills) parts.push('', '## Learned skills (from nightly sleep cycles)', skills.slice(0, 2500))
+    if (skills) parts.push('', '## Learned skills (from nightly sleep cycles)', tail(skills, 2500))
     const lessons = this.memory.read(this.memory.scopePath('long-term/lessons.md'))
-    if (lessons) parts.push('', '## Lessons learned', lessons.slice(0, 2000))
+    if (lessons) parts.push('', '## Lessons learned', tail(lessons, 2000))
+    const policy = this.memory.read(this.memory.scopePath('ops/policy.md'))
+    const activePolicy = (policy?.split('## Propostas')[0]?.split('## Ativo')[1] ?? '').trim()
+    if (activePolicy && !/Sem instruções extras ainda/.test(activePolicy)) {
+      parts.push('', '## Active brain policy (follow this)', tail(activePolicy, 1500))
+    }
     // Medium-term: recent weekly consolidations.
     const medium = this.memory.mediumTermFiles().slice(-2)
     for (const f of medium) {
@@ -57,6 +73,25 @@ export class BrainContext extends BrainRuntime {
         name: 'get_memory',
         description: 'Read a memory file by path (e.g. inbox/digest.md, insights/2026-11-05.md).',
         parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] }
+      },
+      {
+        name: 'list_tasks',
+        description: 'List open tasks from the planner (tasks/ dir) with id, title, due date and priority. Optionally filter by status.',
+        parameters: { type: 'object', properties: { status: { type: 'string', description: 'open (default) or done or all' } } }
+      },
+      {
+        name: 'add_task',
+        description: 'Create a task in the planner. Returns the task id.',
+        parameters: { type: 'object', properties: {
+          title: { type: 'string' },
+          due: { type: 'string', description: 'YYYY-MM-DD' },
+          priority: { type: 'string', description: 'low|normal|high' }
+        }, required: ['title'] }
+      },
+      {
+        name: 'complete_task',
+        description: 'Mark a task as done by id or title fragment.',
+        parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] }
       }
     ]
     if (this.mcp) {
@@ -90,15 +125,49 @@ export class BrainContext extends BrainRuntime {
         }
       ).catch(() => null)
       if (verdict && verdict.confidence > 0.4) kind = verdict.choice
+      if (kind === 'fact' || this.quarantined) {
+        const origin: FactOrigin = this.quarantined ? 'webhook' : 'chat'
+        const saved = this.proposeFact(`${title}\n\n${content}`.trim(), origin, kind === 'fact' ? 'conversa' : `conversa · ${kind}`)
+        this.turnSaved.push('long-term/facts.md')
+        return `Proposta ${saved} em long-term/facts.md. Ela só entra na memória ativa depois do aceite em Hoje.`
+      }
       const file = kind === 'note'
         ? `long-term/notes/${slug(title)}.md`
-        : `long-term/${kind}s.md` // facts.md / lessons.md / skills.md / decisions.md
+        : `long-term/${kind}s.md` // lessons.md / skills.md / decisions.md
       this.memory.append(this.memory.scopePath(file), `\n\n## ${title}\n\n${content}\n`)
+      this.turnSaved.push(file)
       return `Saved to memory/${file} (long-term · classified as ${kind})`
     }
     if (name === 'get_memory') {
       const c = this.memory.read(this.memory.scopePath(String(args.path ?? '')))
       return c ?? 'Not found'
+    }
+    if (name === 'list_tasks') {
+      const status = String(args.status ?? 'open').toLowerCase()
+      const tasks = this.readTasks().filter(t => status === 'all' || t.status === status)
+      if (!tasks.length) return status === 'open' ? 'No open tasks.' : `No ${status} tasks.`
+      return tasks.map(t =>
+        `- [${t.status === 'done' ? 'x' : ' '}] ${t.id} · ${t.title}${t.due ? ` · due ${t.due}` : ''}${t.priority !== 'normal' ? ` · ${t.priority}` : ''}`
+      ).join('\n')
+    }
+    if (name === 'add_task') {
+      const title = String(args.title ?? '').trim()
+      if (!title) return 'Task title required'
+      const id = `${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${slug(title)}-${Math.random().toString(36).slice(2, 6)}`
+      const priority = ['low', 'normal', 'high'].includes(String(args.priority)) ? String(args.priority) : 'normal'
+      const due = /^\d{4}-\d{2}-\d{2}$/.test(String(args.due ?? '')) ? String(args.due) : ''
+      this.memory.write(this.memory.scopePath(`tasks/${id}.md`),
+        `# ${title}\n> status: open · priority: ${priority}${due ? ` · due: ${due}` : ''} · created: ${new Date().toISOString()}\n\n`)
+      return `Task created: ${id} — "${title}"${due ? ` (due ${due})` : ''}`
+    }
+    if (name === 'complete_task') {
+      const want = String(args.id ?? '').toLowerCase()
+      const task = this.readTasks().find(t => t.id === want || t.title.toLowerCase().includes(want))
+      if (!task) return `No task matching "${args.id}"`
+      const p = `tasks/${task.file}`
+      const c = this.memory.read(this.memory.scopePath(p)) ?? ''
+      this.memory.write(this.memory.scopePath(p), c.replace(/status:\s*open/i, 'status: done'))
+      return `Completed: ${task.title}`
     }
     // MCP tool routing: mcp_<serverId>_<toolName>
     if (name.startsWith('mcp_') && this.mcp) {
@@ -110,49 +179,56 @@ export class BrainContext extends BrainRuntime {
     return `Unknown tool: ${name}`
   }
 
-  async chat(agentId: string, userMessage: string, onDelta?: (t: string) => void): Promise<string> {
-    // Pull freshest shared memory before answering (rate-limited internally)
-    await this.gitSync?.pullIfDue().catch(() => {})
-    // Semantic recall over memory (no-op if embeddings aren't set up)
-    const recall = await this.rag?.search(userMessage).catch(() => '') ?? ''
-    const cfg = this.store.get()
-    const agent = cfg.agents.find(a => a.id === agentId) ?? cfg.agents[0]
-    const messages: ChatMessage[] = [
-      { role: 'system', content: this.buildSystemContext(agent, recall) },
-      { role: 'user', content: userMessage }
-    ]
-    const tools = this.toolDefinitions()
+  async chat(agentId: string, userMessage: string, onDelta?: (t: string) => void, onStep?: (step: string) => void): Promise<ChatResult> {
+    this.turnSaved = []
+    const steps: string[] = []
+    const step = (s: string) => { steps.push(s); onStep?.(s) }
+    try {
+      await this.ensureProviderReady()
+      step('Lendo a memória mais recente do repositório.')
+      await this.gitSync?.pullIfDue().catch(() => {})
+      const recall = await this.rag?.search(userMessage).catch(() => '') ?? ''
+      const memories = [...new Set([...recall.matchAll(/^###\s+(\S+)/gm)].map(m => m[1].replace(/\s.*/, '')))]
+      if (memories.length) step(`Encontrei ${memories.length} memória(s): ${memories.slice(0, 4).join(', ')}.`)
+      else step('Nenhuma memória semântica para esta pergunta.')
+      const cfg = this.store.get()
+      const agent = cfg.agents.find(a => a.id === agentId) ?? cfg.agents[0]
+      const messages: ChatMessage[] = [
+        { role: 'system', content: this.buildSystemContext(agent, recall) },
+        ...this.recentTurns(),
+        { role: 'user', content: userMessage }
+      ]
+      const tools = this.toolDefinitions()
 
-    // Agentic loop: call LLM -> execute tool calls -> repeat (max 6 rounds)
-    let finalText = ''
-    for (let round = 0; round < 6; round++) {
-      const res = await chat(cfg.ai as AiProviderConfig, messages, tools, this.localLlm?.endpoint)
-      finalText = res.text
-      if (!res.toolCalls?.length) break
-
-      // Append assistant turn with tool calls
-      messages.push({ role: 'assistant', content: res.text || '(tool calls)' })
-      for (const tc of res.toolCalls) {
-        const result = await this.execTool(tc.name, tc.arguments)
-        messages.push({ role: 'tool', name: tc.name, content: result })
+      let finalText = ''
+      for (let round = 0; round < 6; round++) {
+        const res = await chatLive(cfg.ai as AiProviderConfig, messages, tools, (t) => {
+          onDelta?.(t)
+        }, this.localLlm?.endpoint)
+        finalText = res.text
+        if (!res.toolCalls?.length) break
+        messages.push({ role: 'assistant', content: res.text || '(tool calls)' })
+        for (const tc of res.toolCalls) {
+          step(`Usei a ferramenta ${tc.name}.`)
+          const result = await this.execTool(tc.name, tc.arguments)
+          messages.push({ role: 'tool', name: tc.name, content: result })
+        }
       }
-    }
 
-    if (onDelta) {
-      // Stream the final answer for UX
-      const words = finalText.split(/(\s+)/)
-      for (const w of words) { onDelta(w); await new Promise(r => setTimeout(r, 10)) }
+      const day = new Date().toISOString().slice(0, 10)
+      const rel = `short-term/${day}.md`
+      this.memory.append(this.memory.scopePath(rel), `\n\n## ${new Date().toLocaleTimeString()} — ${agent.name}\n\n**You:** ${userMessage}\n\n**${agent.name}:** ${finalText}\n`)
+      const saved = [...this.turnSaved]
+      if (saved.length) this.note('discovered', `A conversa guardou ${saved.length} item(ns) na memória longa.`, saved[0])
+      else this.note('processed', 'A conversa foi registrada no log de hoje.', rel)
+      const result: ChatResult = { text: finalText, memories, saved, steps }
+      return result
+    } catch (e) {
+      throw e
     }
-
-    // Persist exchange to short-term memory (raw daily log)
-    const day = new Date().toISOString().slice(0, 10)
-    this.memory.append(this.memory.scopePath(`short-term/${day}.md`), `\n\n## ${new Date().toLocaleTimeString()} — ${agent.name}\n\n**You:** ${userMessage}\n\n**${agent.name}:** ${finalText}\n`)
-    return finalText
   }
 
-  async streamChat(agentId: string, userMessage: string): Promise<string> {
-    // Non-tool streaming path for snappy UX; falls back inside chat() for tool use
+  async streamChat(agentId: string, userMessage: string): Promise<ChatResult> {
     return this.chat(agentId, userMessage)
   }
-
 }

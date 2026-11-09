@@ -2,7 +2,10 @@
 import { BrainMaintenance } from './maintenance'
 
 export class Brain extends BrainMaintenance {
-  override chat(agentId: string, message: string, onDelta?: (text: string) => void) { return this.memory.withScope(() => super.chat(agentId, message, onDelta)) }
+  override chat(agentId: string, message: string, onDelta?: (text: string) => void, onStep?: (step: string) => void) { return this.memory.withScope(() => super.chat(agentId, message, onDelta, onStep)) }
+  override briefing(force = false) { return this.memory.withScope(() => super.briefing(force)) }
+  override hybridSearch(query: string) { return this.memory.withScope(() => super.hybridSearch(query)) }
+  override triageVaultTasks() { return this.memory.withScope(() => super.triageVaultTasks()) }
   override sleep() { return this.memory.withScope(() => super.sleep()) }
   override librarian() { return this.memory.withScope(() => super.librarian()) }
   override generateInsights() { return this.memory.withScope(() => super.generateInsights()) }

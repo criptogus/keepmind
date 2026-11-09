@@ -42,6 +42,57 @@ const demoTasks: any[] = [
   { id: 't2', title: 'Book dentist appointment', done: false, priority: 'normal', due: null, created: '2026-11-05T09:05:00Z', notes: '' },
   { id: 't3', title: 'Renew domain superbrains.dev', done: true, priority: 'normal', due: null, created: '2026-11-01T09:00:00Z', notes: '' }
 ]
+let demoSkillItems = [
+  {
+    file: 'research.md', path: 'skills/research.md', group: 'keepmind', segment: 'KeepMind', category: 'research',
+    title: 'Research before answering', ageDays: 4, uses: 8, mentions: 2, kind: 'skill',
+    slug: 'research', excerpt: 'Before stating a fact, search memory.'
+  },
+  {
+    file: 'seo-brief.md', path: 'skills/seo-brief.md', group: 'keepmind', segment: 'KeepMind', category: 'marketing',
+    title: 'SEO brief', ageDays: 9, uses: 5, mentions: 1, kind: 'skill',
+    slug: 'seo-brief', excerpt: 'Draft a search brief before a campaign page.'
+  },
+  {
+    file: 'composio-toolkits.md', path: 'skills/composio-toolkits.md', group: 'keepmind', segment: 'SuperagentSkill', category: 'automation',
+    title: 'Composio toolkits', ageDays: 2, uses: 3, mentions: 1, kind: 'skill',
+    slug: 'composio-toolkits', excerpt: 'Run an action in a connected app when the user asks for a tool.'
+  },
+  {
+    file: 'SKILL.md', path: 'agents/camaha/composio-toolkits/SKILL.md', group: 'camaha', segment: 'camaha', category: 'automation',
+    title: 'Composio toolkits', ageDays: 20, uses: 0, mentions: 0, kind: 'skill',
+    slug: 'composio-toolkits', excerpt: 'Run an action in a connected app when the user asks for a tool.'
+  },
+  {
+    file: 'code-review.md', path: 'skills/code-review.md', group: 'keepmind', segment: 'KeepMind', category: 'development',
+    title: 'Code review', ageDays: 1, uses: 6, mentions: 0, kind: 'skill',
+    slug: 'code-review', excerpt: 'Review a diff for bugs before it ships.'
+  },
+  {
+    file: 'threat-model.md', path: 'skills/threat-model.md', group: 'keepmind', segment: 'KeepMind', category: 'cybersec',
+    title: 'Threat model', ageDays: 30, uses: 0, mentions: 0, kind: 'skill',
+    slug: 'threat-model', excerpt: 'List what an attacker can reach before a launch.'
+  }
+]
+let demoSkillHints = [
+  {
+    path: 'skills/composio-toolkits.md', title: 'Composio toolkits', segment: 'SuperagentSkill', kind: 'duplicate' as const,
+    paths: ['skills/composio-toolkits.md', 'agents/camaha/composio-toolkits/SKILL.md'],
+    sentence: '“Composio toolkits” is in 2 files: skills/composio-toolkits.md · agents/camaha/composio-toolkits/SKILL.md.'
+  },
+  {
+    path: 'skills/research.md', title: 'Research before answering', segment: 'KeepMind', kind: 'use' as const,
+    sentence: 'Used 10 times and still unscored. Score it on SuperagentSkill before rewriting.'
+  },
+  {
+    path: 'skills/threat-model.md', title: 'Threat model', segment: 'KeepMind', kind: 'idle' as const,
+    sentence: 'No use in 30 days. It is not showing up in chats, or it can leave the vault.'
+  }
+]
+
+let demoFacts = [
+  { id: 'p-demo', text: 'The private repo is the source of memory.', since: todayStr(), origin: 'sleep', source: 'sono', previous: '' }
+]
 const demoGoals: any[] = [
   { text: '90 minutes of deep work on the product', done: false },
   { text: 'Call mom', done: true },
@@ -67,6 +118,8 @@ const demo = {
   ghStartDeviceFlow: async () => ({ device_code: 'demo', user_code: 'DEMO-1234', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 }),
   ghPollDeviceFlow: async () => null,
   ghCreateRepo: async () => ({ full_name: 'voce/second-brain', html_url: 'https://github.com/voce/keepmind', clone_url: '', default_branch: 'main' }),
+  ghListRepos: async () => [],
+  ghUseRepo: async () => ({ full_name: 'voce/repo' }),
   ghPushMemory: async () => ({ pushed: 12 }),
 
   localLlmStatus: async () => ({
@@ -184,10 +237,130 @@ const demo = {
   goalsRemove: async (date: string, index: number) => { demoGoals.splice(index, 1); return { date, items: demoGoals } },
   goalsSuggest: async () => ['Ship the proposal draft', '30-min walk outside', 'Review open tasks'],
 
+  brainLedger: async () => [
+    { ts: Date.now() - 3600_000, verb: 'processed', sentence: "Last night's sleep consolidated 2 logs and wrote the report.", path: 'sleep/2026-11-08.md' },
+    { ts: Date.now() - 1800_000, verb: 'discovered', sentence: 'The chat stored 1 item in long-term memory.', path: 'long-term/facts.md' },
+    { ts: Date.now() - 600_000, verb: 'needs-you', sentence: 'An evolution left a proposal in the brain policy.', path: 'ops/policy.md' }
+  ],
+  brainSearch: async (query: string) => {
+    const q = String(query)
+    const temporal = /o que valia|valia em|valiam|na [eé]poca|as of|no dia|na data/i.test(q)
+    const hits = demoMemory.filter(m => m.content.toLowerCase().includes(q.toLowerCase())).map(m => ({ path: m.path, title: m.path, snippet: m.content.slice(0, 120) }))
+    if (temporal) return { hits: [], semantic: false, notice: 'No dated fact applied on that date. Undated text does not enter this query.', asOf: '2026-03-31' }
+    return { hits, semantic: false, notice: hits.length ? 'Semantic search is idle. These results are text-only.' : 'Semantic search is idle. Nothing matched by text.', asOf: null }
+  },
+  brainFacts: async () => demoFacts,
+  brainFactAccept: async (id: string) => { demoFacts = demoFacts.filter(f => f.id !== id); return 'Fact accepted. The next prompt can use it.' },
+  brainFactDiscard: async (id: string) => { demoFacts = demoFacts.filter(f => f.id !== id); return 'Proposta descartada.' },
+  brainCapture: async () => 'Sentence saved. It counts immediately.',
+  brainCorrect: async () => 'Correction saved. It counts now, and the eval will check it next sleep.',
+  brainEval: async () => ({ questions: [{ q: 'Where does durable memory live?', source: 'gap' }], last: { day: todayStr(), hit: 1, total: 1 } }),
+  brainBriefing: async () => 'Demo briefing. New facts are waiting for you below.',
+  automationPending: async () => [],
+  automationApprove: async () => true,
+  automationReject: async () => true,
+  onCapture: () => () => {},
+  brainCards: async () => [{ q: 'Where does durable memory live?', a: 'In long-term/, inside the repo.' }],
+  brainGradeCard: async () => ({ due: Date.now() + 86_400_000 }),
+  brainPolicy: async () => ({ active: 'No extra instructions yet.', proposals: ['- 2026-11-08: Split person facts into entity pages.'] }),
+  brainPolicyApply: async () => 'Active policy updated.',
+  brainSkills: async () => ({
+    items: demoSkillItems,
+    suggestions: [{
+      slug: 'research-skill', name: 'Research', description: 'Public research package.', type: 'skill', installs: 120, alreadyHave: false
+    }],
+    hints: demoSkillHints,
+    notes: [{
+      path: 'skills/research.md', at: new Date().toISOString(), score: 72, formatScore: 84, substanceScore: 61,
+      rationale: 'The structure is clear and the example is still generic.',
+      actions: ["Add an example using the user's vocabulary."],
+      pillars: [
+        { name: 'Scope', score: 80, rationale: 'You can see where the skill starts and ends.' },
+        { name: 'Example', score: 58, rationale: "The example does not use the person's vocabulary." }
+      ]
+    }],
+    segments: [{ id: 'KeepMind', count: 4 }, { id: 'SuperagentSkill', count: 1 }, { id: 'camaha', count: 1 }],
+    categories: [
+      { id: 'cybersec', label: 'Cybersec', count: 1 },
+      { id: 'automation', label: 'Automation', count: 2 },
+      { id: 'development', label: 'Development', count: 1 },
+      { id: 'marketing', label: 'Marketing', count: 1 },
+      { id: 'research', label: 'Research', count: 1 },
+      { id: 'writing', label: 'Writing', count: 0 },
+      { id: 'product', label: 'Product', count: 0 },
+      { id: 'sales', label: 'Sales', count: 0 },
+      { id: 'operations', label: 'Operations', count: 0 },
+      { id: 'other', label: 'Other', count: 0 }
+    ],
+    threats: []
+  }),
+  brainSkillThreatScan: async () => ({
+    threats: [{
+      path: 'skills/research.md', slug: 'research', at: new Date().toISOString(),
+      status: 'clean' as const, score: 7.5, findingsCritical: 0, findingsPublic: 0,
+      injection: 'Injection guard: clean.',
+      summary: 'trust 7.5 · no public robustness findings',
+      findings: []
+    }],
+    hints: []
+  }),
+  brainSkillKeep: async (path: string) => {
+    const kept = demoSkillItems.find(s => s.path === path)
+    const archived = demoSkillItems.filter(s => s.title === kept?.title && s.path !== path).map(s => s.path)
+    demoSkillItems = demoSkillItems.filter(s => s.path === path || s.title !== kept?.title)
+    demoSkillHints = demoSkillHints.filter(h => h.kind !== 'duplicate')
+    return { kept: path, archived }
+  },
+  brainSkillInstall: async (slug: string) => ({
+    file: `${slug}.md`, path: `skills/${slug}.md`, group: 'keepmind', segment: 'SuperagentSkill',
+    title: slug, ageDays: 0, uses: 0, mentions: 0, kind: 'skill', slug, excerpt: ''
+  }),
+  brainSkillSearch: async (query: string) => [{
+    slug: 'demo', name: query, description: 'Demo result.', type: 'skill', installs: 1, alreadyHave: false
+  }],
+  brainSkillReview: async (path: string) => ({
+    path, at: new Date().toISOString(), score: 70, formatScore: 80, substanceScore: 60,
+    rationale: 'The structure is clear and the example is still generic.',
+    actions: ["Add an example using the user's vocabulary."],
+    pillars: []
+  }),
+  brainSkillTrust: async (slug: string) => ({ slug, score: 80, summary: 'Demo trust score, 80/100.' }),
+  brainSkillEvolve: async () => ({ report: 'Demo evolution.', hints: [] }),
+  onJob: () => () => {},
+  onBrainStep: () => () => {},
+
   updaterStatus: async () => ({ version: '0.1.0', packaged: false }),
   updaterCheck: async () => ({ packaged: false }),
   updaterInstall: async () => false,
   onUpdaterEvent: () => () => {},
+
+  // stubs for APIs added after the shim — keep browser preview from crashing
+  aiCodexStatus: async () => ({ loggedIn: false }),
+  appLaunchAtLogin: async () => false,
+  appSetLaunchAtLogin: async () => false,
+  automationSetWebhook: async () => false,
+  brainActivity: async () => [],
+  brainExportConfig: async () => 'demo',
+  brainGraph: async () => ({ nodes: [], links: [] }),
+  brainHealth: async () => ({ stats: {}, recommendations: [] }),
+  brainHealthApply: async () => ({ applied: [] }),
+  brainMemoryFile: async () => '',
+  connectInfo: async () => ({ mcpScript: '', memoryDir: '', memoryRoot: 'memory/', repoUrl: null, repoOwner: null, repoName: null }),
+  layaDownload: async () => false,
+  layaStatus: async () => ({ ready: false }),
+  layaTest: async () => null,
+  modelsDelete: async () => false,
+  modelsList: async () => [],
+  onActivityPush: () => () => {},
+  onLayaProgress: () => () => {},
+  securityAiAlerts: async () => [],
+  memorySecurityConfigure: async () => ({}),
+  memorySecurityStatus: async () => ({ configured: false, unlocked: false, space: 'personal', encryptAll: true }),
+  securityConfigure: async (_patch: any) => ({}),
+  securityDecryptAll: async () => ({}),
+  securityEncryptAll: async () => ({}),
+  securityScan: async () => ({ hits: [], pii: [] }),
+  securityStatus: async () => ({ enabled: false, folders: [] }),
 
   openExternal: noopVoid
 }
