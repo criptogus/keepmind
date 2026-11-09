@@ -74,11 +74,15 @@ export class HookServer {
         return json(401, { ok: false, error: 'bad token' })
       }
 
-      // drain body (bounded) — payload isn't injected into the prompt,
-      // but we log its size for observability
+      const chunks: Buffer[] = []
       let size = 0
-      req.on('data', c => { size += c.length; if (size > MAX_BODY) req.destroy() })
+      req.on('data', (c: Buffer) => {
+        size += c.length
+        if (size > MAX_BODY) req.destroy()
+        else chunks.push(c)
+      })
       await new Promise(r => req.on('end', r))
+      const body = Buffer.concat(chunks).toString('utf8')
 
       const now = Date.now()
       if (now - (this.lastFired.get(auto.id) ?? 0) < DEBOUNCE_MS) {
@@ -88,7 +92,7 @@ export class HookServer {
 
       // respond immediately — the automation may run an LLM job for minutes
       json(202, { ok: true, accepted: true })
-      void this.scheduler.fire(auto).then(result => {
+      void this.scheduler.fire(auto, body).then(result => {
         this.log(`hook fired "${auto.name}" → ${result} (${size}B body)`)
       })
     } catch (e) {

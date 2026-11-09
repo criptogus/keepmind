@@ -197,7 +197,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
           <div className="hud-tag" style={{ marginBottom: 8 }}>KEEPMIND · SETUP</div>
           <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>KeepMind</h1>
           <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>
-            Let&apos;s set up your digital brain in ~2 minutes.
+            Vamos ligar o cérebro em poucos minutos. A memória fica no seu repositório.
           </p>
         </div>
 
@@ -210,28 +210,27 @@ export default function Wizard({ config, onDone, onToast }: Props) {
         {/* STEP 0 — welcome */}
         {step === 0 && (
           <div className="card wizard__card">
-            <h2>Your AI agents get a brain</h2>
+            <h2>Seus agentes passam a ter memória</h2>
             <p className="sub">
-              KeepMind is not a note app — it&apos;s the <strong>persistent memory engine your LLMs plug into</strong>.
-              Connect Codex, Claude, Cursor or any agent via MCP and it starts learning on its own:
-              reading, writing, organizing and consolidating knowledge in the background while you sleep.
+              O KeepMind é a memória persistente em que seus agentes leem e escrevem.
+              Codex, Claude, Cursor ou qualquer cliente MCP grava no mesmo repositório.
+              O que eles fizerem aparece em Hoje e em Atividade.
             </p>
             <div className="card card-pad" style={{ padding: '14px 18px', marginBottom: 16, borderColor: 'rgba(34,211,238,.35)' }}>
               <p className="faint" style={{ fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                🔓 <strong style={{ color: 'var(--text)' }}>Never locked to one model.</strong>{' '}
-                Your entire knowledge base is plain Markdown in <em>your</em> GitHub repo — swap Codex for Claude,
-                Cursor for Grok, local for cloud, at any moment. Zero migration, zero export, zero loss.
-                The agents are replaceable. The brain is yours.
+                <strong style={{ color: 'var(--text)' }}>O modelo pode mudar. A memória fica.</strong>{' '}
+                Tudo é Markdown no <em>seu</em> repositório. Trocar Codex por Claude, ou o modelo local
+                por um da nuvem, não pede exportação. Os agentes são substituíveis. O repositório é seu.
               </p>
             </div>
             <div className="grid grid-2" style={{ marginBottom: 8 }}>
               {[
-                ['🧠', 'Agent-native memory', 'LLMs read & write via MCP tools — no copy-paste, no context loss between sessions.'],
-                ['🔁', 'Swap brains anytime', 'Change provider whenever you want. Same memory, same skills — knowledge never leaves your repo.'],
-                ['🌙', 'Sleep-cycle learning', 'Nightly cycles replay the day and distill durable facts, lessons and skills — like memory consolidation in a real brain.'],
-                ['🧬', 'Living synaptic map', 'A real-time 3D graph of how your memories connect — watch knowledge fire as agents write.'],
-                ['🗂️', 'Tiered memory + semantic search', 'Short → medium → long-term consolidation, embeddings-powered recall, entity graph linking people & projects.'],
-                ['⚙️', 'Self-improving brain', 'Automations, skill evolution, dedup and memory hygiene — the brain maintains itself and recommends what to run next.']
+                ['🧠', 'Memória para agentes', 'O cliente MCP lê e escreve no mesmo repositório. O que foi gravado aparece em Hoje.'],
+                ['🔁', 'O modelo pode mudar', 'Trocar o provedor não exporta nada. Fatos, lições e habilidades continuam no repositório.'],
+                ['🌙', 'Sono que consolida', 'De noite o dia vira fatos, lições e habilidades. A frase do que saiu fica em Hoje.'],
+                ['🧬', 'Mapa das ligações', 'O mapa mostra as notas ligadas. Os pulsos são gravações, não enfeite.'],
+                ['🗂️', 'Memória em camadas', 'O curto prazo vira semana. O longo prazo entra de novo no próximo prompt, pelo final do arquivo.'],
+                ['⚙️', 'Trabalhos com resultado', 'Agenda, triagem e faxina deixam uma frase. A evolução só muda a política quando você aplica.']
               ].map(([e, t, d]) => (
                 <div key={t} className="card card-pad" style={{ padding: '16px 18px' }}>
                   <div className="feat-emoji" style={{ fontSize: 22, marginBottom: 8 }}>{e}</div>
@@ -241,10 +240,10 @@ export default function Wizard({ config, onDone, onToast }: Props) {
               ))}
             </div>
             <button className="btn btn--primary btn--lg" style={{ width: '100%' }} onClick={() => setStep(1)}>
-              Get started →
+              Começar →
             </button>
             <button className="btn btn--ghost" style={{ width: '100%', marginTop: 10 }} onClick={skipConnectors}>
-              Skip setup — explore first, configure later
+              Deixar a conexão para depois
             </button>
           </div>
         )}
@@ -255,7 +254,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
             <h2>1 · Connect GitHub</h2>
             <p className="sub">
               KeepMind stores all memory in <strong>a private repository you own</strong>.
-              You authorize via the browser — no token ever touches the app.
+              Você autoriza no navegador. O token fica neste computador e não entra no repositório.
             </p>
             {!ghDevice && !ghLogin && (
               <button className="btn btn--primary btn--lg" onClick={startGithub} disabled={busy}>

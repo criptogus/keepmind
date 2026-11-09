@@ -105,6 +105,22 @@ const api = {
   brainBriefing: (force?: boolean) => ipcRenderer.invoke('brain:briefing', force),
   brainMemoryFile: (rel: string) => ipcRenderer.invoke('brain:memoryFile', rel),
   brainActivity: (limit?: number) => ipcRenderer.invoke('brain:activity', limit),
+  brainLedger: (limit?: number) => ipcRenderer.invoke('brain:ledger', limit),
+  brainSearch: (query: string) => ipcRenderer.invoke('brain:search', query),
+  brainCards: () => ipcRenderer.invoke('brain:cards'),
+  brainGradeCard: (question: string, rating: string) => ipcRenderer.invoke('brain:gradeCard', question, rating),
+  brainPolicy: () => ipcRenderer.invoke('brain:policy'),
+  brainPolicyApply: () => ipcRenderer.invoke('brain:policyApply'),
+  onJob: (cb: (e: any) => void) => {
+    const handler = (_e: any, entry: any) => cb(entry)
+    ipcRenderer.on('brain:job', handler)
+    return () => { ipcRenderer.removeListener('brain:job', handler) }
+  },
+  onBrainStep: (cb: (step: string) => void) => {
+    const handler = (_e: any, step: string) => cb(step)
+    ipcRenderer.on('brain:step', handler)
+    return () => { ipcRenderer.removeListener('brain:step', handler) }
+  },
   onActivityPush: (cb: (e: any) => void) => {
     const handler = (_e: any, entry: any) => cb(entry)
     ipcRenderer.on('brain:activityPush', handler)

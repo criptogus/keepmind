@@ -104,6 +104,19 @@ async function llmDescribe(
   return out
 }
 
+const NOTES_PLACEHOLDER = '_(agents and the user can add durable context here)_'
+
+// User notes live under ## Notes. A refresh may rewrite sources and counts,
+// but it must keep whatever a person or agent wrote there.
+function preserveEntityNotes(existing: string | null): string {
+  if (!existing) return NOTES_PLACEHOLDER
+  const idx = existing.search(/\n## Notes\b/)
+  if (idx < 0) return NOTES_PLACEHOLDER
+  const body = existing.slice(idx).replace(/^\n## Notes\s*\n/, '').trim()
+  if (!body || body === NOTES_PLACEHOLDER) return NOTES_PLACEHOLDER
+  return body
+}
+
 export interface EntityRefreshResult { created: number; updated: number; total: number }
 
 export async function refreshEntities(
@@ -127,19 +140,23 @@ export async function refreshEntities(
 
   for (const h of kept) {
     const file = `entities/${slug(h.name)}.md`
-    const existed = memory.read(file) != null
+    const existing = memory.read(file)
+    const existed = existing != null
+    const keptNotes = preserveEntityNotes(existing)
+    const firstSeen = existing?.match(/first seen (\d{4}-\d{2}-\d{2})/)?.[1] ?? today
     const desc = descriptions.get(h.name.toLowerCase())
+      ?? existing?.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#') && !l.startsWith('>') && !l.startsWith('##') && !l.startsWith('-') && !l.startsWith('_'))
     const sources = [...h.files].sort().slice(0, 25)
     const linkedFrom = [...(backlinks.get(slug(h.name)) ?? [])]
       .filter(f => f !== file).sort().slice(0, 25)
     const body = [
       `# ${h.name}\n`,
-      `> entity · first seen ${today} · mentioned ${h.count}× in scanned memory\n`,
+      `> entity · first seen ${firstSeen} · mentioned ${h.count}× in scanned memory\n`,
       desc ? `\n${desc}\n` : '',
       `\n## Sources\n`,
       ...sources.map(s => `- ${s}`),
       linkedFrom.length ? `\n## Linked from\n` + linkedFrom.map(s => `- ${s}`).join('\n') + '\n' : '',
-      `\n## Notes\n\n_(agents and the user can add durable context here)_\n`
+      `\n## Notes\n\n${keptNotes}\n`
     ].join('\n')
     memory.write(file, body)
     existed ? updated++ : created++

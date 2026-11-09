@@ -474,14 +474,110 @@ export async function chatStream(
     return full
   }
 
-  // For hosted providers, fall back to non-streaming with a simulated typewriter feel
   const res = await chat(cfg, messages)
-  const words = res.text.split(/(\s+)/)
-  let acc = ''
-  for (const w of words) {
-    acc += w
-    onDelta(w)
-    await new Promise(r => setTimeout(r, 12))
-  }
+  if (res.text) onDelta(res.text)
   return res.text
+}
+
+// Live completion for the chat UI.
+// Local llama.cpp and Ollama stream tokens as they arrive.
+// Hosted providers return the finished text in one piece — no fake typewriter.
+export async function chatLive(
+  aiCfg: AiProviderConfig,
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  onDelta: (text: string) => void,
+  localEndpoint?: string
+): Promise<LlmResponse> {
+  if (aiCfg.provider === 'local' || aiCfg.provider === 'ollama') {
+    try {
+      return await streamLocal(aiCfg, messages, tools, onDelta, localEndpoint)
+    } catch { /* fall back to a blocking completion */ }
+  }
+  const res = await chat(aiCfg, messages, tools, localEndpoint)
+  if (res.text && !res.toolCalls?.length) onDelta(res.text)
+  return res
+}
+
+async function streamLocal(
+  aiCfg: AiProviderConfig,
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  onDelta: (text: string) => void,
+  localEndpoint?: string
+): Promise<LlmResponse> {
+  const cfg = effectiveConfig(aiCfg, localEndpoint)
+  messages = scrubForProvider(aiCfg, messages)
+  const isOpenAI = aiCfg.provider === 'local'
+  const base = isOpenAI
+    ? (localEndpoint ?? cfg.baseUrl ?? 'http://127.0.0.1:8765/v1')
+    : (cfg.baseUrl ?? 'http://localhost:11434')
+  const url = isOpenAI ? `${base.replace(/\/$/, '')}/chat/completions` : `${base.replace(/\/$/, '')}/api/chat`
+  const body: Record<string, unknown> = isOpenAI
+    ? {
+        model: cfg.model ?? 'local',
+        messages: messages.map(m => ({ role: m.role === 'tool' ? 'tool' : m.role, content: m.content, name: m.name })),
+        stream: true,
+        ...(tools.length ? {
+          tools: tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })),
+          tool_choice: 'auto'
+        } : {})
+      }
+    : {
+        model: cfg.model ?? MODELS.ollama[0],
+        messages: messages.map(m => ({ role: m.role === 'tool' ? 'tool' : m.role, content: m.content })),
+        stream: true
+      }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}) },
+    body: JSON.stringify(body)
+  })
+  if (!res.ok || !res.body) throw new Error('Local stream failed')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let full = ''
+  let pending = ''
+  const toolAcc = new Map<number, { id: string; name: string; arguments: string }>()
+  const consume = (rawLine: string) => {
+    const trimmed = rawLine.replace(/^data: /, '').trim()
+    if (!trimmed || trimmed === '[DONE]') return
+    const j = JSON.parse(trimmed)
+    if (isOpenAI) {
+      const delta = j.choices?.[0]?.delta ?? {}
+      if (typeof delta.content === 'string' && delta.content) {
+        full += delta.content
+        onDelta(delta.content)
+      }
+      for (const tc of delta.tool_calls ?? []) {
+        const idx = tc.index ?? 0
+        const cur = toolAcc.get(idx) ?? { id: '', name: '', arguments: '' }
+        if (tc.id) cur.id = tc.id
+        if (tc.function?.name) cur.name += tc.function.name
+        if (tc.function?.arguments) cur.arguments += tc.function.arguments
+        toolAcc.set(idx, cur)
+      }
+    } else if (j.message?.content) {
+      full += j.message.content
+      onDelta(j.message.content)
+    }
+  }
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    pending += decoder.decode(value, { stream: true })
+    const lines = pending.split('\n')
+    pending = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try { consume(line) } catch { /* partial json */ }
+    }
+  }
+  if (pending.trim()) {
+    try { consume(pending) } catch { /* ignore trailing junk */ }
+  }
+  const toolCalls = [...toolAcc.values()]
+    .filter(t => t.name)
+    .map(t => ({ id: t.id || `call_${t.name}`, name: t.name, arguments: safeJson(t.arguments) }))
+  return { text: full, toolCalls }
 }

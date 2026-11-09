@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, appendFileSync, unlinkSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveInside } from '../safe-path'
-import { chat, chatStream, type ChatMessage, type ToolDefinition } from './llm'
+import { chat, chatLive, type ChatMessage, type ToolDefinition } from './llm'
 import type { AiProviderConfig } from '../store'
 import type { McpManager } from './mcp'
 import type { LocalLlm } from './local-llm'
@@ -13,6 +13,33 @@ import type { RagService } from './rag'
 import type { LayaService } from './laya'
 import { refreshEntities } from './entities'
 import { SECRET_PATTERNS } from './redact'
+
+// Long-term files are append-only, so the durable signal is at the end.
+// Reading the head drops everything the brain just learned.
+function tail(text: string, max: number): string {
+  if (text.length <= max) return text
+  return `…\n${text.slice(-max)}`
+}
+
+export interface LedgerEntry {
+  ts: number
+  verb: 'processed' | 'discovered' | 'improved' | 'needs-you'
+  sentence: string
+  path?: string
+}
+
+export interface ChatResult {
+  text: string
+  memories: string[]
+  saved: string[]
+  steps: string[]
+}
+
+export interface JobEvent {
+  phase: 'start' | 'done' | 'error'
+  name: string
+  summary?: string
+}
 
 // ── Memory: markdown files in the local memory dir, mirrored to the GitHub repo ──
 
@@ -108,6 +135,42 @@ export class Memory {
 
   activity(limit = 200): ActivityEntry[] {
     return this.journal.slice(-limit).reverse()
+  }
+
+  // Local-only jsonl under ops/ (extension is not synced to GitHub).
+  appendJsonl(name: string, obj: unknown) {
+    try {
+      mkdirSync(join(this.dir, 'ops'), { recursive: true })
+      appendFileSync(join(this.dir, 'ops', name), JSON.stringify(obj) + '\n', 'utf8')
+    } catch { /* best-effort */ }
+  }
+
+  readJsonl(name: string, limit = 40): unknown[] {
+    try {
+      const file = join(this.dir, 'ops', name)
+      if (!existsSync(file)) return []
+      const lines = readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).slice(-limit)
+      const out: unknown[] = []
+      for (const line of lines) {
+        try { out.push(JSON.parse(line)) } catch { /* skip */ }
+      }
+      return out.reverse()
+    } catch { return [] }
+  }
+
+  readOpsJson<T>(name: string, fallback: T): T {
+    try {
+      const file = join(this.dir, 'ops', name)
+      if (!existsSync(file)) return fallback
+      return JSON.parse(readFileSync(file, 'utf8')) as T
+    } catch { return fallback }
+  }
+
+  writeOpsJson(name: string, data: unknown) {
+    try {
+      mkdirSync(join(this.dir, 'ops'), { recursive: true })
+      writeFileSync(join(this.dir, 'ops', name), JSON.stringify(data), 'utf8')
+    } catch { /* best-effort */ }
   }
 
   // Writes/removes that must NOT trigger a sync push (used by GitSync.pull)
@@ -252,8 +315,23 @@ export class Brain {
   }
   setRag(rag: RagService) { this.rag = rag }
   setLaya(l: LayaService) { this.laya = l }
+  onJob: ((event: JobEvent) => void) | null = null
+  private turnSaved: string[] = []
 
   getMemory() { return this.memory }
+
+  note(verb: LedgerEntry['verb'], sentence: string, path?: string) {
+    const entry: LedgerEntry = { ts: Date.now(), verb, sentence, path }
+    this.memory.appendJsonl('ledger.jsonl', entry)
+  }
+
+  ledger(limit = 40): LedgerEntry[] {
+    return this.memory.readJsonl('ledger.jsonl', limit) as LedgerEntry[]
+  }
+
+  private emitJob(event: JobEvent) {
+    try { this.onJob?.(event) } catch { /* renderer gone */ }
+  }
   setActivitySource(src: string) { this.memory.activitySource = src }
 
   private buildSystemContext(agent: AgentPersona, recall = ''): string {
@@ -269,11 +347,16 @@ export class Brain {
     // ── Tiered memory context (like human memory) ──
     // Long-term: durable facts, lessons and skills — always injected.
     const facts = this.memory.read('long-term/facts.md')
-    if (facts) parts.push('', '## Long-term memory — facts & preferences', facts.slice(0, 3000))
+    if (facts) parts.push('', '## Long-term memory — facts & preferences', tail(facts, 3000))
     const skills = this.memory.read('long-term/skills.md')
-    if (skills) parts.push('', '## Learned skills (from nightly sleep cycles)', skills.slice(0, 2500))
+    if (skills) parts.push('', '## Learned skills (from nightly sleep cycles)', tail(skills, 2500))
     const lessons = this.memory.read('long-term/lessons.md')
-    if (lessons) parts.push('', '## Lessons learned', lessons.slice(0, 2000))
+    if (lessons) parts.push('', '## Lessons learned', tail(lessons, 2000))
+    const policy = this.memory.read('ops/policy.md')
+    const activePolicy = (policy?.split('## Propostas')[0]?.split('## Ativo')[1] ?? '').trim()
+    if (activePolicy && !/Sem instruções extras ainda/.test(activePolicy)) {
+      parts.push('', '## Active brain policy (follow this)', tail(activePolicy, 1500))
+    }
     // Medium-term: recent weekly consolidations.
     const medium = this.memory.mediumTermFiles().slice(-2)
     for (const f of medium) {
@@ -364,6 +447,7 @@ export class Brain {
         ? `long-term/notes/${slug(title)}.md`
         : `long-term/${kind}s.md` // facts.md / lessons.md / skills.md / decisions.md
       this.memory.append(file, `\n\n## ${title}\n\n${content}\n`)
+      this.turnSaved.push(file)
       return `Saved to memory/${file} (long-term · classified as ${kind})`
     }
     if (name === 'get_memory') {
@@ -407,49 +491,72 @@ export class Brain {
     return `Unknown tool: ${name}`
   }
 
-  async chat(agentId: string, userMessage: string, onDelta?: (t: string) => void): Promise<string> {
-    await this.ensureProviderReady()
-    // Pull freshest shared memory before answering (rate-limited internally)
-    await this.gitSync?.pullIfDue().catch(() => {})
-    // Semantic recall over memory (no-op if embeddings aren't set up)
-    const recall = await this.rag?.search(userMessage).catch(() => '') ?? ''
-    const cfg = this.store.get()
-    const agent = cfg.agents.find(a => a.id === agentId) ?? cfg.agents[0]
-    const messages: ChatMessage[] = [
-      { role: 'system', content: this.buildSystemContext(agent, recall) },
-      { role: 'user', content: userMessage }
-    ]
-    const tools = this.toolDefinitions()
-
-    // Agentic loop: call LLM -> execute tool calls -> repeat (max 6 rounds)
-    let finalText = ''
-    for (let round = 0; round < 6; round++) {
-      const res = await chat(cfg.ai as AiProviderConfig, messages, tools, this.localLlm?.endpoint)
-      finalText = res.text
-      if (!res.toolCalls?.length) break
-
-      // Append assistant turn with tool calls
-      messages.push({ role: 'assistant', content: res.text || '(tool calls)' })
-      for (const tc of res.toolCalls) {
-        const result = await this.execTool(tc.name, tc.arguments)
-        messages.push({ role: 'tool', name: tc.name, content: result })
-      }
+  private recentTurns(maxPairs = 6): ChatMessage[] {
+    const today = new Date().toISOString().slice(0, 10)
+    const raw = this.memory.read(`short-term/${today}.md`) ?? ''
+    const chunks = raw.split(/\n## /).slice(-maxPairs)
+    const msgs: ChatMessage[] = []
+    for (const chunk of chunks) {
+      const m = chunk.match(/\*\*You:\*\*\s*([\s\S]*?)\n\n\*\*[^*]+:\*\*\s*([\s\S]*)$/)
+      if (!m) continue
+      const user = m[1].trim().slice(0, 2000)
+      const assistant = m[2].trim().slice(0, 2000)
+      if (!user || !assistant) continue
+      msgs.push({ role: 'user', content: user }, { role: 'assistant', content: assistant })
     }
-
-    if (onDelta) {
-      // Stream the final answer for UX
-      const words = finalText.split(/(\s+)/)
-      for (const w of words) { onDelta(w); await new Promise(r => setTimeout(r, 10)) }
-    }
-
-    // Persist exchange to short-term memory (raw daily log)
-    const day = new Date().toISOString().slice(0, 10)
-    this.memory.append(`short-term/${day}.md`, `\n\n## ${new Date().toLocaleTimeString()} — ${agent.name}\n\n**You:** ${userMessage}\n\n**${agent.name}:** ${finalText}\n`)
-    return finalText
+    return msgs
   }
 
-  async streamChat(agentId: string, userMessage: string): Promise<string> {
-    // Non-tool streaming path for snappy UX; falls back inside chat() for tool use
+  async chat(agentId: string, userMessage: string, onDelta?: (t: string) => void, onStep?: (step: string) => void): Promise<ChatResult> {
+    this.turnSaved = []
+    const steps: string[] = []
+    const step = (s: string) => { steps.push(s); onStep?.(s) }
+    try {
+      await this.ensureProviderReady()
+      step('Lendo a memória mais recente do repositório.')
+      await this.gitSync?.pullIfDue().catch(() => {})
+      const recall = await this.rag?.search(userMessage).catch(() => '') ?? ''
+      const memories = [...new Set([...recall.matchAll(/^###\s+(\S+)/gm)].map(m => m[1].replace(/\s.*/, '')))]
+      if (memories.length) step(`Encontrei ${memories.length} memória(s): ${memories.slice(0, 4).join(', ')}.`)
+      else step('Nenhuma memória semântica para esta pergunta.')
+      const cfg = this.store.get()
+      const agent = cfg.agents.find(a => a.id === agentId) ?? cfg.agents[0]
+      const messages: ChatMessage[] = [
+        { role: 'system', content: this.buildSystemContext(agent, recall) },
+        ...this.recentTurns(),
+        { role: 'user', content: userMessage }
+      ]
+      const tools = this.toolDefinitions()
+
+      let finalText = ''
+      for (let round = 0; round < 6; round++) {
+        const res = await chatLive(cfg.ai as AiProviderConfig, messages, tools, (t) => {
+          onDelta?.(t)
+        }, this.localLlm?.endpoint)
+        finalText = res.text
+        if (!res.toolCalls?.length) break
+        messages.push({ role: 'assistant', content: res.text || '(tool calls)' })
+        for (const tc of res.toolCalls) {
+          step(`Usei a ferramenta ${tc.name}.`)
+          const result = await this.execTool(tc.name, tc.arguments)
+          messages.push({ role: 'tool', name: tc.name, content: result })
+        }
+      }
+
+      const day = new Date().toISOString().slice(0, 10)
+      const rel = `short-term/${day}.md`
+      this.memory.append(rel, `\n\n## ${new Date().toLocaleTimeString()} — ${agent.name}\n\n**You:** ${userMessage}\n\n**${agent.name}:** ${finalText}\n`)
+      const saved = [...this.turnSaved]
+      if (saved.length) this.note('discovered', `A conversa guardou ${saved.length} item(ns) na memória longa.`, saved[0])
+      else this.note('processed', 'A conversa foi registrada no log de hoje.', rel)
+      const result: ChatResult = { text: finalText, memories, saved, steps }
+      return result
+    } catch (e) {
+      throw e
+    }
+  }
+
+  async streamChat(agentId: string, userMessage: string): Promise<ChatResult> {
     return this.chat(agentId, userMessage)
   }
 
@@ -606,6 +713,7 @@ export class Brain {
 
     const text = out.join('\n') + '\n'
     this.memory.write(`summaries/${day}.md`, text)
+    this.note('processed', `Resumo de ${day} pronto.`, `summaries/${day}.md`)
     return text
   }
 
@@ -654,6 +762,7 @@ export class Brain {
 
     const text = `# Briefing — ${day}\n\n${res.text}\n`
     this.memory.write(cachePath, text)
+    this.note('processed', `Briefing de ${day} escrito.`, cachePath)
     return text
   }
 
@@ -688,7 +797,7 @@ export class Brain {
     return corpus
   }
 
-  async sleep(): Promise<{ report: string; consolidated: number }> {
+  async sleep(): Promise<{ report: string; consolidated: number; summary: string }> {
     const cfg = this.store.get()
     const day = new Date().toISOString().slice(0, 10)
     const corpus = this.recentCorpus()
@@ -696,7 +805,9 @@ export class Brain {
     if (!corpus.trim()) {
       const report = `# Sleep cycle — ${day}\n\nNo memory activity to process yet. The brain sleeps peacefully. 💤\n`
       this.memory.write(`sleep/${day}.md`, report)
-      return { report, consolidated: 0 }
+      const summary = `Sono de ${day}: nada novo para consolidar.`
+      this.note('processed', summary, `sleep/${day}.md`)
+      return { report, consolidated: 0, summary }
     }
 
     // 1) Nightly learning — the 5 questions
@@ -795,7 +906,9 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     //    semantically searchable immediately instead of waiting for lazy scan
     void this.rag?.reindex().catch(() => {})
 
-    return { report: res.text, consolidated }
+    const summary = `Sono de ${day}: consolidou ${consolidated} log(s) e gravou o relatório.`
+    this.note('processed', summary, `sleep/${day}.md`)
+    return { report: res.text, consolidated, summary }
   }
 
   private async consolidateShortTerm(): Promise<number> {
@@ -818,9 +931,24 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
     let consolidated = 0
     for (const [week, files] of weeks) {
       const target = `medium-term/${week}.md`
-      if (this.memory.read(target)) {
-        // already consolidated — just drop the raw files
-        for (const f of files) this.memory.remove(`short-term/${f}`)
+      const existingWeek = this.memory.read(target)
+      if (existingWeek) {
+        // A previous pass already opened this week. Append days that are
+        // not in the file yet — never delete a log that was not copied.
+        const fresh = files.filter(f => !existingWeek.includes(`## ${f.replace('.md', '')}`))
+        if (fresh.length) {
+          const extra = fresh.map(f => {
+            const day = f.replace('.md', '')
+            const content = this.memory.read(`short-term/${f}`) ?? ''
+            return `## ${day}\n\n${content.trim()}`
+          })
+          this.memory.append(target, `\n\n${extra.join('\n\n')}\n`)
+        }
+        for (const f of files) {
+          const day = f.replace('.md', '')
+          const merged = (this.memory.read(target) ?? '').includes(`## ${day}`)
+          if (merged) this.memory.remove(`short-term/${f}`)
+        }
         consolidated += files.length
         continue
       }
@@ -903,6 +1031,7 @@ Only include genuinely durable items. Skip anything ephemeral. If a section is e
       ''
     ].join('\n')
     this.memory.write(`insights/librarian-${day}.md`, report)
+    this.note('improved', `Librarian de ${day}: ${consolidated} logs consolidados, ${deduped} duplicatas removidas, ${entities.created} entidades novas.`, `insights/librarian-${day}.md`)
     return report
   }
 
@@ -952,6 +1081,10 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
     const report = `# Evolution — ${day}\n\n_Generated ${new Date().toISOString()} · stats: ${JSON.stringify(stats)}_\n\n${res.text}\n`
     this.memory.write(`insights/evolution-${day}.md`, report)
     this.memory.append('long-term/evolution.md', `\n\n## ${day}\n\n${res.text}\n`)
+    this.ensurePolicy()
+    const proposal = res.text.replace(/\s+/g, ' ').trim().slice(0, 420)
+    this.memory.append('ops/policy.md', `\n- ${day}: ${proposal}\n`)
+    this.note('improved', `Evolução de ${day} deixou uma proposta na política do cérebro.`, 'ops/policy.md')
 
     try {
       if (this.gitSync) await this.gitSync.syncNow()
@@ -972,11 +1105,15 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
   private enrichNote(rel: string, entityNames: string[]): boolean {
     const content = this.memory.read(rel) ?? ''
     if (!content.trim()) return false
-    // already enriched (frontmatter marker or legacy Enrichment section)
-    if (/^---\n[\s\S]*?enriched:/m.test(content) || content.includes('## Enrichment')) return false
+    if (content.includes('## Enrichment')) return false
+    const rawBody = content.replace(/^---\n[\s\S]*?\n---\n?/, '')
+    const hash = fnv(rawBody)
+    const had = /^---\n[\s\S]*?enriched:/m.test(content)
+    const prevHash = content.match(/^body: ([0-9a-f]+)$/m)?.[1]
+    // Notes enriched before hashes existed stay put. A later edit changes the hash and gets a new pass.
+    if (had && (!prevHash || prevHash === hash)) return false
 
-    const body = content
-      .replace(/^---\n[\s\S]*?\n---\n?/, '')          // strip existing frontmatter
+    const body = rawBody
       .replace(/```[\s\S]*?```/g, ' ')               // drop code blocks
       .replace(/^#{1,6}\s+.+$/gm, ' ')               // drop headings (title isn't summary)
       .replace(/^>\s.*$/gm, ' ')                     // drop meta/blockquote lines
@@ -1001,7 +1138,7 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
     if (!summary && !tags.length) return false
 
     const day = new Date().toISOString().slice(0, 10)
-    const fmLines = ['---', `enriched: ${day}`]
+    const fmLines = ['---', `enriched: ${day}`, `body: ${hash}`]
     if (summary) fmLines.push(`summary: ${JSON.stringify(summary)}`)
     if (tags.length) fmLines.push(`tags: ${tags.join(', ')}`)
     if (links.length) fmLines.push(`links: ${links.map(l => `[[${l}]]`).join(', ')}`)
@@ -1044,6 +1181,7 @@ Rules: ground every proposal in evidence from the reports. Be concrete and skept
       if (this.gitSync) await this.gitSync.syncNow()
     } catch { /* offline ok */ }
     void this.rag?.reindex().catch(() => {})
+    this.note('improved', `Enriquecimento de ${day}: ${enriched} nota(s) ganharam resumo e ligações.`, `insights/enrich-${day}.md`)
     return { enriched, report }
   }
 
@@ -1089,60 +1227,95 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
     return fresh.length
   }
 
-  // Review session: sample cards, ask the LLM to answer blind, then grade.
+  // The person grades cards on Today. This job only counts what is due.
   async review(): Promise<string> {
     const day = new Date().toISOString().slice(0, 10)
-    const raw = this.memory.read('review/cards.md') ?? ''
-    const cards = [...raw.matchAll(/^Q:\s*(.+)\nA:\s*(.+)$/gm)]
-      .map(m => ({ q: m[1].trim(), a: m[2].trim() }))
-      .filter(c => c.q && c.a)
-
-    if (!cards.length) {
-      const msg = '# Review — no flashcards yet\n\nRun a sleep cycle first — it generates cards from long-term learnings.\n'
-      this.memory.write(`review/session-${day}.md`, msg)
-      return msg
-    }
-
-    // deterministic-ish sample of up to 8 cards
-    const sample = cards.sort(() => Math.random() - 0.5).slice(0, 8)
-    const questions = sample.map((c, i) => `${i + 1}. ${c.q}`).join('\n')
-
-    // blind self-test: can the brain answer its own cards?
-    const answers = await chat(this.store.get().ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: `You are taking a closed-book quiz on your own knowledge base. Answer each numbered question from memory — concise, one line each, format "N. answer". If unsure, say "don't know" honestly.`
-      },
-      { role: 'user', content: questions }
-    ], [], this.localLlm?.endpoint)
-
-    // grade: show correct answers next to model's attempt
-    const grade = await chat(this.store.get().ai as AiProviderConfig, [
-      {
-        role: 'system',
-        content: `Grade a quiz. For each question show: the model's answer, the correct answer, and PASS/FAIL (PASS = same fact, wording may differ). End with "Score: N/M". Be strict but fair.`
-      },
-      {
-        role: 'user',
-        content: `QUESTIONS:\n${questions}\n\nMODEL ANSWERS:\n${answers.text}\n\nCORRECT ANSWERS:\n${sample.map((c, i) => `${i + 1}. ${c.a}`).join('\n')}`
-      }
-    ], [], this.localLlm?.endpoint)
-
-    const report = [
-      `# Review session — ${day}`,
-      `_${sample.length} cards sampled from ${cards.length} total_`,
-      '',
-      '## Questions', '', questions, '',
-      '## Model answers (blind)', '', answers.text, '',
-      '## Grading', '', grade.text, ''
-    ].join('\n')
+    const due = this.dueCards(5)
+    const sentence = due.length
+      ? `${due.length} card(s) esperam sua revisão em Hoje.`
+      : 'Nenhum card vencido para revisar.'
+    const report = `# Revisão — ${day}\n\n${sentence}\n\nA nota é sua, na tela Hoje.\n`
     this.memory.write(`review/session-${day}.md`, report)
+    this.note(due.length ? 'needs-you' : 'processed', sentence, 'review/cards.md')
+    return sentence
+  }
 
-    try {
-      if (this.gitSync) await this.gitSync.syncNow()
-    } catch { /* offline ok */ }
-    void this.rag?.reindex().catch(() => {})
-    return report
+  compactLongTerm(): string {
+    const budgets: Record<string, number> = {
+      'facts.md': 12000,
+      'lessons.md': 8000,
+      'skills.md': 10000
+    }
+    let removed = 0
+    let trimmed = 0
+    for (const [file, budget] of Object.entries(budgets)) {
+      const raw = this.memory.read(`long-term/${file}`)
+      if (!raw) continue
+      const seen = new Set<string>()
+      const kept: string[] = []
+      for (const line of raw.split('\n')) {
+        const key = line.trim().toLowerCase()
+        if (key.startsWith('- ') && seen.has(key)) { removed++; continue }
+        if (key.startsWith('- ')) seen.add(key)
+        kept.push(line)
+      }
+      let text = kept.join('\n').replace(/\n{3,}/g, '\n\n')
+      if (text.length > budget) {
+        text = `…\n${text.slice(-budget)}`
+        trimmed++
+      }
+      if (text !== raw) this.memory.write(`long-term/${file}`, text.endsWith('\n') ? text : `${text}\n`)
+    }
+    const sentence = trimmed
+      ? `Compactação: ${removed} linha(s) repetida(s) saíram e ${trimmed} arquivo(s) ficaram no orçamento do prompt.`
+      : `Compactação: ${removed} linha(s) repetida(s) saíram da memória longa.`
+    this.note('improved', sentence, 'long-term/facts.md')
+    return sentence
+  }
+
+  escalateTasks(): string {
+    const day = new Date().toISOString().slice(0, 10)
+    const hits: string[] = []
+    for (const f of this.memory.list('tasks')) {
+      const content = this.memory.read(`tasks/${f}`) ?? ''
+      if (!/status:\s*open/.test(content)) continue
+      const title = (content.match(/^#\s+(.+)$/m)?.[1] ?? f).trim()
+      const due = content.match(/due:\s*(\d{4}-\d{2}-\d{2})/)?.[1]
+      const priority = content.match(/priority:\s*(high|normal|low)/)?.[1] ?? 'normal'
+      if (priority === 'high') hits.push(`${title} (prioridade alta)`)
+      else if (due && due < day) hits.push(`${title} (atrasada desde ${due})`)
+    }
+    const sentence = hits.length
+      ? `${hits.length} tarefa(s) pedem atenção: ${hits.slice(0, 3).join('; ')}.`
+      : 'Nenhuma tarefa atrasada ou de prioridade alta.'
+    this.note(hits.length ? 'needs-you' : 'processed', sentence, hits.length ? 'tasks/' : undefined)
+    return sentence
+  }
+
+  closeSearchGaps(): string {
+    const raw = this.memory.read('ops/search-gaps.md') ?? ''
+    if (!raw.trim()) {
+      const sentence = 'Nenhuma lacuna de busca aberta.'
+      this.note('processed', sentence, 'ops/search-gaps.md')
+      return sentence
+    }
+    let closed = 0
+    const next = raw.split('\n').map(line => {
+      if (line.includes('→')) return line
+      const q = line.match(/"([^"]+)"/)?.[1]
+      if (!q) return line
+      const hit = this.searchVault(q)[0]
+      if (!hit) return line
+      closed++
+      return `${line} → ${hit.path}`
+    })
+    if (closed) this.memory.write('ops/search-gaps.md', next.join('\n'))
+    const open = next.filter(l => /"[^"]+"/.test(l) && !l.includes('→')).length
+    const sentence = closed
+      ? `Fechei ${closed} lacuna(s) de busca com arquivos da memória. ${open} continuam sem resposta.`
+      : `${open} lacuna(s) de busca continuam sem arquivo correspondente.`
+    this.note(closed ? 'improved' : 'processed', sentence, 'ops/search-gaps.md')
+    return sentence
   }
 
   // ── Security audit: scan memory for leaked secrets ──
@@ -1173,6 +1346,7 @@ Rules: only cards with real retrieval value (decisions, procedures, corrections,
       : [`# Security audit — ${day}`, '', '✅ No secret patterns detected in memory files.', '']
     const text = report.join('\n')
     this.memory.write(`insights/security-${day}.md`, text)
+    this.note(hits.length ? 'needs-you' : 'processed', hits.length ? `Auditoria achou ${hits.length} possível(is) segredo(s). O valor não foi exibido.` : `Auditoria de ${day} não achou segredos.`, `insights/security-${day}.md`)
     return text
   }
 
@@ -1445,6 +1619,103 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
     return { imported: out.length }
   }
 
+  private ensurePolicy() {
+    if (this.memory.read('ops/policy.md')) return
+    this.memory.write('ops/policy.md', [
+      '# Política do cérebro',
+      '',
+      '## Ativo',
+      '',
+      'Sem instruções extras ainda. Uma proposta aprovada passa a valer aqui e o sono seguinte lê este bloco.',
+      '',
+      '## Propostas',
+      ''
+    ].join('\n'))
+  }
+
+  policy(): { active: string; proposals: string[] } {
+    this.ensurePolicy()
+    const raw = this.memory.read('ops/policy.md') ?? ''
+    const [head, tailPart] = raw.split('## Propostas')
+    const active = (head.split('## Ativo')[1] ?? '').trim()
+    const proposals = (tailPart ?? '').split('\n').map(l => l.trim()).filter(l => l.startsWith('- '))
+    return { active, proposals }
+  }
+
+  applyLatestPolicy(): string {
+    this.ensurePolicy()
+    const raw = this.memory.read('ops/policy.md') ?? ''
+    const tailPart = raw.split('## Propostas')[1]
+    const proposals = (tailPart ?? '').split('\n').map(l => l.trim()).filter(l => l.startsWith('- '))
+    const last = proposals.pop()
+    if (!last) return 'Nenhuma proposta para aplicar.'
+    const body = last.replace(/^- \d{4}-\d{2}-\d{2}:\s*/, '')
+    const next = [
+      '# Política do cérebro',
+      '',
+      '## Ativo',
+      '',
+      body,
+      '',
+      '## Propostas',
+      '',
+      ...proposals,
+      ''
+    ].join('\n')
+    this.memory.write('ops/policy.md', next)
+    this.note('improved', 'A política ativa do cérebro foi atualizada com a última proposta.', 'ops/policy.md')
+    return 'Política ativa atualizada. O próximo sono vai seguir este texto.'
+  }
+
+  searchVault(query: string): { path: string; title: string; snippet: string }[] {
+    const q = query.trim().toLowerCase()
+    if (q.length < 2) return []
+    const hits: { path: string; title: string; snippet: string }[] = []
+    for (const rel of this.memory.allRelFiles()) {
+      if (!rel.endsWith('.md')) continue
+      if (rel.startsWith('ops/')) continue
+      const content = this.memory.read(rel) ?? ''
+      const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? rel
+      const hay = `${rel}\n${title}\n${content}`.toLowerCase()
+      const at = hay.indexOf(q)
+      if (at < 0) continue
+      const snippet = content.replace(/\s+/g, ' ').slice(Math.max(0, at - 60), at + 140)
+      hits.push({ path: rel, title, snippet })
+      if (hits.length >= 12) break
+    }
+    return hits
+  }
+
+  private reviewState(): Record<string, { due: number; interval: number }> {
+    return this.memory.readOpsJson('review-state.json', {} as Record<string, { due: number; interval: number }>)
+  }
+
+  dueCards(limit = 5): { q: string; a: string }[] {
+    const raw = this.memory.read('review/cards.md') ?? ''
+    const cards = [...raw.matchAll(/^Q:\s*(.+)\nA:\s*(.+)$/gm)]
+      .map(m => ({ q: m[1].trim(), a: m[2].trim() }))
+      .filter(c => c.q && c.a)
+    const state = this.reviewState()
+    const now = Date.now()
+    return cards.filter(c => (state[c.q]?.due ?? 0) <= now).slice(0, limit)
+  }
+
+  gradeCard(question: string, rating: 'again' | 'hard' | 'good' | 'easy'): { due: number } {
+    const state = this.reviewState()
+    const prev = state[question] ?? { due: 0, interval: 0 }
+    const day = 86_400_000
+    let interval = prev.interval
+    if (rating === 'again') interval = 0
+    else if (rating === 'hard') interval = Math.max(1, interval || 1)
+    else if (rating === 'good') interval = interval < 1 ? 1 : Math.round(interval * 2)
+    else interval = interval < 1 ? 3 : Math.round(interval * 3)
+    const due = Date.now() + Math.max(interval, rating === 'again' ? 0 : interval) * (rating === 'again' ? 60_000 : day)
+    state[question] = { due: rating === 'again' ? Date.now() + 10 * 60_000 : due, interval }
+    this.memory.writeOpsJson('review-state.json', state)
+    this.note('processed', `Revisão marcada como ${rating}.`, 'review/cards.md')
+    return { due: state[question].due }
+  }
+
   // Wikilink graph of the whole vault — powers the 3D neural view.
   // Cached for 60s: scanning ~10k files is too slow per frame.
   private graphCache: { at: number; data: any } | null = null
@@ -1492,8 +1763,8 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
     }
     // Cap: keep the most-connected nodes so the 3D view stays interactive
     let nodeList = [...nodes.values()]
-    if (nodeList.length > 3000) {
-      nodeList = nodeList.sort((a, b) => b.links - a.links).slice(0, 3000)
+    if (nodeList.length > 800) {
+      nodeList = nodeList.sort((a, b) => b.links - a.links).slice(0, 800)
     }
     const keep = new Set(nodeList.map(n => n.id))
     const links = [...edgeSet]
@@ -1504,6 +1775,15 @@ Rules: be skeptical — fewer, sharper skills beat many vague ones. Ground every
     this.graphCache = { at: Date.now(), data }
     return data
   }
+}
+
+function fnv(s: string): string {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0).toString(16)
 }
 
 function slug(s: string): string {

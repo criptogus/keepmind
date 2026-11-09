@@ -31,13 +31,17 @@ export function parseNaturalSchedule(text: string): ParsedSchedule {
   let kind: Automation['kind'] = 'brain'
   if (/\b(sleep|sono|dormir|learning cycle)\b/.test(t)) kind = 'sleep'
   else if (/\b(librarian|hygiene|defrag|vault|dedup|limpeza|faxina)\b/.test(t)) kind = 'librarian'
+  else if (/\b(compact|compactar|podar mem[oó]ria)\b/.test(t)) kind = 'compact'
+  else if (/\b(escala|escalar|atrasad|prioridade alta)\b/.test(t)) kind = 'escalate'
+  else if (/\b(lacuna|search gap|gaps)\b/.test(t)) kind = 'gaps'
   else if (/\b(evol|evolve|evolução|self-improv|meta-learn|upgrade the brain)\b/.test(t)) kind = 'evolve'
   else if (/\b(enrich|enriquec|annotate|tag notes|wikilink)\b/.test(t)) kind = 'enrich'
   else if (/\b(quiz|review|flashcard|revis|estudo|self-test|spaced)\b/.test(t)) kind = 'review'
   else if (/\b(triage|triagem|sort inbox|classify|classificar|route captures)\b/.test(t)) kind = 'triage'
   else if (/\b(security|seguran[çc]a|secret|vazamento|credential|audit)\b/.test(t)) kind = 'security'
   else if (/\b(skills?|habilidades)\b/.test(t) && /\b(evol|review|curat|consolid|promot)/.test(t)) kind = 'skills'
-  else if (/\b(daily summary|sum[aá]rio|recap|briefing)\b/.test(t)) kind = 'summary'
+  else if (/\bbriefing\b/.test(t)) kind = 'briefing'
+  else if (/\b(daily summary|sum[aá]rio|recap)\b/.test(t)) kind = 'summary'
 
   // Suggested name: first meaningful words
   const name = text.trim().split(/\s+/).slice(0, 7).join(' ').replace(/[.,;:!?]+$/, '') || 'automation'
@@ -113,6 +117,8 @@ export class AutomationScheduler {
   private timer: NodeJS.Timeout | null = null
   private running = new Set<string>()
   private listeners = new Set<(a: Automation) => void>()
+  private payloads = new Map<string, string>()
+  onStatus: ((event: { phase: 'start' | 'done' | 'error'; name: string; summary?: string }) => void) | null = null
 
   constructor(private store: Store, private brain: Brain, private log: (m: string) => void) {}
 
@@ -133,7 +139,7 @@ export class AutomationScheduler {
   // Single entry point for "run this automation now-ish": used by the cron
   // tick AND by external webhook triggers. Approval-mode jobs are queued
   // for the user instead of executing. Returns what happened.
-  async fire(auto: Automation): Promise<'ran' | 'queued' | 'busy' | 'error'> {
+  async fire(auto: Automation, payload?: string): Promise<'ran' | 'queued' | 'busy' | 'error'> {
     if (auto.mode === 'approval') {
       const pending = this.store.get().pendingApprovals
       if (!pending.some(p => p.automationId === auto.id)) {
@@ -154,6 +160,7 @@ export class AutomationScheduler {
     }
     if (this.running.has(auto.id)) return 'busy'
     this.running.add(auto.id)
+    if (payload?.trim()) this.payloads.set(auto.id, payload.slice(0, 8000))
     try {
       await this.run(auto)
       for (const cb of this.listeners) cb(auto)
@@ -200,50 +207,115 @@ export class AutomationScheduler {
         return now.getTime() - last.getTime() >= every * 60_000
       }
       case 'daily': {
-        const [h, m] = (auto.time ?? '08:00').split(':').map(Number)
-        const due = new Date(now); due.setHours(h, m, 0, 0)
-        if (now < due) return false
-        if (!last) return true
-        return last.toDateString() !== now.toDateString()
+        const due = lastOccurrence(now, auto.time ?? '08:00')
+        // First run waits for today's clock. A later open catches the last missed slot.
+        if (!last) return now >= due && due.toDateString() === now.toDateString()
+        return last < due
       }
       case 'weekly': {
-        const [h, m] = (auto.time ?? '09:00').split(':').map(Number)
-        const due = new Date(now); due.setHours(h, m, 0, 0)
-        if (now.getDay() !== (auto.weekday ?? 1) || now < due) return false
-        if (!last) return true
-        return last.toDateString() !== now.toDateString()
+        const due = lastWeekly(now, auto.weekday ?? 1, auto.time ?? '09:00')
+        if (!last) return now >= due && due.toDateString() === now.toDateString()
+        return last < due
+      }
+      default: {
+        const neverSchedule: never = auto.schedule
+        void neverSchedule
+        return false
       }
     }
   }
 
   async run(auto: Automation) {
     this.log(`automation "${auto.name}" running (${auto.kind})`)
+    this.onStatus?.({ phase: 'start', name: auto.name })
     this.brain.setActivitySource(`auto:${auto.name}`)
     await this.brain.ensureProviderReady()
-    if (auto.kind === 'sleep') {
-      await this.brain.sleep()
-    } else if (auto.kind === 'librarian') {
-      await this.brain.librarian()
-    } else if (auto.kind === 'evolve') {
-      await this.brain.evolve()
-    } else if (auto.kind === 'enrich') {
-      await this.brain.enrich()
-    } else if (auto.kind === 'review') {
-      await this.brain.review()
-    } else if (auto.kind === 'security') {
-      await this.brain.securityAudit()
-    } else if (auto.kind === 'skills') {
-      await this.brain.evolveSkills()
-    } else if (auto.kind === 'triage') {
-      await this.brain.triageInbox()
-    } else if (auto.kind === 'summary') {
-      await this.brain.generateInsights()
-      await this.brain.dailySummary()
-    } else {
-      await this.brain.chat('brain',
-        `[AUTOMATION] ${auto.instruction}\n\n` +
-        `This is a scheduled automation. Do the task, save important results to memory, and reply with a short report of what you did.`)
+    const payload = this.payloads.get(auto.id)
+    this.payloads.delete(auto.id)
+    let summary = 'Concluído.'
+    try {
+      summary = await this.execute(auto, payload)
+      this.onStatus?.({ phase: 'done', name: auto.name, summary })
+    } catch (e) {
+      summary = e instanceof Error ? e.message : String(e)
+      this.onStatus?.({ phase: 'error', name: auto.name, summary })
+      throw e
+    } finally {
+      this.store.set({
+        automations: this.store.get().automations.map(a =>
+          a.id === auto.id ? { ...a, lastSummary: summary } : a)
+      })
     }
     this.log(`automation "${auto.name}" done`)
   }
+
+  private async execute(auto: Automation, payload?: string): Promise<string> {
+    const event = payload?.trim()
+      ? `\n\nEvento recebido pelo webhook:\n${payload.trim().slice(0, 4000)}`
+      : ''
+    switch (auto.kind) {
+      case 'sleep': {
+        const r = await this.brain.sleep()
+        return r.summary
+      }
+      case 'librarian':
+        return firstLine(await this.brain.librarian())
+      case 'evolve':
+        return firstLine(await this.brain.evolve())
+      case 'enrich': {
+        const r = await this.brain.enrich()
+        return `Enriquecidas ${r.enriched} notas.`
+      }
+      case 'review':
+        return firstLine(await this.brain.review())
+      case 'security':
+        return firstLine(await this.brain.securityAudit())
+      case 'skills':
+        return firstLine(await this.brain.evolveSkills())
+      case 'triage':
+        return firstLine(await this.brain.triageInbox())
+      case 'summary': {
+        await this.brain.generateInsights()
+        return firstLine(await this.brain.dailySummary())
+      }
+      case 'briefing':
+        return firstLine(await this.brain.briefing(true))
+      case 'escalate':
+        return this.brain.escalateTasks()
+      case 'compact':
+        return this.brain.compactLongTerm()
+      case 'gaps':
+        return this.brain.closeSearchGaps()
+      case 'brain': {
+        const r = await this.brain.chat('brain',
+          `[AUTOMATION] ${auto.instruction}${event}\n\n` +
+          `This is a scheduled automation. Do the task, save important results to memory, and reply with a short report of what you did.`)
+        return firstLine(r.text)
+      }
+      default: {
+        const neverKind: never = auto.kind
+        return `Tipo de automação desconhecido: ${neverKind}`
+      }
+    }
+  }
+}
+
+function lastOccurrence(now: Date, time: string): Date {
+  const [h, m] = time.split(':').map(Number)
+  const due = new Date(now)
+  due.setHours(h || 0, m || 0, 0, 0)
+  if (now < due) due.setDate(due.getDate() - 1)
+  return due
+}
+
+function lastWeekly(now: Date, weekday: number, time: string): Date {
+  const due = lastOccurrence(now, time)
+  const delta = (due.getDay() - weekday + 7) % 7
+  due.setDate(due.getDate() - delta)
+  return due
+}
+
+function firstLine(text: string): string {
+  const line = text.split('\n').map(l => l.replace(/^[#>*_\-\s]+/, '').trim()).find(Boolean)
+  return (line ?? 'Concluído.').slice(0, 180)
 }

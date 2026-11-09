@@ -12,6 +12,11 @@ const OP_STYLE: Record<string, { color: string; label: string }> = {
   remove: { color: 'var(--red, #fb7185)', label: 'REMOVE' }
 }
 
+function localDay(ts: number) {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function sourceColor(src: string) {
   if (src.startsWith('auto:')) return 'var(--amber)'
   if (src === 'chat') return 'var(--violet, #a78bfa)'
@@ -37,7 +42,13 @@ export default function Activity() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    refresh()
+    const off = window.sb.onActivityPush?.((entry: any) => {
+      if (entry) setEntries(prev => [entry, ...prev].slice(0, 800))
+    })
+    return () => { off?.() }
+  }, [])
 
   const sources = useMemo(() => [...new Set(entries.map(e => e.source))].sort(), [entries])
   const filtered = useMemo(() => entries.filter(e =>
@@ -49,15 +60,15 @@ export default function Activity() {
   const groups = useMemo(() => {
     const g = new Map<string, any[]>()
     for (const e of filtered) {
-      const d = new Date(e.ts).toISOString().slice(0, 10)
+      const d = localDay(e.ts)
       if (!g.has(d)) g.set(d, [])
       g.get(d)!.push(e)
     }
     return [...g.entries()]
   }, [filtered])
 
-  const today = new Date().toISOString().slice(0, 10)
-  const todayEntries = entries.filter(e => new Date(e.ts).toISOString().slice(0, 10) === today)
+  const today = localDay(Date.now())
+  const todayEntries = entries.filter(e => localDay(e.ts) === today)
   const bySource = todayEntries.reduce<Record<string, number>>((m, e) => ({ ...m, [e.source]: (m[e.source] ?? 0) + 1 }), {})
 
   const toggleFile = async (path: string) => {
@@ -71,10 +82,10 @@ export default function Activity() {
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>BRAIN TELEMETRY</div>
-          <h1>Activity</h1>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>Registro</div>
+          <h1>Atividade</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Everything the brain wrote, appended or removed — and who did it.
+            Cada arquivo que o cérebro escreveu, completou ou apagou, e quem fez isso. O dia segue o relógio deste computador.
           </p>
         </div>
         <button className="btn btn--ghost" onClick={refresh} disabled={loading}>
@@ -123,7 +134,7 @@ export default function Activity() {
         {groups.map(([day, items]) => (
           <div key={day}>
             <div className="faint mono" style={{ fontSize: 11, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.08em' }}>
-              {day === today ? 'Today' : day}
+              {day === today ? 'Hoje' : day}
             </div>
             <div className="card" style={{ padding: '4px 0' }}>
               {items.map((e, i) => {
@@ -170,7 +181,7 @@ export default function Activity() {
         {!filtered.length && !loading && (
           <div className="card card-pad">
             <p className="faint" style={{ fontSize: 13 }}>
-              No activity yet. The journal records every memory write — chat answers, sleep cycles, automations and connectors will show up here.
+              Ainda não há atividade. Conversas, sono, agenda e conectores aparecem aqui no momento em que gravam alguma coisa.
             </p>
           </div>
         )}

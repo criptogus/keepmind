@@ -50,7 +50,7 @@ export interface Automation {
   id: string
   name: string
   instruction: string          // what the brain should do (natural language)
-  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review' | 'security' | 'skills' | 'triage'
+  kind: 'brain' | 'sleep' | 'summary' | 'librarian' | 'evolve' | 'enrich' | 'review' | 'security' | 'skills' | 'triage' | 'briefing' | 'escalate' | 'compact' | 'gaps'
   schedule: 'daily' | 'interval' | 'weekly'
   time?: string                // 'HH:MM' for daily/weekly
   everyMinutes?: number        // for interval
@@ -60,6 +60,7 @@ export interface Automation {
   webhook?: boolean          // expose POST /hook/<id> trigger
   webhookToken?: string      // shared secret for the webhook (server-generated)
   lastRunAt?: string
+  lastSummary?: string       // one-line result of the last run, shown in the UI
   createdAt: string
 }
 
@@ -158,6 +159,42 @@ function defaultConfig(): AppConfig {
         id: 'enrich-nightly', name: 'Nightly note enrichment',
         instruction: 'Enrich recent notes with summaries, topic tags and entity wikilinks.',
         kind: 'enrich', schedule: 'daily', time: '02:30',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'briefing-morning', name: 'Morning briefing',
+        instruction: 'Write the daily briefing from tasks, goals and recent notes.',
+        kind: 'briefing', schedule: 'daily', time: '08:05',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'escalate-morning', name: 'Task escalation',
+        instruction: 'Surface overdue and high-priority tasks.',
+        kind: 'escalate', schedule: 'daily', time: '08:05',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'compact-nightly', name: 'Compact long-term memory',
+        instruction: 'Drop duplicate lines and keep long-term files inside the prompt budget.',
+        kind: 'compact', schedule: 'daily', time: '23:20',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'review-evening', name: 'Human review queue',
+        instruction: 'Put due flashcards on Today for the person to grade.',
+        kind: 'review', schedule: 'daily', time: '20:00',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'gaps-friday', name: 'Close search gaps',
+        instruction: 'Match unanswered searches to files already in memory and mark the ones that now resolve.',
+        kind: 'gaps', schedule: 'weekly', weekday: 5, time: '18:00',
+        enabled: true, createdAt: new Date().toISOString()
+      },
+      {
+        id: 'security-weekly', name: 'Weekly security audit',
+        instruction: 'Scan memory for leaked secrets without printing values.',
+        kind: 'security', schedule: 'weekly', weekday: 1, time: '09:30',
         enabled: true, createdAt: new Date().toISOString()
       }
     ],

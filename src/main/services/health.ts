@@ -120,14 +120,14 @@ export function analyzeHealth(store: Store, memory: Memory): HealthReport {
   }
 
   // ── 2. Search gaps = unanswered questions = intelligence leaking ──
-  if (searchGaps > 0 && !hasKind('brain')) {
+  if (searchGaps > 0 && !hasKind('gaps')) {
     recs.push({
       id: 'search-gaps', impact: 'high',
       title: `${searchGaps} unanswered queries in search-gaps.md`,
-      detail: 'Queries that found nothing are recorded in ops/search-gaps.md — each one is a hole in the brain. A weekly job can research and answer them.',
+      detail: 'Queries that found nothing are recorded in ops/search-gaps.md. A weekly job marks the ones that already match a file, without sending the list to a model.',
       action: { type: 'create-automation', automation: {
-        name: 'Search-gap researcher', kind: 'brain', schedule: 'weekly', weekday: 5, time: '10:00',
-        instruction: 'Read ops/search-gaps.md, pick the top unanswered queries, research them using memory + MCP tools, and save durable answers to long-term notes. Then prune answered gaps.',
+        name: 'Close search gaps', kind: 'gaps', schedule: 'weekly', weekday: 5, time: '18:00',
+        instruction: 'Match unanswered searches to files already in memory and mark the ones that now resolve.',
         enabled: true, mode: 'auto'
       } }
     })

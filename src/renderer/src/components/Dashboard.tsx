@@ -46,10 +46,10 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>BRAIN HEALTH</div>
-          <h1>Second brain diagnostics</h1>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>Saúde</div>
+          <h1>Diagnóstico do cérebro</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Meta-insights about the brain itself — what to automate, what's idle, how to get smarter.
+            O que falta automatizar, o que está parado e o que deixa a memória mais útil. O que aconteceu hoje está em Hoje.
             {report && <> Generated {new Date(report.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · recomputed from journal + vault on every load.</>}
           </p>
         </div>

@@ -34,7 +34,7 @@ const CONFIG_SET_KEYS = new Set(['mcpServers', 'onboardingDone', 'background'])
 const MCP_PATCH_KEYS = new Set(['id', 'name', 'kind', 'enabled', 'command', 'args', 'env', 'sessionDir', 'permission'])
 const MCP_PERMISSIONS = new Set(['allow', 'ask', 'block'])
 const AUTOMATION_PATCH_KEYS = new Set(['name', 'instruction', 'kind', 'schedule', 'time', 'everyMinutes', 'weekday', 'enabled', 'mode'])
-const AUTOMATION_KINDS = new Set(['brain', 'sleep', 'summary', 'librarian', 'evolve', 'enrich', 'review', 'security', 'skills', 'triage'])
+const AUTOMATION_KINDS = new Set(['brain', 'sleep', 'summary', 'librarian', 'evolve', 'enrich', 'review', 'security', 'skills', 'triage', 'briefing', 'escalate', 'compact', 'gaps'])
 const AUTOMATION_SCHEDULES = new Set(['daily', 'interval', 'weekly'])
 
 function bad(field: string): never {
@@ -136,11 +136,12 @@ export function registerIpc(
   // ── Config ──
   // Live activity stream — every journaled brain write reaches the renderer
   // instantly (graph heat, activity feed, stat counters).
-  brain.getMemory().onJournal = (entry) => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      w.webContents.send('brain:activityPush', entry)
-    }
+  const sendAll = (channel: string, payload: unknown) => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
   }
+  brain.getMemory().onJournal = (entry) => sendAll('brain:activityPush', entry)
+  brain.onJob = (event) => sendAll('brain:job', event)
+  if (automations) automations.onStatus = (event) => sendAll('brain:job', event)
   ipcMain.handle('config:get', () => store.get())
   ipcMain.handle('config:set', (_e, patch: any) => {
     if (!isPlainObject(patch)) bad('config patch')
@@ -432,10 +433,33 @@ export function registerIpc(
   ipcMain.handle('brain:chat', async (e, agentId: string, message: string) => {
     brain.setActivitySource('chat')
     const win = BrowserWindow.fromWebContents(e.sender)
-    return brain.chat(agentId, message, (t) => {
-      win?.webContents.send('brain:delta', t)
-    })
+    win?.webContents.send('brain:job', { phase: 'start', name: 'Conversa' })
+    try {
+      const result = await brain.chat(agentId, message, (t) => {
+        win?.webContents.send('brain:delta', t)
+      }, (step) => {
+        win?.webContents.send('brain:step', step)
+      })
+      const summary = result.saved.length
+        ? `Guardou ${result.saved.length} item(ns) na memória.`
+        : 'Resposta registrada no log de hoje.'
+      win?.webContents.send('brain:job', { phase: 'done', name: 'Conversa', summary })
+      return result
+    } catch (err) {
+      win?.webContents.send('brain:job', { phase: 'error', name: 'Conversa', summary: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
   })
+  ipcMain.handle('brain:ledger', (_e, limit?: number) => brain.ledger(typeof limit === 'number' ? limit : 40))
+  ipcMain.handle('brain:search', (_e, query: string) => brain.searchVault(String(query ?? '')))
+  ipcMain.handle('brain:cards', () => brain.dueCards(5))
+  ipcMain.handle('brain:gradeCard', (_e, question: string, rating: string) => {
+    const allowed = ['again', 'hard', 'good', 'easy'] as const
+    if (!allowed.includes(rating as typeof allowed[number])) throw new Error('rating inválido')
+    return brain.gradeCard(String(question ?? ''), rating as typeof allowed[number])
+  })
+  ipcMain.handle('brain:policy', () => brain.policy())
+  ipcMain.handle('brain:policyApply', () => brain.applyLatestPolicy())
   ipcMain.handle('brain:insights', async () => { brain.setActivitySource('summary'); await brain.ensureProviderReady(); return brain.generateInsights() })
   ipcMain.handle('brain:dailySummary', async () => { brain.setActivitySource('summary'); await brain.ensureProviderReady(); return brain.dailySummary() })
   ipcMain.handle('brain:sleep', async () => { brain.setActivitySource('sleep'); await brain.ensureProviderReady(); return brain.sleep() })

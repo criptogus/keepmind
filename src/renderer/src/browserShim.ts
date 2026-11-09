@@ -185,6 +185,19 @@ const demo = {
   goalsRemove: async (date: string, index: number) => { demoGoals.splice(index, 1); return { date, items: demoGoals } },
   goalsSuggest: async () => ['Ship the proposal draft', '30-min walk outside', 'Review open tasks'],
 
+  brainLedger: async () => [
+    { ts: Date.now() - 3600_000, verb: 'processed', sentence: 'Sono de ontem consolidou 2 logs e gravou o relatório.', path: 'sleep/2026-11-08.md' },
+    { ts: Date.now() - 1800_000, verb: 'discovered', sentence: 'A conversa guardou 1 item na memória longa.', path: 'long-term/facts.md' },
+    { ts: Date.now() - 600_000, verb: 'needs-you', sentence: 'Uma evolução deixou uma proposta na política do cérebro.', path: 'ops/policy.md' }
+  ],
+  brainSearch: async (query: string) => demoMemory.filter(m => m.content.toLowerCase().includes(String(query).toLowerCase())).map(m => ({ path: m.path, title: m.path, snippet: m.content.slice(0, 120) })),
+  brainCards: async () => [{ q: 'Onde a memória durável fica?', a: 'Em long-term/, dentro do repositório.' }],
+  brainGradeCard: async () => ({ due: Date.now() + 86_400_000 }),
+  brainPolicy: async () => ({ active: 'Sem instruções extras ainda.', proposals: ['- 2026-11-08: Separar fatos de pessoas em páginas de entidade.'] }),
+  brainPolicyApply: async () => 'Política ativa atualizada.',
+  onJob: () => () => {},
+  onBrainStep: () => () => {},
+
   updaterStatus: async () => ({ version: '0.1.0', packaged: false }),
   updaterCheck: async () => ({ packaged: false }),
   updaterInstall: async () => false,

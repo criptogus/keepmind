@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { IconSend } from './icons'
 import { mdToHtml } from '../lib/markdown'
 
-interface Msg { role: 'user' | 'assistant'; content: string; streaming?: boolean }
+interface Msg {
+  role: 'user' | 'assistant'
+  content: string
+  streaming?: boolean
+  steps?: string[]
+  memories?: string[]
+  saved?: string[]
+}
 
 const STORE_KEY = 'sb-chat:brain'
 const loadHistory = (): Msg[] => {
@@ -26,7 +33,6 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Persist finished conversations (skip while a reply is still streaming)
   useEffect(() => {
     if (!messages.length || messages.some(m => m.streaming)) return
     try { localStorage.setItem(STORE_KEY, JSON.stringify(messages.slice(-50))) } catch { /* quota */ }
@@ -34,7 +40,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
 
   useEffect(() => {
     unsubRef.current?.()
-    unsubRef.current = window.sb.onBrainDelta((t) => {
+    const offDelta = window.sb.onBrainDelta((t) => {
       setMessages(prev => {
         const list = [...prev]
         const last = list[list.length - 1]
@@ -45,6 +51,17 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
       })
       onActivity?.()
     })
+    const offStep = window.sb.onBrainStep((step) => {
+      setMessages(prev => {
+        const list = [...prev]
+        const last = list[list.length - 1]
+        if (last?.role === 'assistant' && last.streaming) {
+          list[list.length - 1] = { ...last, steps: [...(last.steps ?? []), step] }
+        }
+        return list
+      })
+    })
+    unsubRef.current = () => { offDelta?.(); offStep?.() }
     return () => unsubRef.current?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -57,25 +74,32 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
     setBusy(true)
     onActivity?.()
 
-    const userMsg: Msg = { role: 'user', content: text }
-    const placeholder: Msg = { role: 'assistant', content: '', streaming: true }
-    setMessages(prev => [...prev, userMsg, placeholder])
+    setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '', streaming: true, steps: [] }])
 
     try {
-      await window.sb.brainChat('brain', text)
-    } catch (e: any) {
-      setMessages(prev => {
-        const list = [...prev]
-        list[list.length - 1] = { role: 'assistant', content: `⚠️ ${e?.message ?? e}`, streaming: false }
-        return list
-      })
-    } finally {
+      const result = await window.sb.brainChat('brain', text)
       setMessages(prev => {
         const list = [...prev]
         const last = list[list.length - 1]
-        if (last?.streaming) list[list.length - 1] = { ...last, streaming: false }
+        if (last?.role === 'assistant') {
+          list[list.length - 1] = {
+            ...last,
+            streaming: false,
+            content: (typeof result?.text === 'string' && result.text.trim()) ? result.text : (last.content || ''),
+            memories: result?.memories ?? last.memories,
+            saved: result?.saved ?? last.saved,
+            steps: result?.steps?.length ? result.steps : last.steps
+          }
+        }
         return list
       })
+    } catch (e: any) {
+      setMessages(prev => {
+        const list = [...prev]
+        list[list.length - 1] = { role: 'assistant', content: e?.message ?? String(e), streaming: false }
+        return list
+      })
+    } finally {
       setBusy(false)
     }
   }
@@ -91,8 +115,8 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
           <div className="msg__avatar"><span className="feat-emoji">🧠</span></div>
           <div>
             <h3>KeepMind</h3>
-            <div className="faint" style={{ fontSize: 12 }}>
-              your memory · semantic recall · sleep-cycle learning
+            <div className="dim" style={{ fontSize: 13 }}>
+              A resposta mostra o que foi consultado e o que foi gravado.
             </div>
           </div>
         </div>
@@ -100,18 +124,17 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
         <div className="chat-messages">
           {messages.length === 0 && (
             <div className="empty">
-              <div className="e-emoji"><span className="feat-emoji" style={{ fontSize: 'inherit' }}>🧠</span></div>
-              <h3>Talk to your KeepMind</h3>
+              <h3>Pergunte ao seu KeepMind</h3>
               <p>
-                Ask anything — I know everything you connected: apps, memory, insights.
-                I learn while you sleep and get sharper every night.
+                A resposta usa a memória que já está no repositório. Embaixo de cada resposta
+                aparece o que foi encontrado e o arquivo que a conversa gravou.
               </p>
             </div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role === 'user' ? 'msg--user' : ''}`}>
               <div className="msg__avatar">
-                <span className="feat-emoji" style={{ fontSize: 'inherit' }}>{m.role === 'user' ? '🧑' : '🧠'}</span>
+                <span className="feat-emoji" style={{ fontSize: 'inherit' }}>{m.role === 'user' ? 'Você' : 'Km'}</span>
               </div>
               <div>
                 <div className="msg__bubble msg__body">
@@ -121,9 +144,17 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
                     <span dangerouslySetInnerHTML={{ __html: mdToHtml(m.content) }} />
                   )}
                 </div>
+                {m.role === 'assistant' && (m.steps?.length || m.memories?.length || m.saved?.length) ? (
+                  <div className="msg__trace">
+                    {m.steps?.map((s, n) => <div key={n}>{s}</div>)}
+                    {!!m.memories?.length && <div>Memórias: {m.memories.join(', ')}</div>}
+                    {!!m.saved?.length && <div>Gravou: {m.saved.join(', ')}</div>}
+                    {!m.saved?.length && !m.streaming && <div>Gravou a troca no log de hoje.</div>}
+                  </div>
+                ) : null}
                 <div className="msg__meta" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {m.role === 'assistant' && m.content && (
-                    <button className="msg__copy" onClick={() => copyMsg(m.content)} title="Copy" aria-label="Copy message">⧉</button>
+                    <button className="msg__copy" onClick={() => copyMsg(m.content)} title="Copiar" aria-label="Copiar mensagem">Copiar</button>
                   )}
                 </div>
               </div>
@@ -145,7 +176,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
             }}
-            placeholder="Message your KeepMind… (Enter to send)"
+            placeholder="Escreva para o KeepMind… (Enter envia)"
             rows={1}
           />
           <button className="btn btn--primary" onClick={send} disabled={busy || !input.trim()} style={{ borderRadius: 999, padding: '0 18px', height: 42 }}>

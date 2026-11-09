@@ -49,9 +49,9 @@ export default function Login({ needsSetup, googleConfigured, onDone }: Props) {
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
             <BrainMark size={52} />
           </div>
-          <h1 style={{ fontSize: 18 }}>KEEP MIND</h1>
+          <h1 style={{ fontSize: 18 }}>KeepMind</h1>
           <p className="faint" style={{ fontSize: 12, marginTop: 6 }}>
-            {needsSetup ? 'Create your local account to begin' : 'Welcome back — sign in to your brain'}
+            {needsSetup ? 'Crie a conta deste computador para começar' : 'Entre para ver o que o cérebro fez'}
           </p>
         </div>
 

@@ -103,11 +103,10 @@ export default function Connectors({ onActivity, onToast }: Props) {
     <div className="view">
       <div className="view-head">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 6 }}>AGENT CONNECTIONS</div>
-          <h1>Agents</h1>
+          <div className="hud-tag" style={{ marginBottom: 6 }}>Conectar</div>
+          <h1>Agentes</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Your information flows in through LLMs and bots — this page shows how each one plugs into the brain.
-            Writes land in the <b>Activity</b> feed.
+            Cada agente que escreve na memória deixa o arquivo em Atividade e uma frase em Hoje.
           </p>
         </div>
         <button className="btn" onClick={() => setShowCustom(s => !s)}>
