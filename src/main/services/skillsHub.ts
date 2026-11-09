@@ -53,6 +53,8 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<an
 
 export interface VaultSkill {
   file: string
+  path: string
+  group: string
   title: string
   ageDays: number
 }
@@ -66,18 +68,46 @@ export interface SkillSuggestion {
   alreadyHave: boolean
 }
 
+// Skills live wherever the vault keeps them: canonical `SKILL.md` agent
+// packages anywhere in the tree (Hermes/Obsidian imports), plus native
+// memory/skills/*.md written by KeepMind's own crons.
 export function listVaultSkills(memory: Memory): VaultSkill[] {
   const now = Date.now()
-  return memory.list('skills')
-    .map(f => {
-      const content = memory.read(`skills/${f}`) ?? ''
-      const title = content.match(/^#\s+(.+)$/m)?.[1]
-        ?? content.match(/^name:\s*(.+)$/m)?.[1]
-        ?? f.replace(/\.md$/, '')
-      const mtime = memory.fileMtime(`skills/${f}`) ?? now
-      return { file: f, title: title.trim(), ageDays: Math.floor((now - mtime) / 86_400_000) }
+  const out: VaultSkill[] = []
+  const seen = new Set<string>()
+
+  const push = (rel: string, group: string) => {
+    if (seen.has(rel)) return
+    seen.add(rel)
+    const content = memory.read(rel) ?? ''
+    const fm = content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ''
+    const title = fm.match(/^name:\s*(.+)$/m)?.[1]?.trim()
+      ?? content.match(/^#\s+(.+)$/m)?.[1]?.trim()
+      ?? rel.split('/').filter(Boolean).pop()!.replace(/\.md$/i, '')
+    const mtime = memory.fileMtime(rel) ?? now
+    out.push({
+      file: rel.split('/').pop()!,
+      path: rel,
+      group,
+      title,
+      ageDays: Math.floor((now - mtime) / 86_400_000)
     })
-    .sort((a, b) => a.file.localeCompare(b.file))
+  }
+
+  for (const rel of memory.allRelFiles()) {
+    if (!rel.endsWith('.md')) continue
+    const base = rel.split('/').pop()!
+    if (base === 'SKILL.md') {
+      // canonical agent skill package at <category>/<skill>/SKILL.md —
+      // group by the category dir (grandparent), falling back to the
+      // top-level vault area for flat layouts
+      const parts = rel.split('/')
+      push(rel, parts.length >= 3 ? parts[parts.length - 3] : parts[0])
+    } else if (rel.startsWith('skills/') && !rel.slice(7).includes('/')) {
+      push(rel, 'keepmind')
+    }
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path))
 }
 
 // Queries chosen to cover what a second brain actually needs — memory
@@ -87,7 +117,14 @@ const SUGGESTION_QUERIES = [
 ]
 
 export async function suggestSkills(memory: Memory): Promise<SkillSuggestion[]> {
-  const have = new Set(listVaultSkills(memory).map(s => s.file.replace(/\.md$/, '').toLowerCase()))
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  const have = new Set(
+    listVaultSkills(memory).flatMap(s => [
+      norm(s.title),
+      // native skills/<slug>.md installs dedupe by slug
+      ...(s.path.startsWith('skills/') ? [s.path.slice(7).replace(/\.md$/, '')] : [])
+    ])
+  )
   const seen = new Set<string>()
   const out: SkillSuggestion[] = []
 
@@ -108,7 +145,7 @@ export async function suggestSkills(memory: Memory): Promise<SkillSuggestion[]> 
         description: String(it.description ?? it.long_description ?? '').slice(0, 220),
         type: String(it.type ?? 'skill'),
         installs: Number(it.install_count ?? it.installs ?? 0),
-        alreadyHave: have.has(slug) || have.has(it.name?.toLowerCase?.() ?? '')
+        alreadyHave: have.has(slug) || have.has(norm(String(it.name ?? '')))
       })
     }
   }
@@ -149,6 +186,7 @@ ${meta.description ?? pkg.description ?? ''}
 ${sections.join('\n\n')}
 `
   const file = `${slug}.md`
-  memory.write(`skills/${file}`, body)
-  return { file, title: name, ageDays: 0 }
+  const rel = `skills/${file}`
+  memory.write(rel, body)
+  return { file, path: rel, group: 'registry', title: name, ageDays: 0 }
 }

@@ -1,6 +1,7 @@
 import type { Store, Automation } from '../store'
 import type { Memory } from './brain'
 import type { AutomationScheduler } from './automations'
+import { listVaultSkills } from './skillsHub'
 
 // ── BrainHealth: meta-insights ABOUT the second brain ──
 // Not "insights about the user" — diagnostics on the brain itself: which
@@ -67,8 +68,9 @@ export function analyzeHealth(store: Store, memory: Memory): HealthReport {
   const gapsRaw = memory.read('ops/search-gaps.md') ?? ''
   const searchGaps = (gapsRaw.match(/^- /gm) ?? []).length
 
-  const skillFiles = memory.list('skills')
-  const skillsStale = skillFiles.filter(f => {
+  const vaultSkills = listVaultSkills(memory)
+  const nativeSkills = memory.list('skills') // KeepMind-owned skills/ — the ones evolve crons maintain
+  const nativeStale = nativeSkills.filter(f => {
     const mt = memory.fileMtime(`skills/${f}`) ?? now
     return now - mt > 30 * DAY
   }).length
@@ -87,8 +89,8 @@ export function analyzeHealth(store: Store, memory: Memory): HealthReport {
     automationsEnabled: enabled.length,
     automationsTotal: automations.length,
     searchGaps,
-    skills: skillFiles.length,
-    skillsStale
+    skills: vaultSkills.length,
+    skillsStale: nativeStale
   }
 
   const recs: HealthRecommendation[] = []
@@ -191,7 +193,7 @@ export function analyzeHealth(store: Store, memory: Memory): HealthReport {
   }
 
   // ── 7. Skills layer empty ──
-  if (stats.files > 100 && memory.list('skills').length === 0 && !hasKind('skills')) {
+  if (stats.files > 100 && vaultSkills.length === 0 && !hasKind('skills')) {
     recs.push({
       id: 'no-skills', impact: 'low',
       title: 'No procedural skills captured',
@@ -219,10 +221,10 @@ export function analyzeHealth(store: Store, memory: Memory): HealthReport {
   }
 
   // ── 8b. Skills going stale ──
-  if (skillFiles.length > 0 && skillsStale === skillFiles.length && !hasKind('evolve')) {
+  if (nativeSkills.length > 0 && nativeStale === nativeSkills.length && !hasKind('evolve')) {
     recs.push({
       id: 'skills-stale', impact: 'medium',
-      title: `All ${skillFiles.length} skills are 30+ days old`,
+      title: `All ${nativeSkills.length} KeepMind skills are 30+ days old`,
       detail: 'Procedural skills decay as workflows change — an evolve/skills review keeps the bank sharp and prunes what no longer works.',
       action: { type: 'create-automation', automation: {
         name: 'Weekly skills evolution', kind: 'evolve', schedule: 'weekly', weekday: 0, time: '12:00',

@@ -58,13 +58,14 @@ export default function Skills({ onActivity, onToast }: { onActivity?: () => voi
           )}
           <div style={{ maxHeight: 480, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {(skills?.items ?? []).map((s: any) => (
-              <div key={s.file} className="goal-row" style={{ cursor: 'default' }}>
+              <div key={s.path} className="goal-row" style={{ cursor: 'default' }} title={s.path}>
                 <IconSparkle size={12} />
                 <span className="goal-text">{s.title}</span>
-                <span className="faint mono" style={{ fontSize: 10 }}>
-                  {s.file}
+                <span className="badge badge--custom" style={{ fontSize: 8.5, flexShrink: 0 }}>{s.group}</span>
+                <span className="faint mono" style={{ fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
+                  {s.path}
                 </span>
-                <span className="faint mono" style={{ fontSize: 10 }}>
+                <span className="faint mono" style={{ fontSize: 10, flexShrink: 0 }}>
                   {s.ageDays === 0 ? 'new' : `${s.ageDays}d`}
                 </span>
               </div>
