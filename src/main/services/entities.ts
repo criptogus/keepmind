@@ -69,15 +69,15 @@ function extractCandidates(memory: Memory): Map<string, EntityHit> {
   const files: string[] = []
   // recent short-term logs
   for (const f of memory.shortTermFiles().slice(-7)) files.push(`short-term/${f}`)
-  for (const f of memory.list('inbox').slice(-5)) files.push(`inbox/${f}`)
+  for (const f of memory.list(memory.scopePath('inbox')).slice(-5)) files.push(`inbox/${f}`)
   // notes + tasks titles
-  for (const f of memory.list('notes')) files.push(`notes/${f}`)
-  for (const f of memory.list('tasks').slice(0, 30)) files.push(`tasks/${f}`)
+  for (const f of memory.list(memory.scopePath('notes'))) files.push(`notes/${f}`)
+  for (const f of memory.list(memory.scopePath('tasks')).slice(0, 30)) files.push(`tasks/${f}`)
   // existing entity pages (keep them alive even if quiet this week)
-  for (const f of memory.list('entities')) files.push(`entities/${f}`)
+  for (const f of memory.list(memory.scopePath('entities'))) files.push(`entities/${f}`)
 
   for (const rel of files) {
-    const content = memory.read(rel)
+    const content = memory.read(memory.scopePath(rel))
     if (!content) continue
     for (const m of content.matchAll(WIKILINK_RE)) bump(m[1], rel)
     for (const m of content.matchAll(ENTITY_RE)) bump(m[1], rel)
@@ -126,7 +126,7 @@ export async function refreshEntities(
   const hits = extractCandidates(memory)
   // keep entities seen >=2 times OR already having a page
   const kept = [...hits.values()]
-    .filter(h => h.count >= 2 || memory.read(`entities/${slug(h.name)}.md`) != null)
+    .filter(h => h.count >= 2 || memory.read(memory.scopePath(`entities/${slug(h.name)}.md`)) != null)
     .sort((a, b) => b.count - a.count)
     .slice(0, 60)
 
@@ -140,7 +140,7 @@ export async function refreshEntities(
 
   for (const h of kept) {
     const file = `entities/${slug(h.name)}.md`
-    const existing = memory.read(file)
+    const existing = memory.read(memory.scopePath(file))
     const existed = existing != null
     const keptNotes = preserveEntityNotes(existing)
     const firstSeen = existing?.match(/first seen (\d{4}-\d{2}-\d{2})/)?.[1] ?? today
@@ -158,7 +158,7 @@ export async function refreshEntities(
       linkedFrom.length ? `\n## Linked from\n` + linkedFrom.map(s => `- ${s}`).join('\n') + '\n' : '',
       `\n## Notes\n\n${keptNotes}\n`
     ].join('\n')
-    memory.write(file, body)
+    memory.write(memory.scopePath(file), body)
     existed ? updated++ : created++
   }
 
@@ -169,7 +169,7 @@ export async function refreshEntities(
     '',
     ...kept.map(h => `- [[${h.name}]] — ${h.count} mentions`)
   ].join('\n')
-  memory.write('entities/index.md', index + '\n')
+  memory.write(memory.scopePath('entities/index.md'), index + '\n')
 
   return { created, updated, total: kept.length }
 }

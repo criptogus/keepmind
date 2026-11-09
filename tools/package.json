@@ -1,0 +1,10 @@
+{
+  "name": "keepmind-mcp",
+  "version": "0.1.1",
+  "description": "Standalone stdio MCP server for KeepMind Markdown memory",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "keepmind-mcp": "./keepmind-mcp.mjs" },
+  "files": ["keepmind-mcp.mjs", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" }
+}

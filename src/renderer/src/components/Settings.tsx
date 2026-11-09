@@ -1,3 +1,4 @@
+import MemorySecurity from './MemorySecurity'
 import { useEffect, useState } from 'react'
 import { IconSparkle } from './icons'
 
@@ -18,6 +19,7 @@ const PROVIDERS = [
 ]
 
 export default function Settings({ onToast, onActivity }: Props) {
+  const [passphrase, setPassphrase] = useState('')
   const [config, setConfig] = useState<any>(null)
   const [providers, setProviders] = useState<any[]>([])
   const [local, setLocal] = useState<any>(null)
@@ -228,6 +230,7 @@ export default function Settings({ onToast, onActivity }: Props) {
           </div>
         </div>
 
+        <MemorySecurity />
         {/* Models & runtimes */}
         <ModelsCard onToast={onToast} />
 
@@ -241,6 +244,15 @@ export default function Settings({ onToast, onActivity }: Props) {
           <div className="faint mono" style={{ fontSize: 11.5, marginBottom: 14, wordBreak: 'break-all' }}>
             {config?.github?.repoUrl ?? 'GitHub not connected — run the setup wizard again'}
           </div>
+          <label><input type="checkbox" disabled={busy || !config} checked={!!config?.github?.encryptionEnabled} onChange={async e => {
+            try { setConfig(await window.sb.updateGithub({ encryptionEnabled: e.target.checked })) }
+            catch (err: any) { onToast(String(err?.message ?? err), 'error') }
+          }} /> Encrypt GitHub memory (end-to-end)</label>
+          <input type="password" aria-label="Sync passphrase" autoComplete="off" placeholder="Sync passphrase (session only)" value={passphrase} onChange={e => setPassphrase(e.target.value)} />
+          <button className="btn" disabled={!passphrase} onClick={async () => {
+            try { await window.sb.unlockSync(passphrase); setPassphrase(''); onToast('Sync unlocked for this session', 'success') }
+            catch (err: any) { onToast(String(err?.message ?? err), 'error') }
+          }}>Unlock encrypted sync</button>
           <button className="btn" onClick={pushMemory} disabled={busy || !config?.github?.repoUrl}>
             <IconSparkle size={12} /> SYNC MEMORY TO GITHUB
           </button>

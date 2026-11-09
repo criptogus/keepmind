@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { createHmac, randomBytes } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import type { Store } from '../store'
@@ -20,7 +20,8 @@ import { ensureRepoScaffold, exportBrainConfig } from './scaffold'
 //   - Files deleted remotely are removed locally (unless dirty).
 
 interface SyncState {
-  sha: Record<string, string>   // relPath -> last seen git blob sha (canonical remote name)
+  sha: Record<string, string>   // relPath -> last seen git blob sha
+  encryptionEnabled?: boolean
   plainSha?: Record<string, string> // relPath -> last seen sha on the plaintext remote path (obfuscation on)
   lastPull?: string
   lastPush?: string
@@ -46,6 +47,7 @@ export class GitSync {
   private pushing = false
   private pulling = false
   private lastPushAt = 0
+  private error: string | null = null
   private listeners = new Set<(s: SyncStatus) => void>()
 
   constructor(store: Store, memory: Memory, stateDir: string) {
@@ -70,7 +72,8 @@ export class GitSync {
       pending: this.dirty.size,
       lastPull: this.state.lastPull ?? null,
       lastPush: this.state.lastPush ?? null,
-      syncing: this.pushing || this.pulling
+      syncing: this.pushing || this.pulling,
+      error: this.error
     }
   }
 
@@ -122,8 +125,10 @@ export class GitSync {
   }
 
   async syncNow(): Promise<SyncStatus> {
+    this.error = null
     await this.pull()
     await this.pushDirty()
+    if (this.error) throw new Error(this.error)
     return this.status()
   }
 
@@ -161,6 +166,9 @@ export class GitSync {
     this.pushing = true
     this.emit()
     const gh = this.store.get().github
+    if (gh.encryptionEnabled && !this.state.encryptionEnabled) {
+      for (const rel of this.memory.allRelFiles()) this.dirty.add(rel)
+    }
     const batch = [...this.dirty]
     try {
       const obf = this.obfuscate
@@ -183,7 +191,7 @@ export class GitSync {
         // untracked) while we hold unsynced local changes, preserve the remote
         // version under conflicts/ before overwriting — nothing is lost.
         const expected = this.state.sha[rel]
-        const remote = await github.fetchMemoryFile(gh, remoteRel, this.syncRoot).catch(() => null)
+        const remote = await github.fetchMemoryFile(gh, remoteRel, this.syncRoot, !this.state.encryptionEnabled)
         if (remote && remote.sha !== expected) {
           this.memory.syncWrite(`conflicts/${rel}`, `<!-- remote version preserved ${new Date().toISOString()} — local version won the push -->\n\n${remote.content}`)
           this.dirty.add(`conflicts/${rel}`)
@@ -192,7 +200,7 @@ export class GitSync {
         // remote path would be pulled later and revert this push. Absorb it now
         // — preserve the remote version and adopt its sha as the new baseline.
         if (obf && remoteRel !== rel) {
-          const plain = await github.fetchMemoryFile(gh, rel, this.syncRoot).catch(() => null)
+          const plain = await github.fetchMemoryFile(gh, rel, this.syncRoot, !this.state.encryptionEnabled)
           if (plain) {
             if (plainSha[rel] === undefined) plainSha[rel] = plain.sha
             else if (plain.sha !== plainSha[rel]) {
@@ -207,9 +215,11 @@ export class GitSync {
         this.dirty.delete(rel)
         this.lastPushAt = Date.now()
       }
+      this.state.encryptionEnabled = !!gh.encryptionEnabled
       this.state.lastPush = new Date().toISOString()
       this.saveState()
     } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e)
       console.warn('[sync] push failed:', e)
       // keep dirty entries — will retry on next write/interval
     } finally {
@@ -241,7 +251,8 @@ export class GitSync {
   // plaintext names (resyncAll) so no local edit is lost to a stale revert.
 
   private get obfuscate(): boolean {
-    return !!this.store.get().github.obfuscatePaths
+    const gh = this.store.get().github
+    return !!gh.obfuscatePaths && !gh.encryptionEnabled
   }
 
   private getPathKey(): Buffer | null {
@@ -299,18 +310,18 @@ export class GitSync {
   private async pull(): Promise<void> {
     if (this.pulling || !this.connected()) return
     this.pulling = true
+    this.error = null
     this.lastPullAttempt = Date.now()
     this.emit()
     const gh = this.store.get().github
     const root = this.syncRoot
     try {
-      appendFileSync(this.stateFile + '.debug', `${new Date().toISOString()} pull start root=${JSON.stringify(root)} token=${!!gh.accessToken} owner=${gh.repoOwner}\n`)
+      if (gh.encryptionEnabled && !this.state.encryptionEnabled) {
+        for (const rel of this.memory.allRelFiles()) this.dirty.add(rel)
+      }
       const remote = await github.listTree(gh, root)
       const remoteMap = new Map(remote.map(r => [r.path, r.sha]))
-      try {
-        appendFileSync(this.stateFile + '.debug',
-          `${new Date().toISOString()} root=${JSON.stringify(root)} remote=${remote.length} tracked=${Object.keys(this.state.sha).length} sample=${remote.slice(0, 3).map(r => r.path).join(',')}\n`)
-      } catch { /* noop */ }
+
 
       // Safety: an empty/suspiciously-small remote tree must never trigger
       // mass local deletion — a failed API call returns [] indistinguishable
@@ -347,12 +358,13 @@ export class GitSync {
         if (rel.split('/').slice(0, -1).some(s => s.startsWith('.'))) continue // skip .obsidian/ etc.
 
         if (canonical) {
-          if (this.state.sha[rel] === sha) continue // unchanged
-          const file = await github.fetchMemoryFile(gh, rpath, root)
+          if (this.state.sha[rel] === sha && this.memory.read(rel) !== null) continue // unchanged and present
+          const file = await github.fetchMemoryFile(gh, rpath, root, !this.state.encryptionEnabled)
           if (!file) continue
           try {
             this.memory.syncWrite(rel, file.content)
             this.state.sha[rel] = file.sha
+            if (gh.encryptionEnabled && !this.state.encryptionEnabled) this.dirty.add(rel)
           } catch (e) {
             console.warn(`[sync] skipped unsafe remote path ${rel}:`, e)
           }
@@ -361,8 +373,8 @@ export class GitSync {
 
         // Plaintext namespace while obfuscation is on.
         const baseline = plainSha[rel] ?? this.state.sha[rel]
-        if (baseline === sha) { plainSha[rel] = sha; continue } // frozen twin / unchanged
-        const file = await github.fetchMemoryFile(gh, rpath, root)
+        if (baseline === sha && this.memory.read(rel) !== null) { plainSha[rel] = sha; continue } // frozen twin / unchanged
+        const file = await github.fetchMemoryFile(gh, rpath, root, !this.state.encryptionEnabled)
         if (!file) continue
         try {
           this.memory.syncWrite(rel, file.content)
@@ -370,7 +382,7 @@ export class GitSync {
           // A tracked file edited through the plaintext path converges into the
           // hashed namespace on the next push; brand-new remote files stay
           // plaintext-only until their first local write.
-          if (this.state.sha[rel] !== undefined) this.dirty.add(rel)
+          if (this.state.sha[rel] !== undefined && baseline !== sha) this.dirty.add(rel)
         } catch (e) {
           console.warn(`[sync] skipped unsafe remote path ${rel}:`, e)
         }
@@ -408,12 +420,12 @@ export class GitSync {
           this.dirty.add(rel)
         }
       }
-      if (this.dirty.size > 0) void this.pushDirty()
+      if (this.dirty.size > 0) await this.pushDirty()
 
       this.state.lastPull = new Date().toISOString()
       this.saveState()
     } catch (e) {
-      try { appendFileSync(this.stateFile + '.debug', `${new Date().toISOString()} pull error: ${e}\n`) } catch { /* noop */ }
+      this.error = e instanceof Error ? e.message : String(e)
       console.warn('[sync] pull failed:', e)
     } finally {
       this.pulling = false
@@ -443,4 +455,5 @@ export interface SyncStatus {
   lastPull: string | null
   lastPush: string | null
   syncing: boolean
+  error: string | null
 }

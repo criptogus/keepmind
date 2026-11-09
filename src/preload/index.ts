@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
+  securityConsent: (provider: string) => ipcRenderer.invoke('security:consent', provider),
+  pipelineStatus: () => ipcRenderer.invoke('pipeline:status'),
+  pipelineRefresh: () => ipcRenderer.invoke('pipeline:refresh'),
+  pipelineEnqueue: (job: { platform: string; url: string; space: string }) => ipcRenderer.invoke('pipeline:enqueue', job),
+  memorySecurityStatus: () => ipcRenderer.invoke('memorySecurity:status'),
+  securitySetup: (passphrase: string) => ipcRenderer.invoke('security:setup', passphrase),
+  securityUnlock: (credential?: { passphrase?: string; recoveryKey?: string }) => ipcRenderer.invoke('security:unlock', credential),
+  securityLock: () => ipcRenderer.invoke('security:lock'),
+  memorySecurityConfigure: (space: string, grants: string[], encryptAll: boolean) => ipcRenderer.invoke('memorySecurity:configure', space, grants, encryptAll),
   // config
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch: any) => ipcRenderer.invoke('config:set', patch),
@@ -74,6 +83,7 @@ const api = {
   },
 
   // sync
+  unlockSync: (passphrase: string) => ipcRenderer.invoke('sync:unlock', passphrase),
   syncStatus: () => ipcRenderer.invoke('sync:status'),
   syncNow: () => ipcRenderer.invoke('sync:now'),
 

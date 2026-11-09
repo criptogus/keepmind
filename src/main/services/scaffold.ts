@@ -138,7 +138,7 @@ export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
     const inTools = path.startsWith('tools/')
     const exists = inTools ? tools.includes(path) || tools.includes(base) : root.includes(path) || root.includes(base)
     if (exists) continue
-    await github.pushFile(gh, path, content, 'scaffold: agent onboarding files')
+    await github.pushMetadataFile(gh, path, content, 'scaffold: agent onboarding files')
     pushed.push(path)
   }
   return pushed
@@ -174,5 +174,5 @@ export function brainConfigJson(cfg: AppConfig): string {
 
 export async function exportBrainConfig(gh: GitHubConfig, cfg: AppConfig): Promise<void> {
   if (!gh.accessToken || !gh.repoOwner) throw new Error('GitHub not configured')
-  await github.pushFile(gh, 'keepmind.json', brainConfigJson(cfg), 'chore: refresh keepmind.json brain config')
+  await github.pushMetadataFile(gh, 'keepmind.json', brainConfigJson(cfg), 'chore: refresh keepmind.json brain config')
 }

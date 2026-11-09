@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 interface LedgerEntry {
-  ts: number
+  ts: string | number
   verb: 'processed' | 'discovered' | 'improved' | 'needs-you'
   sentence: string
   path?: string
@@ -85,7 +85,7 @@ export default function Today({ onToast }: { onToast?: (m: string, k?: 'info' | 
     await load()
   }
 
-  const todayCount = ledger.filter(e => Date.now() - e.ts < 86_400_000).length
+  const todayCount = ledger.filter(e => Date.now() - new Date(e.ts).getTime() < 86_400_000).length
   const decisions = pending.length + facts.length + ((policy?.proposals.length ?? 0) > 0 ? 1 : 0)
   const topSources = (health?.topSources ?? []).slice(0, 4)
 

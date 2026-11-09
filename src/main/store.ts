@@ -20,6 +20,7 @@ export interface LocalLlmConfig {
 }
 
 export interface GitHubConfig {
+  encryptionEnabled?: boolean
   accessToken?: string
   refreshToken?: string
   login?: string
@@ -221,7 +222,7 @@ function defaultConfig(): AppConfig {
 // ── Secret sealing: sensitive fields are encrypted at rest via the OS
 // keychain (Electron safeStorage) before hitting config.json. Values are
 // stored as "enc:<base64>"; plaintext legacy values still load fine.
-// Falls back to plaintext when the OS offers no encryption (rare Linux).
+// Fail closed when OS encryption is unavailable.
 
 const SECRET_PREFIX = 'enc:'      // legacy: Electron safeStorage (keychain)
 const LOCAL_PREFIX = 'enc2:'      // local keyfile AES-256-GCM — survives app updates/re-signing
@@ -231,19 +232,21 @@ const LOCAL_PREFIX = 'enc2:'      // local keyfile AES-256-GCM — survives app 
 // unsigned rebuild/re-sign can orphan previously sealed secrets, which is
 // why GitHub tokens kept "disappearing". The keyfile is deterministic
 // across updates; both config.json and the key stay in userData (never synced).
-let secretKeyCache: Buffer | null = null
+const secretKeyCache = new Map<string, Buffer>()
 function secretKey(dir: string): Buffer | null {
-  if (secretKeyCache) return secretKeyCache
+  const cached = secretKeyCache.get(dir)
+  if (cached) return cached
   try {
     const keyFile = join(dir, '.secret-key')
     if (existsSync(keyFile)) {
       const k = Buffer.from(readFileSync(keyFile, 'utf8').trim(), 'hex')
-      if (k.length === 32) { secretKeyCache = k; return k }
+      if (k.length === 32) { secretKeyCache.set(dir, k); return k }
+      return null // Never replace a corrupt existing key and orphan sealed secrets.
     }
     const k = randomBytes(32)
-    writeFileSync(keyFile, k.toString('hex'), { mode: 0o600 })
+    writeFileSync(keyFile, k.toString('hex'), { mode: 0o600, flag: 'wx' })
     chmodSync(keyFile, 0o600)
-    secretKeyCache = k
+    secretKeyCache.set(dir, k)
     return k
   } catch { return null }
 }
@@ -263,12 +266,12 @@ function unsealLocal(v: string, key: Buffer): string {
 }
 
 function sealValue(v: unknown, key: Buffer | null): unknown {
-  if (typeof v !== 'string' || !v || v.startsWith(SECRET_PREFIX) || v.startsWith(LOCAL_PREFIX)) return v
+  if (typeof v !== 'string' || !v) return v
   if (key) { try { return sealLocal(v, key) } catch { /* fall through */ } }
-  if (safeStorage.isEncryptionAvailable()) {
+  if (safeStorage.isEncryptionAvailable() && safeStorage.getSelectedStorageBackend?.() !== 'basic_text') {
     try { return SECRET_PREFIX + safeStorage.encryptString(v).toString('base64') } catch { /* noop */ }
   }
-  return v
+  throw new Error('Secure storage is unavailable; settings were not saved.')
 }
 
 function unsealValue(v: unknown, key: Buffer | null): unknown {
@@ -378,8 +381,10 @@ export class Store {
   }
 
   set(patch: Partial<AppConfig>): AppConfig {
-    this.config = { ...this.config, ...patch }
-    writeFileSync(this.file, JSON.stringify(sealConfig(this.config, secretKey(dirname(this.file))), null, 2), 'utf8')
+    const next = { ...this.config, ...patch }
+    const sealed = sealConfig(next, secretKey(dirname(this.file)))
+    writeFileSync(this.file, JSON.stringify(sealed, null, 2), { encoding: 'utf8', mode: 0o600 })
+    this.config = next
     return this.config
   }
 

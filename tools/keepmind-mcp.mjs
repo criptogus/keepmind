@@ -1,29 +1,77 @@
 #!/usr/bin/env node
 // keepmind-mcp — exposes a KeepMind memory directory over MCP (stdio).
 //
-// Zero dependencies, plain Node >= 18. Point it at any clone/copy of the
+// Plain Node >= 18. Encrypted access needs the full built KeepMind package.
+// Zero-dependency copies support only explicitly opted-in legacy plaintext.
+// Point it at an authorized clone/copy of the
 // memory repo and any MCP-capable agent (Claude, Codex, Grok, Gemini, custom
 // bots) gets structured read/write/search access to the brain.
 //
 // Usage:
-//   node tools/keepmind-mcp.mjs --dir /path/to/memory
-//   SECOND_BRAIN_DIR=/path/to/memory npx keepmind-mcp
+//   node tools/keepmind-mcp.mjs --memory-dir /path/to/memory
+//   KEEPMIND_MEMORY_DIR=/path/to/memory npx keepmind-mcp
 //
-// Inside a cloned second-brain repo the default `./memory` just works.
+// Defaults to ./memory; encrypted reads require launcher-provided unlock and scopes.
 
+import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
-import { readdirSync, readFileSync, writeFileSync, appendFileSync, statSync, existsSync, mkdirSync } from 'node:fs'
-import { join, resolve, sep, dirname } from 'node:path'
+import { readdirSync, readFileSync, writeFileSync, appendFileSync, statSync, existsSync, mkdirSync, realpathSync, renameSync } from 'node:fs'
+import { join, resolve, sep, dirname, relative } from 'node:path'
 
 // ── config ──
 
-const args = process.argv.slice(2)
-const dirArg = args.includes('--dir') ? args[args.indexOf('--dir') + 1] : null
-const ROOT = resolve(dirArg ?? process.env.SECOND_BRAIN_DIR ?? './memory')
+function configuredRoot() {
+  const args = process.argv.slice(2)
+  const flag = args.includes('--memory-dir') ? '--memory-dir' : '--dir'
+  const position = args.indexOf(flag)
+  if (position >= 0 && (!args[position + 1] || args[position + 1].startsWith('--'))) {
+    process.stderr.write(`${flag} requires a directory\n`); process.exit(1)
+  }
+  const root = resolve((position >= 0 ? args[position + 1] : null) ?? process.env.KEEPMIND_MEMORY_DIR ?? process.env.SECOND_BRAIN_DIR ?? './memory')
+
+  return root
+}
+
+export function createMemoryServer(memoryDir, options = {}) {
+const ROOT = resolve(memoryDir)
+const clientId = options.clientId ?? 'default'
+if (!/^[a-zA-Z0-9_-]{1,80}$/.test(clientId)) throw new Error('Invalid client id')
+const scope = options.clients?.[clientId] ?? (options.clients ? { spaces: [], maxClass: 'public' } : { spaces: ['personal'], maxClass: 'internal' })
+const learningService = options.keys && options.state && scope.owner === true && levelsAllowed(scope.maxClass) ? new (createRequire(import.meta.url)('../out/main/derived-learnings.js').DerivedLearnings)(ROOT, options.state, options.keys, { owner: true, spaces: scope.spaces }) : null
+function levelsAllowed(maximum) { return ['internal', 'sensitive', 'secret'].includes(maximum) }
+const encryptAll = options.allowPlaintext !== true
+const levels = ['public', 'internal', 'sensitive', 'secret']
+const auditFile = options.auditFile ?? safe('ops/mcp-reads.jsonl')
+function authorize(content, maximum = scope.maxClass) {
+  if (content.startsWith('KEEPMIND-')) return false
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
+  const space = fm.match(/^space:\s*(\S+)/m)?.[1] ?? 'personal'
+  const declared = fm.match(/^class:\s*(\S+)/m)?.[1] ?? 'internal'
+  const override = fm.match(/^class_override:\s*(\S+)/m)?.[1]
+  if (override !== undefined && !levels.includes(override)) return false
+  let rank = levels.indexOf(declared)
+  if (rank < 0) return false
+  rank = Math.max(rank, override === undefined ? 0 : levels.indexOf(override))
+  if (/\b(?:sk-|ghp_|xox[a-z]-|AKIA)|-----BEGIN .*PRIVATE KEY-----|\beyJ[\w-]+\.[\w-]+\.[\w-]+/.test(content)) rank = 3
+  if (/\b[^\s@]+@[^\s@]+\.[^\s@]+|(?:\+\d{8,15}\b|\b\d{10,15}\b)|\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b|\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b|(?:\+\d{1,3}[ .-]?)?(?:\(\d{2,3}\)[ .-]?|\b\d{2,3}[ .-])\d{4,5}[ .-]?\d{4}\b/.test(content)) rank = Math.max(rank, 2)
+  return scope.spaces.includes(space) && rank <= levels.indexOf(maximum)
+}
+function audit(rel, allowed, operation = 'read') {
+  mkdirSync(dirname(auditFile), { recursive: true })
+  appendFileSync(auditFile, JSON.stringify({ ts: new Date().toISOString(), client: clientId, operation, resource: createHash('sha256').update(rel).digest('hex'), allowed }) + '\n', { mode: 0o600 })
+}
 
 function safe(rel) {
-  const p = resolve(ROOT, String(rel ?? '').replace(/^\/+/, ''))
+  const p = resolve(ROOT, String(rel ?? ''))
   if (p !== ROOT && !p.startsWith(ROOT + sep)) throw new Error(`path escapes memory root: ${rel}`)
+  let ancestor = p
+  while (!existsSync(ancestor) && dirname(ancestor) !== ancestor) ancestor = dirname(ancestor)
+  if (existsSync(ROOT)) {
+    const root = realpathSync(ROOT), target = realpathSync(ancestor)
+    if (target !== root && !target.startsWith(root + sep)) throw new Error('symlink escapes memory root')
+  }
   return p
 }
 
@@ -36,19 +84,84 @@ function* walk(dir, prefix = '') {
   }
 }
 
-const allFiles = () => [...walk(ROOT)]
+const allFiles = () => [...walk(ROOT)].filter(rel => readMem(rel) !== null)
+
+function decodeMem(rel, raw) {
+  if (raw.startsWith('KEEPMIND-ITEM:1\n')) {
+    const envelope = JSON.parse(raw.slice('KEEPMIND-ITEM:1\n'.length))
+    // Scope is checked before any attempt to unwrap a space key.
+    if (!scope.spaces.includes(envelope.space)) return null
+    if (!options.keys) throw new Error('Memory locked')
+    const text = options.keys.decrypt(envelope.box, envelope.space, rel)
+    const innerSpace = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].match(/^space:\s*(\S+)/m)?.[1]
+    if (innerSpace !== envelope.space) throw new Error('Space authentication mismatch')
+    return text
+  }
+  if (encryptAll || raw.startsWith('KEEPMIND-')) return null
+  // Explicit legacy plaintext mode still refuses restricted plaintext.
+  return authorize(raw, 'internal') ? raw : null
+}
 
 function readMem(rel) {
   const p = safe(rel)
-  return existsSync(p) ? readFileSync(p, 'utf8') : null
+  if (!existsSync(p)) return null
+  let content
+  try { content = decodeMem(rel, readFileSync(p, 'utf8')) }
+  catch { audit(rel, false); throw new Error('Encrypted memory unavailable') }
+  const allowed = content !== null && authorize(content)
+  audit(rel, allowed)
+  return allowed ? content : null
 }
 
 function writeMem(rel, content, append = false) {
-  const p = safe(rel)
-  mkdirSync(dirname(p), { recursive: true })
-  if (append) appendFileSync(p, content, 'utf8')
-  else writeFileSync(p, content, 'utf8')
-  return rel
+  let allowed = false
+  try {
+    const p = safe(rel)
+    // Configuration and audit trails cannot be overwritten through note tools.
+    if (!rel.endsWith('.md') || resolve(p) === ROOT || /^(?:ops|state|\.keepmind)(?:[\\/]|$)/.test(relative(ROOT, p)) || p === resolve(auditFile)) throw new Error('Write path denied')
+    if (scope.write !== true) throw new Error('Client write permission required')
+    const exists = existsSync(p)
+    const previous = exists ? decodeMem(rel, readFileSync(p, 'utf8')) : null
+    if (exists && (previous === null || !authorize(previous))) throw new Error('Existing note outside client scope')
+    let next = append && previous !== null ? previous + content : content
+    const fm = next.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
+    if (!fm?.[1].match(/^space:/m)) {
+      const previousSpace = previous?.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].match(/^space:\s*(\S+)/m)?.[1]
+      const space = previousSpace ?? scope.defaultSpace ?? scope.spaces[0]
+      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(space ?? '')) throw new Error('Client default space required')
+      next = fm ? `---\nspace: ${space}\n${fm[1]}\n---\n${next.slice(fm[0].length)}` : `---\nspace: ${space}\nclass: internal\n---\n${next}`
+    }
+    // Ambiguous policy fields fail closed; do not let appending/overwriting
+    // downgrade a protected note or reinterpret duplicate frontmatter keys.
+    const fields = next.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
+    if (['space', 'class', 'class_override'].some(key => [...fields.matchAll(new RegExp(`^${key}:`, 'gm'))].length > 1)) throw new Error('Ambiguous note policy')
+    if (!authorize(next)) throw new Error('New note outside client scope')
+    // Encrypt every class by default; secret capture remains native-only.
+    const classification = fields.match(/^class:\s*(\S+)/m)?.[1] ?? 'internal'
+    const override = fields.match(/^class_override:\s*(\S+)/m)?.[1]
+    const protectedWrite = encryptAll || levels.indexOf(classification) >= 2 || levels.indexOf(override) >= 2 || !authorize(next, 'internal')
+    if (protectedWrite) {
+      if (!options.keys) throw new Error('Encrypted writes require unlocked keys')
+      // Secret capture belongs to native keychain-backed Memory, never this process.
+      if (/\b(?:sk-|ghp_|xox[a-z]-|AKIA)|-----BEGIN .*PRIVATE KEY-----|\beyJ[\w-]+\.[\w-]+\.[\w-]+/.test(next)) throw new Error('Native secret capture required')
+      const space = fields.match(/^space:\s*(\S+)/m)?.[1]
+      // Do not create unpersisted keys: setup/configure spaces in the native app.
+      if (!options.keys.config.spaces[space]) throw new Error('Space key unavailable')
+      next = 'KEEPMIND-ITEM:1\n' + JSON.stringify({ space, box: options.keys.encrypt(next, space, rel) })
+    }
+    mkdirSync(dirname(p), { recursive: true })
+    // Audit authorization before mutation: an unavailable audit sink denies writes.
+    audit(rel, true, 'write')
+    allowed = true
+    const temp = p + '.tmp'
+    if (existsSync(temp)) throw new Error('Write already pending')
+    writeFileSync(temp, next, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    renameSync(temp, p)
+    return rel
+  } catch (error) {
+    if (!allowed) audit(rel, false, 'write')
+    throw error
+  }
 }
 
 function isFactsPath(rel) {
@@ -93,6 +206,7 @@ function terms(text) {
 function search(query, limit = 8) {
   const qTerms = [...new Set(terms(query))]
   if (!qTerms.length) return 'empty query'
+  const derived = learningService ? learningService.list(query, false).map(r => `## ${r.id}\n${r.body}`).join('\n\n') : ''
   const qSet = new Set(qTerms)
   const results = []
   for (const rel of allFiles()) {
@@ -118,16 +232,10 @@ function search(query, limit = 8) {
   }
   results.sort((a, b) => b.score - a.score)
   if (!results.length) {
-    // zero-hit = a knowledge gap. Log it so sleep/evolve cycles can see
-    // what the brain fails to answer (inspired by vault evolve_lib gaps).
-    try {
-      writeMem('ops/search-gaps.md',
-        `\n- ${new Date().toISOString().slice(0, 16).replace('T', ' ')} — "${query.replace(/\n/g, ' ').slice(0, 120)}"\n`, true)
-    } catch { /* non-fatal */ }
-    return `no matches for "${query}"`
+    return derived || `no matches for "${query}"`
   }
-  return results.slice(0, limit).map(r =>
-    `## ${r.rel} (score ${r.score})\n${r.snippet}`).join('\n\n')
+  return [derived, results.slice(0, limit).map(r =>
+    `## ${r.rel} (score ${r.score})\n${r.snippet}`).join('\n\n')].filter(Boolean).join('\n\n')
 }
 
 // ── tasks (memory/tasks/*.md — "# title" + "> status: …" meta line) ──
@@ -137,7 +245,8 @@ function listTasks(status) {
   if (!existsSync(dir)) return 'no tasks yet'
   const out = []
   for (const f of readdirSync(dir).filter(f => f.endsWith('.md'))) {
-    const c = readMem(`tasks/${f}`) ?? ''
+    const c = readMem(`tasks/${f}`)
+    if (c === null) continue
     const title = (c.split('\n').find(l => l.startsWith('# ')) ?? '# ').slice(2).trim()
     const meta = (c.split('\n').find(l => l.startsWith('> ')) ?? '').replace(/^>\s*/, '')
     const done = /status:\s*done/.test(meta)
@@ -173,7 +282,8 @@ function queryMem(a = {}) {
     if (!existsSync(dir)) return 'no tasks yet'
     const out = []
     for (const f of readdirSync(dir).filter(f => f.endsWith('.md'))) {
-      const c = readMem(`tasks/${f}`) ?? ''
+      const c = readMem(`tasks/${f}`)
+      if (c === null) continue
       const t = parseTaskMeta(c)
       if (a.status === 'open' && t.done) continue
       if (a.status === 'done' && !t.done) continue
@@ -236,6 +346,9 @@ function queryMem(a = {}) {
 // ── tools ──
 
 const TOOLS = [
+  ...['learning_list', 'learning_search', 'learning_check_public'].map(name => ({ name, description: 'Private owner learning access; never approves or publishes.', inputSchema: { type: 'object', properties: { query: { type: 'string' }, id: { type: 'string' }, text: { type: 'string' } } } })),
+  { name: 'search', description: 'Keyword search over local Markdown memory.', inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['query'] } },
+  { name: 'read_note', description: 'Read a note relative to the local memory directory.', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
   {
     name: 'sb_search',
     description: 'Search the second-brain memory (Markdown files) for a query. Returns matching files with snippets. Use this BEFORE answering questions about the user — their knowledge lives here.',
@@ -316,7 +429,15 @@ const TOOLS = [
 
 function callTool(name, a = {}) {
   switch (name) {
+    case 'learning_list':
+    case 'learning_search':
+    case 'learning_check_public': {
+      if (!learningService) throw new Error('Learning unavailable')
+      return JSON.stringify(name === 'learning_check_public' ? learningService.checkPublic(String(a.id ?? ''), String(a.text ?? '')) : learningService.list(name === 'learning_search' ? String(a.query ?? '') : undefined, false))
+    }
+    case 'search':
     case 'sb_search': return search(String(a.query ?? ''), a.limit ?? 8)
+    case 'read_note':
     case 'sb_read': {
       const c = readMem(String(a.path ?? ''))
       return c ?? `not found: ${a.path}`
@@ -382,6 +503,7 @@ function err(id, code, message) { return { jsonrpc: '2.0', id, error: { code, me
 
 function handle(msg) {
   const { id, method, params } = msg
+  if (id === undefined) return null // JSON-RPC notifications never receive responses
   if (method === 'initialize') {
     return ok(id, {
       protocolVersion: PROTOCOL_VERSION,
@@ -419,14 +541,39 @@ function handle(msg) {
   return err(id, -32601, `method not found: ${method}`)
 }
 
-const rl = createInterface({ input: process.stdin, terminal: false })
-rl.on('line', line => {
-  const trimmed = line.trim()
-  if (!trimmed) return
-  let msg
-  try { msg = JSON.parse(trimmed) } catch { return }
-  const res = handle(msg)
-  if (res) process.stdout.write(JSON.stringify(res) + '\n')
-})
+return msg => {
+  try { return handle(msg) }
+  catch { return msg?.id === undefined ? null : err(msg.id, -32000, 'Memory unavailable') }
+}
+}
 
-process.stderr.write(`[keepmind-mcp] serving memory at ${ROOT}\n`)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const root = configuredRoot()
+  const config = process.env.KEEPMIND_MCP_SCOPES ? JSON.parse(readFileSync(process.env.KEEPMIND_MCP_SCOPES, 'utf8')) : undefined
+  let keys
+  if (process.env.KEEPMIND_MCP_UNLOCK_FD !== undefined) {
+    const fd = Number(process.env.KEEPMIND_MCP_UNLOCK_FD)
+    if (!Number.isInteger(fd) || fd < 3) throw new Error('Unlock requires a dedicated inherited descriptor')
+    const state = process.env.KEEPMIND_MCP_STATE
+    if (!state) throw new Error('Encryption state directory required')
+    const require = createRequire(import.meta.url)
+    const { SpaceKeys } = require('../out/main/mcp-keys.js')
+    const keyConfig = JSON.parse(readFileSync(join(state, 'security', 'memory-keys.json'), 'utf8'))
+    const secrets = { put() {}, get() { throw new Error('Keychain unavailable') }, remove() { throw new Error('Keychain unavailable') } }
+    try { keys = await SpaceKeys.unlock(keyConfig, secrets, { passphrase: readFileSync(fd, 'utf8').replace(/\r?\n$/, '') }) }
+    catch { process.stderr.write('KeepMind unlock failed\n'); process.exit(1) }
+    // Encryption defaults independently of legacy config; plaintext requires launcher opt-in.
+    process.once('exit', () => keys.lock())
+  }
+  const handle = createMemoryServer(root, { keys, state: process.env.KEEPMIND_MCP_STATE, allowPlaintext: process.env.KEEPMIND_MCP_ALLOW_PLAINTEXT === 'true', clients: config, clientId: process.env.KEEPMIND_MCP_CLIENT ?? 'default' })
+  const rl = createInterface({ input: process.stdin, terminal: false })
+  rl.on('line', line => {
+    const trimmed = line.trim()
+    if (!trimmed) return
+    let msg
+    try { msg = JSON.parse(trimmed) } catch { return }
+    const res = handle(msg)
+    if (res) process.stdout.write(JSON.stringify(res) + '\n')
+  })
+  process.stderr.write('[keepmind-mcp] serving scoped memory\n')
+}

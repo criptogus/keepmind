@@ -89,11 +89,11 @@ function validateAiPatch(p: any): void {
 function validateGithubPatch(p: any): void {
   if (!isPlainObject(p)) bad('github patch')
   for (const k of Object.keys(p)) {
-    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch', 'syncRoot', 'obfuscatePaths'].includes(k)) bad(`github.${k}`)
+    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch', 'syncRoot', 'obfuscatePaths', 'encryptionEnabled'].includes(k)) bad(`github.${k}`)
   }
   for (const k of Object.keys(p)) {
-    if (k === 'obfuscatePaths') {
-      if (typeof p[k] !== 'boolean') bad('github.obfuscatePaths')
+    if (k === 'obfuscatePaths' || k === 'encryptionEnabled') {
+      if (typeof p[k] !== 'boolean') bad(`github.${k}`)
     } else optStr(p[k], `github.${k}`, 2048)
   }
 }
@@ -139,6 +139,13 @@ export function registerIpc(
   hooks: HookServer | null = null
 ) {
   // ── Config ──
+  ipcMain.handle('sync:unlock', async (_e, passphrase: unknown) => {
+    reqStr(passphrase, 'passphrase', 4096)
+    github.unlockSync(passphrase as string)
+    try { await github.verifySyncPassphrase(store.get().github) }
+    catch (error) { github.lockSync(); throw error }
+    return { unlocked: true }
+  })
   // Live activity stream — every journaled brain write reaches the renderer
   // instantly (graph heat, activity feed, stat counters).
   const sendAll = (channel: string, payload: unknown) => {
@@ -292,11 +299,11 @@ export function registerIpc(
     const gh = store.get().github
     if (!gh.accessToken || !gh.repoOwner) throw new Error('GitHub not connected')
     // push whole memory dir files via contents API
-    const memDir = store.memoryDir
-    const files = collectMd(memDir)
+    const files = brain.getMemory().allRelFiles()
     for (const rel of files) {
-      const content = readFileSync(join(memDir, rel), 'utf8')
-      await github.pushFile(gh, `memory/${rel}`, content, message)
+      const content = brain.getMemory().read(rel)
+      if (content === null) continue
+      await github.pushFile(gh, `${gh.syncRoot ?? 'memory/'}${rel}`, content, message)
     }
     return { pushed: files.length }
   })
@@ -491,8 +498,8 @@ export function registerIpc(
   ipcMain.handle('brain:listInsights', () => brain.listInsights())
   ipcMain.handle('brain:listSummaries', () => brain.listSummaries())
   ipcMain.handle('brain:listMemory', () => {
-    const memDir = store.memoryDir
-    return collectMd(memDir).map(rel => ({ path: rel, content: readFileSync(join(memDir, rel), 'utf8').slice(0, 1500) }))
+    const memory = brain.getMemory()
+    return memory.allRelFiles().map(rel => ({ path: rel, content: memory.read(rel)!.slice(0, 4000) }))
   })
   ipcMain.handle('brain:briefing', (_e, force?: boolean) => brain.briefing(!!force))
   ipcMain.handle('brain:graph', () => brain.memoryGraph())
@@ -725,15 +732,4 @@ const mcpLogs: string[] = []
 export function pushMcpLog(line: string) {
   mcpLogs.push(line)
   if (mcpLogs.length > 500) mcpLogs.shift()
-}
-
-function collectMd(dir: string, prefix = ''): string[] {
-  const out: string[] = []
-  if (!existsSync(dir)) return out
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const rel = prefix ? `${prefix}/${e.name}` : e.name
-    if (e.isDirectory()) out.push(...collectMd(join(dir, e.name), rel))
-    else if (e.name.endsWith('.md')) out.push(rel)
-  }
-  return out
 }

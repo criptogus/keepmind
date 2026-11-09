@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import MemoryOverview from './MemoryOverview'
 import { IconSparkle } from './icons'
 
 // Brain Health — meta-insights ABOUT the second brain: which crons should
@@ -106,6 +107,8 @@ export default function Dashboard({ onActivity, onToast }: { onActivity?: () => 
           )
         })}
       </div>
+
+      <MemoryOverview onActivity={onActivity} />
 
       {/* skill bank lives on its own page */}
       <div className="card card-pad" style={{ maxWidth: 900, display: 'flex', alignItems: 'center', gap: 12 }}>
