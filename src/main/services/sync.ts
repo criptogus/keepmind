@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { Store } from '../store'
 import type { Memory } from './brain'
@@ -196,8 +196,13 @@ export class GitSync {
     const gh = this.store.get().github
     const root = this.syncRoot
     try {
+      appendFileSync(this.stateFile + '.debug', `${new Date().toISOString()} pull start root=${JSON.stringify(root)} token=${!!gh.accessToken} owner=${gh.repoOwner}\n`)
       const remote = await github.listTree(gh, root)
       const remoteMap = new Map(remote.map(r => [r.path, r.sha]))
+      try {
+        appendFileSync(this.stateFile + '.debug',
+          `${new Date().toISOString()} root=${JSON.stringify(root)} remote=${remote.length} tracked=${Object.keys(this.state.sha).length} sample=${remote.slice(0, 3).map(r => r.path).join(',')}\n`)
+      } catch { /* noop */ }
 
       // Safety: an empty/suspiciously-small remote tree must never trigger
       // mass local deletion — a failed API call returns [] indistinguishable
@@ -253,6 +258,7 @@ export class GitSync {
       this.state.lastPull = new Date().toISOString()
       this.saveState()
     } catch (e) {
+      try { appendFileSync(this.stateFile + '.debug', `${new Date().toISOString()} pull error: ${e}\n`) } catch { /* noop */ }
       console.warn('[sync] pull failed:', e)
     } finally {
       this.pulling = false
