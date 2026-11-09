@@ -1,0 +1,15 @@
+services:
+  keepmind-corp:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      KEEPMIND_CORP_HOST: 0.0.0.0
+      KEEPMIND_CORP_DATA: /data
+      KEEPMIND_VAULT: /data/vault
+      KEEPMIND_CORP_OWNER_EMAIL: ${KEEPMIND_CORP_OWNER_EMAIL:?set the owner email}
+      KEEPMIND_CORP_OWNER_PASSWORD: ${KEEPMIND_CORP_OWNER_PASSWORD:?set a password of at least 12 characters}
+    volumes:
+      - corp-data:/data
+volumes:
+  corp-data:

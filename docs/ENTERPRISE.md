@@ -1,8 +1,9 @@
 # KeepMind Corp — Enterprise Edition (Roadmap)
 
-> Status: **future product line, not scheduled.** This document captures the
-> analysis and design direction for a corporate version of KeepMind. It exists
-> so the decision can be revisited with full context instead of re-derived.
+> Status: **MVP slice is in `corp/`.** The desktop app stays the individual
+> product. This document is still the design direction. The first slice is a
+> self-hosted admin plane, not the full enterprise program (no SCIM, HSM,
+> SOC 2 package, or managed SaaS yet).
 
 ## Thesis
 
@@ -71,6 +72,34 @@ customer-sovereign infrastructure**.
 ## Go-to-market note
 
 The buyer is a security/compliance committee, not the individual dev who
-adopts the desktop app. Validate demand with 2–3 companies before building —
-the "sovereign agent memory" narrative is real, but the purchasing motion is
-different from the current one.
+adopts the desktop app. Validate demand with 2–3 companies before treating
+this as a sold product — the "sovereign agent memory" narrative is real, but
+the purchasing motion is different from the current one. The slice below
+exists so that conversation can run against a real console.
+
+## Decision recorded
+
+Memory is **partitioned personal vaults plus a shared company layer**.
+
+- `people/<id>/` is one person's memory. Another member cannot read it.
+- `shared/` is the company layer.
+- An owner or admin can see the whole tenant. An auditor sees the ledger and
+  scan totals, not the body of a personal file.
+
+The open question in the gaps list is settled for this slice by the partitioned model above.
+
+## What the slice ships
+
+`corp/` is a separate Node process and container. Run it with `npm run corp`
+or `docker compose` inside `corp/`. See [`corp/README.md`](../corp/README.md).
+
+- Single tenant, self-hosted.
+- Local break-glass owner plus OIDC authorization code and PKCE. Identity
+  tokens must be RS256.
+- Roles: owner, admin, member, auditor.
+- Admin console for connected agents, the provider allow-list, and per-team
+  autonomy under an org ceiling.
+- Secret and PII scan over the vault, skipping `KMS1` ciphertext, and an
+  activity ledger at `ops/activity.jsonl`.
+- Organization BYOK. A request that tries to store a personal provider key
+  is rejected. The desktop app does not read `ops/corp-policy.json`.

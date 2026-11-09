@@ -54,6 +54,18 @@ replaceable runtime, the repo is the brain:
 - **📋 Insights & daily summaries** — the brain analyzes your memory and surfaces what matters, automatically once a day.
 - **🤖 Plug in your other AIs** — one copy-paste prompt teaches Claude, Codex, Grok or Gemini to read/write memory in your repo (emails sent, PDFs made, decisions — everything remembered).
 
+## KeepMind Corp
+
+The desktop app above is the individual product. Companies run a separate
+self-hosted edition, [KeepMind Corp](corp/README.md), from the direction in
+[docs/ENTERPRISE.md](docs/ENTERPRISE.md): one Node container, OIDC and basic
+RBAC, an admin console, and a vault split into personal partitions plus a
+shared company layer. Provider keys stay in the organization environment.
+
+```bash
+npm run corp
+```
+
 ## Architecture
 
 ```
