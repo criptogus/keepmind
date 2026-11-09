@@ -1,53 +1,40 @@
 # KeepMind Corp
 
-Edição para empresas, separada do app de desktop. O desenho está em [`docs/ENTERPRISE.md`](../docs/ENTERPRISE.md).
+**KeepMind corporativo = o mesmo second brain (Today, Brain, Chat, Skills, Security) + governança da empresa.**
 
-O desktop continua o produto individual. Este processo é um console de administração, auto-hospedado, de um único inquilino. Ele não abre o Electron e o Electron não lê esta política.
+O app de desktop gratuito continua o produto individual. A edição Corp roda no browser na sua VPC: a UI do KeepMind em `/brain/`, com política de provedores, autonomia, BYOK e auditoria vindas da organização. Donos e admins abrem **governança** em `/admin/` (pessoas, agentes, varredura).
 
-## Decisão de memória
+Desenho completo: [`docs/ENTERPRISE.md`](../docs/ENTERPRISE.md).
 
-O cofre é partido:
+## O que você vê depois do login
 
-- `people/<id>/` — memória da pessoa. Outro membro não lê.
-- `shared/` — o que a empresa compartilha.
-- `ops/activity.jsonl` — trilha de auditoria, no mesmo formato de ledger do app.
-- `ops/corp-policy.json` — política sem segredo, para o operador versionar no repositório do cliente.
+| Rota | Quem | O quê |
+|------|------|--------|
+| `/brain/` | Todos | **Second brain** — mesma interface KeepMind, memória em `people/<id>/memory/` + camada `shared/memory/` |
+| `/admin/` | Dono, admin | **Governança** — SSO, política, times, agentes, varredura, cofre bruto |
 
-## O que esta versão faz
-
-- Login local do dono (break-glass) e SSO por OIDC, código de autorização com PKCE. O token de identidade precisa ser RS256, com `iss` e `aud` conferidos. Token sem assinatura é recusado.
-- Papéis: dono, admin, membro, auditor.
-- Console: agentes ligados, provedores permitidos, autonomia por time, pessoas, cofre, auditoria e varredura.
-- Varredura de segredo e de PII (CPF, CNPJ, email, telefone) no mesmo espírito do app. O valor encontrado não sai na resposta. Arquivo que começa com `KMS1` é contado como cifrado e não é aberto.
-- BYOK da empresa. O pedido que tenta gravar uma chave pessoal é recusado. A chave do provedor fica em variável de ambiente, fora deste arquivo.
-- A retenção fica registrada. Esta versão não apaga o cofre sozinha.
-
-Ainda ficam para um ciclo seguinte: SCIM, HSM, cota de custo, retenção automática, legal hold e o SaaS gerenciado.
+Membros não configuram chave de provedor na interface: a empresa traz BYOK no ambiente do servidor.
 
 ## Subir
 
-Na raiz do repositório:
-
 ```bash
+npm run corp:build-brain   # compila a UI KeepMind (base /brain/)
 KEEPMIND_CORP_OWNER_EMAIL=voce@empresa.com \
 KEEPMIND_CORP_OWNER_PASSWORD='uma-senha-longa' \
 npm run corp
 ```
 
-O console abre em `http://127.0.0.1:8787`. Sem as duas variáveis, e sem um dono já criado, a tela avisa que o bootstrap falta. Não há senha padrão.
+Portal: `http://127.0.0.1:8787` → login → **KeepMind** em `/brain/`.
 
-Com Docker, a partir desta pasta:
+Docker: `docker compose up --build` dentro desta pasta (veja `.env.example`).
 
-```bash
-cp .env.example .env
-# edite o email e a senha
-docker compose up --build
-```
+## Próximo passo (desktop Corp)
 
-OIDC é opcional. Quando as quatro variáveis `KEEPMIND_CORP_OIDC_ISSUER`, `CLIENT_ID`, `CLIENT_SECRET` e `REDIRECT_URI` existem, a tela mostra "Entrar com SSO". Quem chega no grupo `KEEPMIND_CORP_OIDC_ADMIN_GROUP` (padrão `keepmind-admins`) entra como admin. O dono local continua o acesso de emergência.
+O mesmo núcleo pode empacotar como app Electron **KeepMind Corp** apontando para a política do servidor — o web já valida memória + governança sem fork da UX.
 
 ## Verificação
 
 ```bash
+npm run corp:build-brain
 npm run corp:check
 ```

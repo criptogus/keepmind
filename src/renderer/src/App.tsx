@@ -13,6 +13,7 @@ import Today from './components/Today'
 import Skills from './components/Skills'
 import Security from './components/Security'
 import Login from './components/Login'
+import CorpBar from './components/CorpBar'
 
 type View = 'today' | 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
@@ -184,8 +185,11 @@ export default function App() {
       ? `${job.name}: ${job.summary}`
       : 'Brain awake · idle'
 
+  const corp = config?.corp as { org?: string; role?: string; adminUrl?: string | null } | undefined
+
   return (
     <div className="app">
+      {corp ? <CorpBar org={corp.org ?? 'Organization'} role={corp.role ?? 'member'} adminUrl={corp.adminUrl} /> : null}
       {/* The neural starfield stays out of the Brain view — two animated
           networks fighting for attention reads as visual noise. */}
       {view !== 'graph' && <NeuralField activity={activity} />}

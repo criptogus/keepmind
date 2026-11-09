@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createServer } from 'node:http'
@@ -108,7 +108,8 @@ try {
   const blocked = await call(port, '/api/files', { method: 'POST', cookie: ana, body: { path: 'people/ana/notes.md', text: `my key ${secret}` } })
   assert.equal(blocked.status, 400)
   assert.equal(blocked.json.error, 'secret_blocked')
-  assert.equal(readFileSync(path.join(corp.vault, 'people', 'ana', 'notes.md'), 'utf8').includes(secret), false)
+  assert.equal(existsSync(path.join(corp.vault, 'people', 'ana', 'memory', 'inbox', 'welcome.md')), true)
+  assert.equal(existsSync(path.join(corp.vault, 'people', 'ana', 'notes.md')), false)
   const savedNote = await call(port, '/api/files', { method: 'POST', cookie: ana, body: { path: 'people/ana/notes.md', text: '# Ana\n\nUma nota pessoal.\n' } })
   assert.equal(savedNote.status, 200)
   const own = await call(port, '/api/files/preview?path=people/ana/notes.md', { cookie: ana })

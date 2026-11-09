@@ -90,16 +90,19 @@ The open question in the gaps list is settled for this slice by the partitioned 
 
 ## What the slice ships
 
-`corp/` is a separate Node process and container. Run it with `npm run corp`
-or `docker compose` inside `corp/`. See [`corp/README.md`](../corp/README.md).
+`corp/` is a separate Node process and container: **the KeepMind second-brain
+UI** at `/brain/` plus **organization governance** at `/admin/`. Run
+`npm run corp:build-brain` then `npm run corp`, or `docker compose` in `corp/`.
+See [`corp/README.md`](../corp/README.md).
 
 - Single tenant, self-hosted.
-- Local break-glass owner plus OIDC authorization code and PKCE. Identity
-  tokens must be RS256.
+- Same renderer as the desktop app (Today, Brain, Skills, Chat, Security) with
+  a corporate API shim and policy in `getConfig().corp`.
+- Local break-glass owner plus OIDC (authorization code + PKCE, RS256 tokens).
 - Roles: owner, admin, member, auditor.
-- Admin console for connected agents, the provider allow-list, and per-team
-  autonomy under an org ceiling.
-- Secret and PII scan over the vault, skipping `KMS1` ciphertext, and an
-  activity ledger at `ops/activity.jsonl`.
-- Organization BYOK. A request that tries to store a personal provider key
-  is rejected. The desktop app does not read `ops/corp-policy.json`.
+- Governance console: agents, provider allow-list, per-team autonomy ceiling,
+  people, scan, audit.
+- Personal memory under `people/<id>/memory/` (desktop-compatible layout) plus
+  `shared/memory/` for the company layer.
+- Secret / PII scan, `KMS1` skipped at preview, ledger at `ops/activity.jsonl`.
+- Organization BYOK — personal provider keys blocked in policy payloads and UI.

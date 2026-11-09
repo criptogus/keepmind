@@ -57,7 +57,15 @@ async function boot() {
   state.meta = meta.body
   const me = await api('/api/session')
   state.me = me.body.user || null
-  if (state.me) await load()
+  if (!state.me) {
+    window.location.replace('/')
+    return
+  }
+  if (state.me.role !== 'owner' && state.me.role !== 'admin') {
+    window.location.replace('/brain/')
+    return
+  }
+  await load()
   render()
 }
 
@@ -82,8 +90,8 @@ function login() {
   const setup = state.meta?.setupRequired ? `<p class="err">${esc(COPY.setup_required)}</p>` : ''
   return `<div class="login"><form class="card" id="login">
     <div class="mark">KeepMind Corp</div>
-    <h1>Cofre da empresa</h1>
-    <p class="sub">Memória dos agentes no repositório de vocês. O app de desktop continua o produto individual.</p>
+    <h1>Governança</h1>
+    <p class="sub">Política da empresa, pessoas e agentes. O second brain fica em <a href="/brain/">KeepMind</a>.</p>
     ${setup}
     <label for="email">Email</label>
     <input id="email" name="email" type="email" autocomplete="username" required />
@@ -250,11 +258,7 @@ function bind() {
       render()
       return
     }
-    state.me = res.body.user
-    state.section = 'overview'
-    state.error = ''
-    await load()
-    render()
+    window.location.replace('/brain/')
   })
   document.querySelectorAll('[data-section]').forEach(button => {
     button.addEventListener('click', async () => {

@@ -56,14 +56,13 @@ replaceable runtime, the repo is the brain:
 
 ## KeepMind Corp
 
-The desktop app above is the individual product. Companies run a separate
-self-hosted edition, [KeepMind Corp](corp/README.md), from the direction in
-[docs/ENTERPRISE.md](docs/ENTERPRISE.md): one Node container, OIDC and basic
-RBAC, an admin console, and a vault split into personal partitions plus a
-shared company layer. Provider keys stay in the organization environment.
+The desktop app above is the individual product. **KeepMind Corp** is the same
+second brain in the browser, with company governance: [corp/README.md](corp/README.md),
+[docs/ENTERPRISE.md](docs/ENTERPRISE.md). After login you get the full KeepMind UI;
+IT uses `/admin/` for policy, SSO, and audit.
 
 ```bash
-npm run corp
+npm run corp:build-brain && npm run corp
 ```
 
 ## Architecture

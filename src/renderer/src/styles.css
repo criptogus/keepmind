@@ -42,6 +42,24 @@ input, textarea, select { font-family: inherit; }
 
 /* ── Layout ─────────────────────────────── */
 .app { display: flex; height: 100%; position: relative; }
+.corp-bar {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 8px 16px; font-size: 12px; letter-spacing: .04em;
+  background: rgba(103,232,249,.08); border-bottom: 1px solid var(--line);
+  z-index: 20;
+}
+.corp-bar__meta { color: var(--muted); }
+.corp-bar__link { color: var(--cyan); margin-left: auto; text-decoration: none; }
+.corp-bar__link:hover { text-decoration: underline; }
+.app:has(.corp-bar) {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: auto 1fr;
+  height: 100%;
+}
+.app:has(.corp-bar) > .corp-bar { grid-column: 1 / -1; }
+.app:has(.corp-bar) > .sidebar { grid-row: 2; }
+.app:has(.corp-bar) > main { grid-row: 2; }
 .sidebar {
   width: 232px; flex-shrink: 0;
   background: linear-gradient(180deg, rgba(6,11,24,.9), rgba(3,7,18,.95));

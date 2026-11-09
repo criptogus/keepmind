@@ -8,3 +8,4 @@ dist/
 .onnx-stash/
 *.tsbuildinfo
 corp/data/
+corp/brain-dist/

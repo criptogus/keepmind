@@ -1,10 +1,9 @@
-// KeepMind Corp — self-hosted admin plane.
-// Single tenant. The Electron desktop app is a different product and
-// does not load this server.
+// KeepMind Corp — corporate second brain (web) + organization governance.
+// Same KeepMind UI at /brain/ with policy enforcement; admins use /admin/.
 
 import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -16,14 +15,23 @@ import {
   verifyRs256
 } from './lib.mjs'
 import { createOidc, oidcFromEnv } from './oidc.mjs'
+import { mountBrainApi } from './brain-api.mjs'
+import { ensureUserBrain } from './memory-layout.mjs'
 
-const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public')
+const CORP_ROOT = path.dirname(fileURLToPath(import.meta.url))
+const PUBLIC_DIR = path.join(CORP_ROOT, 'public')
+const BRAIN_DIR = path.join(CORP_ROOT, 'brain-dist')
 const SESSION_MS = 12 * 60 * 60 * 1000
 const MAX_BODY = 64 * 1024
 const STATIC = {
   '/': 'index.html',
   '/index.html': 'index.html',
-  '/app.js': 'app.js',
+  '/login.js': 'login.js',
+  '/login.css': 'login.css',
+  '/admin': 'admin.html',
+  '/admin/': 'admin.html',
+  '/admin.html': 'admin.html',
+  '/admin-app.js': 'admin-app.js',
   '/app.css': 'app.css'
 }
 
@@ -41,6 +49,8 @@ export function createCorp(opts = {}) {
   const oidcConfig = opts.oidc === undefined ? oidcFromEnv(env) : opts.oidc
   const oidc = oidcConfig ? createOidc(oidcConfig, opts.fetchImpl ?? globalThis.fetch) : null
   const secureCookie = env.KEEPMIND_CORP_SECURE === '1'
+
+  const brainApi = mountBrainApi({ vault, getOrg: () => org, audit: (user, op, extra) => audit(user, op, extra) })
 
   ensureOwner(env)
   persistOrg()
@@ -95,11 +105,7 @@ export function createCorp(opts = {}) {
       passwordHash: secret?.hash ?? null
     }
     org.users.push(user)
-    const home = path.join(vault, 'people', id, 'notes.md')
-    if (!existsSync(home)) {
-      mkdirSync(path.dirname(home), { recursive: true })
-      writeFileSync(home, `# ${user.name}\n\nPersonal partition. Other members cannot read this folder.\n`)
-    }
+    ensureUserBrain(vault, id, user.name)
     return user
   }
 
@@ -145,6 +151,16 @@ export function createCorp(opts = {}) {
       if (STATIC[url.pathname] && (req.method === 'GET' || req.method === 'HEAD')) {
         return sendFile(res, STATIC[url.pathname], req.method === 'HEAD')
       }
+      const tokenEarly = readCookie(req, 'kmcorp')
+      const userEarly = userFromToken(tokenEarly)
+      if (url.pathname === '/brain' || url.pathname.startsWith('/brain/')) {
+        if (!userEarly) {
+          res.writeHead(302, { Location: '/' })
+          res.end()
+          return
+        }
+        return serveBrainApp(res, url, req.method === 'HEAD')
+      }
       if (url.pathname === '/favicon.ico') {
         res.writeHead(204)
         res.end()
@@ -177,6 +193,7 @@ export function createCorp(opts = {}) {
       if (url.pathname === '/api/logout' && req.method === 'POST') return logout(req, token, res)
       if (!user) return send(res, 401, { ok: false, error: 'unauthorized' })
       if (!sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
+      if (await brainApi(req, res, url, user)) return
       return await authed(req, res, url, user)
     } catch (err) {
       const code = err.code || 'server_error'
@@ -203,6 +220,7 @@ export function createCorp(opts = {}) {
       return send(res, 401, { ok: false, error: 'bad_login' })
     }
     failures.delete(key)
+    ensureUserBrain(vault, user.id, user.name)
     const issued = openSession(user)
     audit(user, 'login')
     res.setHeader('Set-Cookie', cookie(issued))
@@ -260,7 +278,8 @@ export function createCorp(opts = {}) {
     }
     const issued = openSession(user)
     audit(user, 'login', { via: 'oidc' })
-    res.writeHead(302, { Location: '/', 'Set-Cookie': cookie(issued) })
+    ensureUserBrain(vault, user.id, user.name)
+    res.writeHead(302, { Location: '/brain/', 'Set-Cookie': cookie(issued) })
     res.end()
   }
 
@@ -589,6 +608,29 @@ function send(res, status, body) {
     'x-content-type-options': 'nosniff'
   })
   res.end(payload)
+}
+
+function serveBrainApp(res, url, head) {
+  if (!existsSync(BRAIN_DIR)) {
+    return send(res, 503, { ok: false, error: 'brain_not_built', message: 'Run npm run corp:build-brain, then reload.' })
+  }
+  const sub = url.pathname.replace(/^\/brain\/?/, '') || 'index.html'
+  let file = path.join(BRAIN_DIR, sub)
+  const root = path.resolve(BRAIN_DIR)
+  if (!path.resolve(file).startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
+    file = path.join(BRAIN_DIR, 'index.html')
+  }
+  const ext = path.extname(file)
+  const type = ext === '.css' ? 'text/css' : ext === '.js' ? 'text/javascript' : 'text/html'
+  const body = readFileSync(file)
+  const csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none';"
+  res.writeHead(200, {
+    'content-type': `${type}; charset=utf-8`,
+    'content-security-policy': csp,
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer'
+  })
+  res.end(head ? undefined : body)
 }
 
 function sendFile(res, name, head) {
