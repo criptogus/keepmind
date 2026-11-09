@@ -235,7 +235,7 @@ export default function Wizard({ config, onDone, onToast }: Props) {
     <div className="view" style={{ display: 'flex', alignItems: 'center' }}>
       <div className="wizard">
         <div>
-          <div className="hud-tag" style={{ marginBottom: 8 }}>SECOND BRAIN · SETUP</div>
+          <div className="hud-tag" style={{ marginBottom: 8 }}>KEEPMIND · SETUP</div>
           <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>KeepMind</h1>
           <p className="dim" style={{ marginTop: 8, fontSize: 13 }}>
             Let&apos;s set up your digital brain in ~2 minutes.

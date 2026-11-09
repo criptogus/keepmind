@@ -3,7 +3,7 @@ import BrainCore from './BrainCore'
 import { IconSparkle, IconDoc, IconGithub, IconMoon } from './icons'
 import { buildConnectPrompt } from '../lib/connectPrompt'
 
-export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
+export default function Dashboard({ onActivity, onToast }: { onActivity?: () => void; onToast?: (m: string, k?: 'info' | 'error' | 'success') => void }) {
   const [insights, setInsights] = useState<any[]>([])
   const [summaries, setSummaries] = useState<any[]>([])
   const [memory, setMemory] = useState<any[]>([])
@@ -32,21 +32,21 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
   const genInsights = async () => {
     setBusy('insights'); onActivity?.()
     try { await window.sb.brainInsights(); await refresh() }
-    catch (e: any) { alert(e?.message ?? e) }
+    catch (e: any) { onToast?.(String(e?.message ?? e), 'error') }
     finally { setBusy(null) }
   }
 
   const genSummary = async () => {
     setBusy('summary'); onActivity?.()
     try { await window.sb.brainDailySummary(); await refresh() }
-    catch (e: any) { alert(e?.message ?? e) }
+    catch (e: any) { onToast?.(String(e?.message ?? e), 'error') }
     finally { setBusy(null) }
   }
 
   const sleepNow = async () => {
     setSleeping(true); onActivity?.()
     try { await window.sb.brainSleep(); await refresh() }
-    catch (e: any) { alert(e?.message ?? e) }
+    catch (e: any) { onToast?.(String(e?.message ?? e), 'error') }
     finally { setSleeping(false) }
   }
 
@@ -54,8 +54,8 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
     setBusy('push')
     try {
       const r = await window.sb.ghPushMemory('sync: memory update')
-      alert(`Synced: ${r.pushed} files → GitHub`)
-    } catch (e: any) { alert(e?.message ?? e) }
+      onToast?.(`Synced ${r.pushed} files → GitHub`, 'success')
+    } catch (e: any) { onToast?.(String(e?.message ?? e), 'error') }
     finally { setBusy(null) }
   }
 
@@ -67,7 +67,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
       <div className="view-head">
         <div>
           <div className="hud-tag" style={{ marginBottom: 6 }}>ACTIVE BRAIN · {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-          <h1 style={{ textShadow: '0 0 24px rgba(34,211,238,.35)' }}>SECOND BRAIN</h1>
+          <h1>KEEP MIND</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
             {config?.github?.repoUrl
               ? <>memory persisted at <span className="mono" style={{ color: 'var(--cyan)' }}>{config.github.repoUrl}</span></>
@@ -109,7 +109,7 @@ export default function Dashboard({ onActivity }: { onActivity?: () => void }) {
           summaries <b>{summaries.length}</b>
         </div>
         <div className="orbit-chip orbit-chip--violet" style={{ bottom: '30%', right: '11%', animationDelay: '.8s' }}>
-          ia <b>{config?.ai?.provider ?? '—'}</b>
+          AI <b>{config?.ai?.provider ?? '—'}</b>
         </div>
         <div className="orbit-chip orbit-chip--lime" style={{ top: '48%', left: '3%', animationDelay: '3.4s' }}>
           {config?.github?.repoUrl ? 'github linked' : 'github offline'}

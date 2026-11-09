@@ -93,7 +93,7 @@ export default function App() {
       <>
         <BrainCore activity={0.4} className="brain-bg" lite />
         <Wizard config={config} onDone={loadConfig} onToast={toast} />
-        <ToastWrap toasts={toasts} />
+        <ToastWrap toasts={toasts} onDismiss={id => setToasts(t => t.filter(x => x.id !== id))} />
       </>
     )
   }
@@ -105,7 +105,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <BrainMark size={36} />
-          <div className="brand__name">second<em>brain</em></div>
+          <div className="brand__name">keep<em>mind</em></div>
         </div>
         <nav className="nav">
           {NAV.map(n => (
@@ -138,6 +138,8 @@ export default function App() {
             key={n.id}
             className={`mobile-nav__item ${view === n.id ? 'is-active' : ''}`}
             onClick={() => setView(n.id)}
+            aria-label={n.label}
+            title={n.label}
           >
             <n.Icon size={19} />
           </button>
@@ -146,7 +148,7 @@ export default function App() {
 
       <main className="main" style={{ zIndex: 1 }}>
         {view === 'today' && <Today onNavigate={(v) => setView(v as View)} />}
-        {view === 'dashboard' && <Dashboard onActivity={pulse} />}
+        {view === 'dashboard' && <Dashboard onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}
         {view === 'notes' && <Notes onActivity={pulse} />}
         {view === 'tasks' && <Tasks onActivity={pulse} />}
@@ -155,17 +157,18 @@ export default function App() {
         {view === 'settings' && <Settings onToast={toast} onActivity={pulse} />}
       </main>
 
-      <ToastWrap toasts={toasts} />
+      <ToastWrap toasts={toasts} onDismiss={id => setToasts(t => t.filter(x => x.id !== id))} />
     </div>
   )
 }
 
-function ToastWrap({ toasts }: { toasts: Toast[] }) {
+function ToastWrap({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
   return (
     <div className="toast-wrap">
       {toasts.map(t => (
         <div key={t.id} className={`toast toast--${t.kind === 'error' ? 'error' : t.kind === 'success' ? 'success' : ''}`}>
-          {t.msg}
+          <span style={{ flex: 1 }}>{t.msg}</span>
+          <button className="toast__x" aria-label="Dismiss" onClick={() => onDismiss(t.id)}>×</button>
         </div>
       ))}
     </div>

@@ -174,7 +174,7 @@ export default function Today({ onNavigate }: { onNavigate?: (v: string) => void
                 {g.done ? '✓' : ''}
               </button>
               <span className={`goal-text ${g.done ? 'is-done' : ''}`}>{g.text}</span>
-              <button className="goal-x" onClick={() => removeGoal(i)}>×</button>
+              <button className="goal-x" onClick={() => removeGoal(i)} aria-label="Remove goal">×</button>
             </div>
           ))}
         </div>

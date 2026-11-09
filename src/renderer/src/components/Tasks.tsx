@@ -96,7 +96,7 @@ export default function Tasks({ onActivity }: { onActivity?: () => void }) {
                 {t.notes ? ` · ${t.notes}` : ''}
               </div>
             </div>
-            <button className="goal-x" onClick={() => del(t.id)}><IconTrash size={12} /></button>
+            <button className="goal-x" onClick={() => del(t.id)} aria-label="Delete task"><IconTrash size={12} /></button>
           </div>
         ))}
       </div>

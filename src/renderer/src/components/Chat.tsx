@@ -19,6 +19,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
   const unsubRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
@@ -52,6 +53,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
     const text = input.trim()
     if (!text || busy) return
     setInput('')
+    if (taRef.current) taRef.current.style.height = 'auto'
     setBusy(true)
     onActivity?.()
 
@@ -121,7 +123,7 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
                 </div>
                 <div className="msg__meta" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {m.role === 'assistant' && m.content && (
-                    <button className="msg__copy" onClick={() => copyMsg(m.content)} title="Copy">⧉</button>
+                    <button className="msg__copy" onClick={() => copyMsg(m.content)} title="Copy" aria-label="Copy message">⧉</button>
                   )}
                 </div>
               </div>
@@ -132,8 +134,14 @@ export default function Chat({ onActivity }: { onActivity?: () => void }) {
 
         <div className="chat-input">
           <textarea
+            ref={taRef}
             value={input}
             onChange={e => setInput(e.target.value)}
+            onInput={e => {
+              const el = e.currentTarget
+              el.style.height = 'auto'
+              el.style.height = `${Math.min(el.scrollHeight, 140)}px`
+            }}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
             }}

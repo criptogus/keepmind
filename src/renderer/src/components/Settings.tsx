@@ -100,9 +100,19 @@ export default function Settings({ onToast, onActivity }: Props) {
         </div>
       </div>
 
+      <nav className="settings-nav">
+        {([['AI', 'sec-ai'], ['Models', 'sec-models'], ['Sync', 'sec-memory'], ['Account', 'sec-account'],
+           ['Pro', 'sec-pro'], ['Search', 'sec-rag'], ['Decisions', 'sec-laya'], ['Updates', 'sec-updates'], ['About', 'sec-about']] as const)
+          .map(([label, id]) => (
+            <button key={id} className="chip" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+              {label}
+            </button>
+          ))}
+      </nav>
+
       <div className="grid" style={{ maxWidth: 860 }}>
         {/* AI provider */}
-        <div className="card card-pad">
+        <div className="card card-pad" id="sec-ai">
           <h2 style={{ marginBottom: 14 }}>AI provider</h2>
           <div className="provider-grid" style={{ marginBottom: 16 }}>
             {PROVIDERS.map(p => (
@@ -223,7 +233,7 @@ export default function Settings({ onToast, onActivity }: Props) {
         <ModelsCard onToast={onToast} />
 
         {/* Memory / GitHub */}
-        <div className="card card-pad">
+        <div className="card card-pad" id="sec-memory">
           <h2 style={{ marginBottom: 14 }}>Memory & sync</h2>
           <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 14 }}>
             Your KeepMind stores everything as Markdown in your private GitHub repo.
@@ -263,7 +273,7 @@ function AboutCard() {
     window.sb.updaterStatus?.().then((s: any) => setVersion(s?.version ?? '')).catch(() => {})
   }, [])
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-about">
       <h2 style={{ marginBottom: 14 }}>About</h2>
       <div className="faint" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
         <p><strong style={{ color: 'var(--text)' }}>KeepMind</strong>{version ? ` v${version}` : ''} — open source, MIT.</p>
@@ -308,7 +318,7 @@ function AccountCard({ onToast }: { onToast: Props['onToast'] }) {
   }
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-account">
       <h2 style={{ marginBottom: 14 }}>Account & Google sign-in</h2>
       {auth?.user ? (
         <p style={{ fontSize: 13, marginBottom: 12 }}>
@@ -363,7 +373,7 @@ function ProCard({ onToast }: { onToast: Props['onToast'] }) {
   }
 
   return (
-    <div className="card card-pad" style={{ borderColor: pro?.active ? 'rgba(163,230,53,.35)' : undefined }}>
+    <div className="card card-pad" id="sec-pro" style={{ borderColor: pro?.active ? 'rgba(163,230,53,.35)' : undefined }}>
       <h2 style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
         KeepMind Pro {pro?.active && <span className="chip" style={{ borderColor: 'rgba(163,230,53,.4)', color: 'var(--lime)' }}>active</span>}
       </h2>
@@ -424,7 +434,7 @@ function RagCard({ onToast, onActivity }: { onToast: Props['onToast']; onActivit
   }
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-rag">
       <h2 style={{ marginBottom: 6 }}>Semantic memory (local RAG)</h2>
       <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
         Embeds your memory locally (llama.cpp) and injects the most relevant chunks into every chat —
@@ -505,7 +515,7 @@ function LayaCard({ onToast }: { onToast: Props['onToast'] }) {
   }
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-laya">
       <h2 style={{ marginBottom: 6 }}>Decision engine (Laya)</h2>
       <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
         Fast System-1 decisions in a single ONNX forward pass (~33ms): memory classification,
@@ -588,7 +598,7 @@ function UpdatesCard({ onToast }: { onToast: Props['onToast'] }) {
   }
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-updates">
       <h2 style={{ marginBottom: 6 }}>Updates</h2>
       <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
         {status?.packaged === false
@@ -659,7 +669,7 @@ function ModelsCard({ onToast }: { onToast: Props['onToast'] }) {
   const total = (models ?? []).reduce((n, m) => n + (m.downloaded ? m.sizeBytes : 0), 0)
 
   return (
-    <div className="card card-pad">
+    <div className="card card-pad" id="sec-models">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
         <h2>Models & runtimes</h2>
         {models && <span className="faint" style={{ fontSize: 11.5 }}>{fmtBytes(total)} on disk</span>}
