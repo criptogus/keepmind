@@ -41,7 +41,7 @@ function getGlowTex() {
   return glowTex
 }
 
-const PULSE_COUNT = 90
+const PULSE_COUNT = 110
 
 interface Pulse {
   link?: any          // synapse mode: travel source→target
@@ -138,6 +138,30 @@ export default function GraphView() {
       const pos = (n: any): any => n.__threeObj?.position ?? n
 
       const isHot = (id: string) => (hotRef.current.get(id) ?? 0) > Date.now()
+
+      // ── node firing: scale-pulse the Three.js object — the neuron itself swells ──
+      const nodePulse = new Map<string, { obj: any; t0: number; boost: number }>()
+      const fireNode = (n: any, boost = 1) => {
+        const obj = n?.__threeObj
+        if (!obj || nodePulse.has(n.id)) return
+        if (obj.userData.kmBase === undefined) obj.userData.kmBase = obj.scale?.x || 1
+        nodePulse.set(n.id, { obj, t0: performance.now(), boost })
+      }
+      // hubs fire most — weighted pool of the most-connected neurons
+      const firingPool = [...nodes3d].sort((a: any, b: any) => (b.links ?? 0) - (a.links ?? 0)).slice(0, 800)
+
+      const stepNodePulses = () => {
+        const nowP = performance.now()
+        for (const [id, p] of nodePulse) {
+          const k = (nowP - p.t0) / 420
+          if (k >= 1) {
+            p.obj.scale.setScalar(p.obj.userData.kmBase)
+            nodePulse.delete(id)
+            continue
+          }
+          p.obj.scale.setScalar(p.obj.userData.kmBase * (1 + 0.55 * p.boost * (1 - k)))
+        }
+      }
 
       const spawnLinkPulse = (hotOnly: boolean): Pulse | null => {
         let pool = links3d
@@ -237,6 +261,20 @@ export default function GraphView() {
           ;(sprite.material.color as THREE.Color).setHex(p.hot ? 0x7dd3fc : 0x38bdf8)
         }
         for (let i = pulses.length; i < sprites.length; i++) sprites[i].material.opacity = 0
+
+        // ── ambient neural firing: hubs + hot nodes swell rhythmically ──
+        stepNodePulses()
+        const fireCount = 3 + (hotRef.current.size > 0 ? 4 : 0)
+        for (let i = 0; i < fireCount; i++) {
+          let n: any
+          if (hotRef.current.size > 0 && Math.random() < 0.65) {
+            const hotIds = [...hotRef.current.keys()]
+            n = nodeById.get(hotIds[Math.floor(Math.random() * hotIds.length)])
+          } else {
+            n = firingPool[Math.floor(Math.random() * firingPool.length)]
+          }
+          if (n) fireNode(n, isHot(n.id) ? 1.7 : 1)
+        }
       }
       tick()
 
@@ -257,7 +295,19 @@ export default function GraphView() {
       const offPush = window.sb.onActivityPush?.((e: any) => {
         if (e?.path?.endsWith('.md')) {
           const id = e.path.replace(/\.md$/, '')
-          if (nodeById.has(id)) heatNode(id)
+          if (nodeById.has(id)) {
+            heatNode(id)
+            // the written neuron fires hard, plus a couple of synapse bursts
+            fireNode(nodeById.get(id), 2.2)
+            for (const l of links3d) {
+              const s: any = typeof l.source === 'object' ? l.source.id : l.source
+              const t: any = typeof l.target === 'object' ? l.target.id : l.target
+              if ((s === id || t === id) && pulsesRef.current.length < PULSE_COUNT) {
+                pulsesRef.current.push({ link: l, t: 0, speed: 0.02 + Math.random() * 0.02, life: 1, hot: true })
+                if (pulsesRef.current.length > 2) break
+              }
+            }
+          }
         }
         setFeed(f => [e, ...f].slice(0, 30))
         setTodayWrites(w => w + 1)
