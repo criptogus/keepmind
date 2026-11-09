@@ -1966,7 +1966,9 @@ Se não houver nota do SuperagentSkill, diga isso. Menos skills afiadas vencem u
 
   // Wikilink graph of the whole vault — powers the 3D neural view.
   // Cached for 60s: scanning ~10k files is too slow per frame.
+  // A journaled write drops the cache so the live panel can see a new file.
   private graphCache: { at: number; data: any } | null = null
+  touchGraph() { this.graphCache = null }
   memoryGraph() {
     if (this.graphCache && Date.now() - this.graphCache.at < 60_000) return this.graphCache.data
     const files = this.memory.allRelFiles()

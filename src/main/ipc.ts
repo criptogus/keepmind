@@ -144,7 +144,10 @@ export function registerIpc(
   const sendAll = (channel: string, payload: unknown) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
   }
-  brain.getMemory().onJournal = (entry) => sendAll('brain:activityPush', entry)
+  brain.getMemory().onJournal = (entry) => {
+    brain.touchGraph()
+    sendAll('brain:activityPush', entry)
+  }
   brain.onJob = (event) => sendAll('brain:job', event)
   if (automations) automations.onStatus = (event) => sendAll('brain:job', event)
   ipcMain.handle('config:get', () => store.get())

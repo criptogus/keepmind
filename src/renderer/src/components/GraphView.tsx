@@ -43,6 +43,29 @@ function getGlowTex() {
 
 const PULSE_COUNT = 130
 
+function ago(ts: number, now: number): string {
+  const s = Math.max(0, Math.round((now - ts) / 1000))
+  if (s < 60) return `há ${s} s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `há ${m} min ${s % 60} s`
+  const h = Math.floor(m / 60)
+  return `há ${h} h ${m % 60} min`
+}
+
+function applyActivity(acts: any[]) {
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+  const todayActs = (acts ?? []).filter(a => a.ts >= dayStart.getTime())
+  const srcs = [...new Set(todayActs.map(a => a.source ?? 'system'))]
+  const newest = (acts ?? []).reduce((m: number, a: any) => Math.max(m, a.ts || 0), 0)
+  return {
+    feed: (acts ?? []).slice(0, 8),
+    todayWrites: todayActs.length,
+    sources: srcs,
+    lastWrite: newest || null
+  }
+}
+
 interface Pulse {
   link?: any          // synapse mode: travel source→target
   node?: any          // spike mode: flash at a node (connections hidden)
@@ -66,10 +89,17 @@ export default function GraphView() {
   const [feed, setFeed] = useState<any[]>([])
   const [todayWrites, setTodayWrites] = useState(0)
   const [sourceCount, setSourceCount] = useState(0)
+  const [lastWrite, setLastWrite] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const [sel, setSel] = useState<{ node: any; content: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { showLinksRef.current = showLinks }, [showLinks])
+
+  useEffect(() => {
+    const clock = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(clock)
+  }, [])
 
   // hide/show edges without rebuilding the simulation
   useEffect(() => {
@@ -272,6 +302,26 @@ export default function GraphView() {
       }, 12_000)
       ;(Graph as any).__heatCleanup = () => clearInterval(heatTimer)
 
+      const refreshActivity = async () => {
+        try {
+          const acts: any[] = await window.sb.brainActivity(200)
+          if (dead) return
+          const next = applyActivity(acts)
+          setFeed(next.feed)
+          setTodayWrites(next.todayWrites)
+          feedSourcesRef.current = next.sources
+          setSourceCount(next.sources.length)
+          setLastWrite(next.lastWrite)
+        } catch { /* noop */ }
+      }
+      const refreshStats = async () => {
+        try {
+          const data: any = await window.sb.brainGraph()
+          if (dead || !data) return
+          setStats({ nodes: data.nodes.length, links: data.links.length, total: data.totalFiles })
+        } catch { /* noop */ }
+      }
+
       // ── realtime: journal pushes heat the graph the instant a write lands ──
       const offPush = window.sb.onActivityPush?.((e: any) => {
         if (e?.path?.endsWith('.md')) {
@@ -289,28 +339,18 @@ export default function GraphView() {
             }
           }
         }
-        setFeed(f => [e, ...f].slice(0, 30))
-        setTodayWrites(w => w + 1)
-        setSourceCount(s => {
-          const srcs = new Set(feedSourcesRef.current)
-          srcs.add(e?.source ?? 'system')
-          feedSourcesRef.current = [...srcs]
-          return srcs.size
-        })
+        void refreshActivity()
       })
       ;(Graph as any).__offPush = offPush
 
-      // initial feed + counters from the journal
-      try {
-        const acts: any[] = await window.sb.brainActivity(200)
-        const dayStartDate = new Date()
-        dayStartDate.setHours(0, 0, 0, 0)
-        const dayStart = dayStartDate.getTime()
-        setFeed((acts ?? []).slice(0, 8))
-        setTodayWrites((acts ?? []).filter(a => a.ts >= dayStart).length)
-        feedSourcesRef.current = [...new Set((acts ?? []).map(a => a.source ?? 'system'))]
-        setSourceCount(feedSourcesRef.current.length)
-      } catch { /* noop */ }
+      await refreshActivity()
+      if (dead) return
+      const activityTimer = setInterval(() => { void refreshActivity() }, 4_000)
+      const statsTimer = setInterval(() => { void refreshStats() }, 15_000)
+      ;(Graph as any).__statCleanup = () => {
+        clearInterval(activityTimer)
+        clearInterval(statsTimer)
+      }
 
       setLoading(false)
     })()
@@ -318,6 +358,7 @@ export default function GraphView() {
       dead = true
       cancelAnimationFrame(rafRef.current)
       graphRef.current?.__heatCleanup?.()
+      graphRef.current?.__statCleanup?.()
       graphRef.current?.__offPush?.()
       for (const sp of spritesRef.current) { sp.parent?.remove(sp); sp.material.dispose() }
       spritesRef.current = []
@@ -356,7 +397,7 @@ export default function GraphView() {
             { k: 'arquivos', v: stats ? stats.total.toLocaleString() : '—' },
             { k: 'ligações', v: stats ? stats.links.toLocaleString() : '—' },
             { k: 'gravações hoje', v: todayWrites.toLocaleString() },
-            { k: 'origens', v: sourceCount || '—' }
+            { k: 'origens hoje', v: sourceCount || '—' }
           ].map(m => (
             <div key={m.k}>
               <div style={{ fontSize: 17, fontWeight: 800, color: '#e8f4ff', fontFamily: 'var(--mono)' }}>{m.v}</div>
@@ -364,6 +405,11 @@ export default function GraphView() {
             </div>
           ))}
         </div>
+        <p className="faint" style={{ fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
+          {lastWrite
+            ? `Última gravação ${ago(lastWrite, now)}. Arquivos e ligações são relidos a cada 15 s.`
+            : 'O diário ainda está vazio. Esses números mudam quando o cérebro grava um arquivo.'}
+        </p>
         <div className="faint" style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
           últimas gravações
         </div>
