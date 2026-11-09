@@ -86,7 +86,7 @@ function validateAiPatch(p: any): void {
 function validateGithubPatch(p: any): void {
   if (!isPlainObject(p)) bad('github patch')
   for (const k of Object.keys(p)) {
-    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch'].includes(k)) bad(`github.${k}`)
+    if (!['accessToken', 'refreshToken', 'login', 'repoOwner', 'repoName', 'repoUrl', 'defaultBranch', 'syncRoot'].includes(k)) bad(`github.${k}`)
   }
   for (const k of Object.keys(p)) optStr(p[k], `github.${k}`, 2048)
 }
@@ -233,9 +233,14 @@ export function registerIpc(
     const t = store.get().github.accessToken
     if (!t) throw new Error('Not authenticated')
     const r = await github.getRepo(t, owner, repo)
+    // Imported vaults usually have no memory/ subtree — mirror the whole repo
+    // root instead so their existing layout becomes the brain. New repos and
+    // vaults that already use memory/ keep the scoped prefix.
+    const hasMemoryDir = (await github.listRepoFiles({ accessToken: t, repoOwner: owner, repoName: repo }, 'memory')).length > 0
     store.updateGithub({
       repoOwner: owner, repoName: repo,
-      repoUrl: r.html_url, defaultBranch: r.default_branch
+      repoUrl: r.html_url, defaultBranch: r.default_branch,
+      syncRoot: hasMemoryDir ? 'memory/' : ''
     })
     // teach agents the layout — only writes files the repo doesn't already have
     sync?.maybeScaffold().catch(() => {})

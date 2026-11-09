@@ -27,6 +27,8 @@ interface SyncState {
 const PULL_INTERVAL_MS = 60_000
 const PUSH_DEBOUNCE_MS = 2_500
 const PUSH_MIN_INTERVAL_MS = 5_000
+// Text formats worth mirroring — skips images/binaries/attachments on vault imports
+const TEXT_FILE_RE = /\.(md|markdown|txt|json|canvas|csv|org|base)$/i
 
 export class GitSync {
   private memory: Memory
@@ -159,12 +161,12 @@ export class GitSync {
         const content = this.memory.read(rel)
         if (content == null) {
           // local deletion → propagate to GitHub
-          try { await github.deleteMemoryFile(gh, rel) } catch { /* may already be gone */ }
+          try { await github.deleteMemoryFile(gh, rel, this.syncRoot) } catch { /* may already be gone */ }
           delete this.state.sha[rel]
           this.dirty.delete(rel)
           continue
         }
-        await github.pushFile(gh, `memory/${rel}`, content, 'sync: keepmind update')
+        await github.pushFile(gh, `${this.syncRoot}${rel}`, content, 'sync: keepmind update')
         this.dirty.delete(rel)
         this.lastPushAt = Date.now()
       }
@@ -180,21 +182,30 @@ export class GitSync {
     }
   }
 
+  // Repo prefix mirrored into local memory/. 'memory/' for keepmind-native repos,
+  // '' when an existing vault (Obsidian/PARA) is imported — its layout becomes ours.
+  private get syncRoot(): string {
+    return this.store.get().github.syncRoot ?? 'memory/'
+  }
+
   private async pull(): Promise<void> {
     if (this.pulling || !this.connected()) return
     this.pulling = true
     this.lastPullAttempt = Date.now()
     this.emit()
     const gh = this.store.get().github
+    const root = this.syncRoot
     try {
-      const remote = await github.listTree(gh, 'memory/')
+      const remote = await github.listTree(gh, root)
       const remoteMap = new Map(remote.map(r => [r.path, r.sha]))
 
       // 1) Remote files that are new or changed → download & write locally
       for (const { path: rel, sha } of remote) {
         if (this.dirty.has(rel)) continue // local write wins until pushed
         if (this.state.sha[rel] === sha) continue // unchanged
-        const file = await github.fetchMemoryFile(gh, rel)
+        if (!TEXT_FILE_RE.test(rel)) continue // skip binaries/attachments on vault import
+        if (rel.split('/').slice(0, -1).some(s => s.startsWith('.'))) continue // skip .obsidian/ etc.
+        const file = await github.fetchMemoryFile(gh, rel, root)
         if (!file) continue
         try {
           this.memory.quietWrite(rel, file.content)

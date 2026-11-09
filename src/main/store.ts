@@ -27,6 +27,7 @@ export interface GitHubConfig {
   repoName?: string
   repoUrl?: string
   defaultBranch?: string
+  syncRoot?: string // repo prefix mirrored into memory/ — 'memory/' default, '' = whole repo (imported vaults)
 }
 
 export interface McpServerConfig {
