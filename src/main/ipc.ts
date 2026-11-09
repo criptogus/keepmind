@@ -17,7 +17,7 @@ import { checkForUpdates, installUpdate, updaterStatus } from './services/update
 import { listModels, deleteModel } from './services/models'
 import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
 import { analyzeHealth, applyHealth } from './services/health'
-import { evolutionHints, installSkill, listVaultSkills, loadSakNotes, loadSkillThreats, reviewVaultSkill, scanSkillThreats, searchRegistry, skillTrust, skillsSnapshot } from './services/skillsHub'
+import { evolutionHints, installSkill, keepSkillCopy, listVaultSkills, loadSakNotes, loadSkillThreats, reviewVaultSkill, scanSkillThreats, searchRegistry, skillTrust, skillsSnapshot } from './services/skillsHub'
 import { attachVaultCrypto, securityStatus, securityScan, securityConfigure, encryptAll, decryptAll, securityAiAlerts, type SecurityPatch } from './services/security'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
 import type { McpServerConfig } from './store'
@@ -537,6 +537,7 @@ export function registerIpc(
   }
   ipcMain.handle('brain:skills', () => skillsSnapshot(brain.getMemory()))
   ipcMain.handle('brain:skillInstall', (_e, slug: string) => installSkill(brain.getMemory(), skillSlug(slug)))
+  ipcMain.handle('brain:skillKeep', (_e, rel: string) => keepSkillCopy(brain.getMemory(), skillPath(rel)))
   ipcMain.handle('brain:skillSearch', (_e, query: string, type?: string) => {
     const q = String(query ?? '').trim().slice(0, 80)
     if (q.length < 2) return []

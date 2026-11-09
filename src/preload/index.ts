@@ -142,6 +142,7 @@ const api = {
   brainHealthApply: (recId: string) => ipcRenderer.invoke('brain:healthApply', recId),
   brainSkills: () => ipcRenderer.invoke('brain:skills'),
   brainSkillInstall: (slug: string) => ipcRenderer.invoke('brain:skillInstall', slug),
+  brainSkillKeep: (path: string) => ipcRenderer.invoke('brain:skillKeep', path),
   brainSkillSearch: (query: string, type?: string) => ipcRenderer.invoke('brain:skillSearch', query, type),
   brainSkillReview: (path: string) => ipcRenderer.invoke('brain:skillReview', path),
   brainSkillTrust: (slug: string) => ipcRenderer.invoke('brain:skillTrust', slug),

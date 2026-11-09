@@ -66,6 +66,7 @@ export interface VaultSkill {
   kind: string
   slug: string
   excerpt: string
+  category: string
 }
 
 export interface SkillSuggestion {
@@ -100,6 +101,7 @@ export interface EvolutionHint {
   segment: string
   kind: 'use' | 'idle' | 'note' | 'duplicate' | 'threat'
   sentence: string
+  paths?: string[]
 }
 
 export type ThreatStatus = 'clean' | 'review' | 'blocked' | 'unavailable'
@@ -138,12 +140,19 @@ export interface SkillSegment {
   count: number
 }
 
+export interface SkillCategory {
+  id: string
+  label: string
+  count: number
+}
+
 export interface SkillsSnapshot {
   items: VaultSkill[]
   suggestions: SkillSuggestion[]
   hints: EvolutionHint[]
   notes: SakNote[]
   segments: SkillSegment[]
+  categories: SkillCategory[]
   threats: SkillThreat[]
 }
 
@@ -155,6 +164,115 @@ function num(v: unknown): number | null {
 function kindOf(raw: string): SkillKind {
   const k = raw.trim().toLowerCase()
   return (KINDS as readonly string[]).includes(k) ? k as SkillKind : 'skill'
+}
+
+const SKILL_CATEGORIES: { id: string; label: string; keywords: string[] }[] = [
+  { id: 'cybersec', label: 'Cybersec', keywords: ['cyber', 'cybersec', 'security', 'segurança', 'seguranca', 'vuln', 'pentest', 'owasp', 'threat', 'malware', 'jailbreak'] },
+  { id: 'automation', label: 'Automation', keywords: ['automation', 'automação', 'automacao', 'composio', 'zapier', 'n8n', 'workflow', 'cron', 'integrat'] },
+  { id: 'development', label: 'Development', keywords: ['develop', 'desenvolvimento', 'code', 'coding', 'debug', 'typescript', 'python', 'refactor', 'git', 'api', 'software', 'programming'] },
+  { id: 'marketing', label: 'Marketing', keywords: ['marketing', 'campaign', 'ads', 'seo', 'copy', 'brand', 'social', 'growth', 'newsletter'] },
+  { id: 'research', label: 'Research', keywords: ['research', 'pesquisa', 'investig', 'study', 'estudo'] },
+  { id: 'writing', label: 'Writing', keywords: ['writing', 'escrita', 'editor', 'prose', 'blog', 'draft'] },
+  { id: 'product', label: 'Product', keywords: ['product', 'produto', 'roadmap', 'prd', 'user story'] },
+  { id: 'sales', label: 'Sales', keywords: ['sales', 'vendas', 'crm', 'outbound', 'lead', 'pipeline'] },
+  { id: 'operations', label: 'Operations', keywords: ['operations', 'operações', 'operacoes', 'incident', 'runbook', 'oncall', 'sre'] },
+  { id: 'other', label: 'Other', keywords: [] }
+]
+
+function unwrapScalar(raw: string): string {
+  let t = raw.trim()
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) t = t.slice(1, -1)
+  return t.replace(/\\n/g, ' ').replace(/\\"/g, '"').replace(/\s+/g, ' ').trim()
+}
+
+function humanizeSlug(slug: string): string {
+  const words = slug.replace(/[_]+/g, ' ').replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!words) return slug
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+function splitFrontMatter(content: string): { fm: string; body: string } {
+  if (!content.startsWith('---')) return { fm: '', body: content }
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
+  if (!match) return { fm: '', body: content }
+  return { fm: match[1], body: content.slice(match[0].length) }
+}
+
+function frontDescription(fm: string): string {
+  const lines = fm.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const found = lines[i].match(/^description:\s*(.*)$/)
+    if (!found) continue
+    const rest = found[1].trim()
+    if (rest === '|' || rest === '>' || rest === '|-' || rest === '>-') {
+      const block: string[] = []
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].trim() !== '' && !/^\s/.test(lines[j])) break
+        block.push(lines[j].trim())
+      }
+      return unwrapScalar(block.join(' '))
+    }
+    return unwrapScalar(rest)
+  }
+  return ''
+}
+
+function firstProse(body: string): string {
+  const lines = body.replace(/^#\s+.+(?:\r?\n)+/, '').split(/\r?\n/)
+  const out: string[] = []
+  let fence = false
+  for (const line of lines) {
+    const t = line.trim()
+    if (t.startsWith('```')) { fence = !fence; continue }
+    if (fence || !t) {
+      if (!fence && out.length) break
+      continue
+    }
+    if (/^[#|>]/.test(t) || t.startsWith('|') || t.startsWith('<') || t.startsWith('{') || t.startsWith('[')) continue
+    if (/^[-*]\s+[`{[]/.test(t)) continue
+    const plain = t
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/[`*_>#]/g, '')
+      .trim()
+    if (plain.length < 2) continue
+    if ((plain.match(/[{}[\]]/g) ?? []).length >= 2) continue
+    out.push(plain)
+    if (out.join(' ').length > 220) break
+  }
+  return out.join(' ')
+}
+
+export function skillTitle(fm: string, body: string, rel: string): string {
+  const base = rel.split('/').pop() ?? rel
+  const folder = base.toLowerCase() === 'skill.md'
+    ? (rel.split('/').slice(-2, -1)[0] ?? base)
+    : base.replace(/\.md$/i, '')
+  const raw = fm.match(/^name:\s*(.+)$/m)?.[1] ?? body.match(/^#\s+(.+)$/m)?.[1] ?? ''
+  const cleaned = unwrapScalar(raw).replace(/[`*_>#]/g, '').trim()
+  const noisy = !cleaned || cleaned.length > 72 || /[{}[\]<>]/.test(cleaned) || cleaned.toLowerCase() === 'skill'
+  return (noisy ? humanizeSlug(folder) : cleaned).slice(0, 80)
+}
+
+export function readableExcerpt(fm: string, body: string): string {
+  const prose = firstProse(body)
+  const described = frontDescription(fm)
+  const pick = prose || described || 'No text yet.'
+  return pick.replace(/\s+/g, ' ').trim().slice(0, 220)
+}
+
+export function categoryOf(fm: string, title: string, excerpt: string, rel: string, slug: string): string {
+  const declared = (fm.match(/^(?:category|categories|tags):\s*(.+)$/m)?.[1] ?? '').replace(/[[\]"']/g, ' ')
+  const hay = `${declared} ${title} ${excerpt} ${rel} ${slug}`.toLowerCase()
+  for (const cat of SKILL_CATEGORIES) {
+    if (cat.id === 'other') continue
+    if (cat.keywords.some(k => hay.includes(k))) return cat.id
+  }
+  return 'other'
+}
+
+export function titleKey(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
 function segmentOf(group: string, source: string): string {
@@ -192,17 +310,16 @@ export function listVaultSkills(memory: Memory): VaultSkill[] {
 
   const push = (rel: string, group: string) => {
     if (seen.has(rel)) return
+    if (rel.split('/').some(part => part.startsWith('_') || part.startsWith('.'))) return
     seen.add(rel)
     const content = memory.read(rel) ?? ''
-    const fm = content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ''
-    const title = fm.match(/^name:\s*(.+)$/m)?.[1]?.trim()
-      ?? content.match(/^#\s+(.+)$/m)?.[1]?.trim()
-      ?? rel.split('/').filter(Boolean).pop()!.replace(/\.md$/i, '')
+    const { fm, body } = splitFrontMatter(content)
+    const title = skillTitle(fm, body, rel)
     const source = fm.match(/^source:\s*(.+)$/m)?.[1]?.trim() ?? ''
     const slugFromSource = source.match(/superagentskill\.com\/([a-z0-9-]+)/i)?.[1]?.toLowerCase() ?? ''
     const flat = rel.startsWith('skills/') && !rel.slice('skills/'.length).includes('/')
     const slug = slugFromSource || (flat ? rel.slice('skills/'.length).replace(/\.md$/i, '') : '')
-    const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '').replace(/^#\s+.+\n+/, '').trim()
+    const excerpt = readableExcerpt(fm, body)
     const mtime = memory.fileMtime(rel) ?? now
     const mentions = Math.max(countNeedle(corpus, title), slug ? countNeedle(corpus, slug) : 0)
     out.push({
@@ -216,7 +333,8 @@ export function listVaultSkills(memory: Memory): VaultSkill[] {
       mentions,
       kind: kindOf(fm.match(/^type:\s*(.+)$/m)?.[1] ?? 'skill'),
       slug,
-      excerpt: (body || 'Sem texto ainda.').slice(0, 280)
+      excerpt,
+      category: categoryOf(fm, title, excerpt, rel, slug)
     })
   }
 
@@ -320,7 +438,7 @@ export function evolutionHints(skills: VaultSkill[], notes: SakNote[], threats: 
   }
   const byTitle = new Map<string, VaultSkill[]>()
   for (const s of skills) {
-    const key = s.title.toLowerCase().replace(/[^a-z0-9]+/g, '')
+    const key = titleKey(s.title)
     if (key.length < 4) continue
     const list = byTitle.get(key) ?? []
     list.push(s)
@@ -328,15 +446,15 @@ export function evolutionHints(skills: VaultSkill[], notes: SakNote[], threats: 
   }
   for (const group of byTitle.values()) {
     if (group.length < 2) continue
-    for (const s of group) {
-      hints.push({
-        path: s.path,
-        title: s.title,
-        segment: s.segment,
-        kind: 'duplicate',
-        sentence: `Há ${group.length} skills com o mesmo nome. Fica melhor uma página só, no segmento que você realmente usa.`
-      })
-    }
+    const names = group.map(s => s.path).join(' · ')
+    hints.push({
+      path: group[0].path,
+      title: group[0].title,
+      segment: group[0].segment,
+      kind: 'duplicate',
+      paths: group.map(s => s.path),
+      sentence: `“${group[0].title}” is in ${group.length} files: ${names}.`
+    })
   }
   const noted = new Map(notes.map(n => [n.path, n]))
   for (const s of skills) {
@@ -372,6 +490,40 @@ function segmentsOf(skills: VaultSkill[]): SkillSegment[] {
   const map = new Map<string, number>()
   for (const s of skills) map.set(s.segment, (map.get(s.segment) ?? 0) + 1)
   return [...map.entries()].map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count || a.id.localeCompare(b.id))
+}
+
+function categoriesOf(skills: VaultSkill[]): SkillCategory[] {
+  return SKILL_CATEGORIES.map(cat => ({
+    id: cat.id,
+    label: cat.label,
+    count: skills.filter(s => s.category === cat.id).length
+  }))
+}
+
+export function keepSkillCopy(memory: Memory, keepPath: string): { kept: string; archived: string[] } {
+  const skills = listVaultSkills(memory)
+  const keep = skills.find(s => s.path === keepPath)
+  if (!keep) throw new Error('That skill is not in the vault.')
+  const group = skills.filter(s => titleKey(s.title) === titleKey(keep.title) && titleKey(keep.title).length >= 4)
+  if (group.length < 2) throw new Error('There is no other skill with that name.')
+  const stamp = new Date().toISOString().slice(0, 10)
+  const archived: string[] = []
+  for (const other of group) {
+    if (other.path === keep.path) continue
+    const raw = memory.read(other.path)
+    if (raw == null) continue
+    const slug = other.path.replace(/\.md$/i, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(-80)
+    let dest = `skills/_arquivo/${stamp}-${slug}.md`
+    let n = 2
+    while (memory.read(dest) != null) {
+      dest = `skills/_arquivo/${stamp}-${slug}-${n}.md`
+      n++
+    }
+    memory.write(dest, `<!-- archived from ${other.path} on ${stamp}; kept ${keep.path} -->\n${raw}`)
+    memory.remove(other.path)
+    archived.push(other.path)
+  }
+  return { kept: keep.path, archived }
 }
 
 const SUGGESTION_QUERIES = [
@@ -451,7 +603,7 @@ export async function skillsSnapshot(memory: Memory): Promise<SkillsSnapshot> {
   const threats = loadSkillThreats(memory)
   const hints = evolutionHints(items, notes, threats)
   const suggestions = await suggestSkills(memory).catch(() => [])
-  return { items, suggestions, hints, notes, segments: segmentsOf(items), threats }
+  return { items, suggestions, hints, notes, segments: segmentsOf(items), categories: categoriesOf(items), threats }
 }
 
 export async function reviewVaultSkill(memory: Memory, rel: string): Promise<SakNote> {
