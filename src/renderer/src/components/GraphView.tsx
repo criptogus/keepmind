@@ -149,7 +149,7 @@ export default function GraphView() {
       ggeo.setAttribute('position', new THREE.BufferAttribute(gpos, 3))
       ggeo.setAttribute('color', new THREE.BufferAttribute(gcol, 3))
       const glowPoints = new THREE.Points(ggeo, new THREE.PointsMaterial({
-        size: 6.5, map: tex, transparent: true, opacity: 0.42, vertexColors: true,
+        size: 16, map: tex, transparent: true, opacity: 0.6, vertexColors: true,
         blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
       }))
       scene.add(glowPoints)
