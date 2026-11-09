@@ -41,7 +41,7 @@ function getGlowTex() {
   return glowTex
 }
 
-const PULSE_COUNT = 110
+const PULSE_COUNT = 130
 
 interface Pulse {
   link?: any          // synapse mode: travel source→target
@@ -135,54 +135,9 @@ export default function GraphView() {
       spritesRef.current = sprites
       pulsesRef.current = []
 
-      // ── electrified neurons: one Points cloud = soft glow halo per node ──
-      // single draw call for up to 3k halos, tinted by directory color
-      const N = nodes3d.length
-      const gpos = new Float32Array(N * 3)
-      const gcol = new Float32Array(N * 3)
-      const tmpCol = new THREE.Color()
-      nodes3d.forEach((n: any, i: number) => {
-        tmpCol.set(colorFor(n.dir))
-        gcol[i * 3] = tmpCol.r; gcol[i * 3 + 1] = tmpCol.g; gcol[i * 3 + 2] = tmpCol.b
-      })
-      const ggeo = new THREE.BufferGeometry()
-      ggeo.setAttribute('position', new THREE.BufferAttribute(gpos, 3))
-      ggeo.setAttribute('color', new THREE.BufferAttribute(gcol, 3))
-      const glowPoints = new THREE.Points(ggeo, new THREE.PointsMaterial({
-        size: 16, map: tex, transparent: true, opacity: 0.6, vertexColors: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
-      }))
-      scene.add(glowPoints)
-      ;(Graph as any).__glowDispose = () => { ggeo.dispose(); (glowPoints.material as THREE.Material).dispose() }
-      const gAttr = ggeo.attributes.position as THREE.BufferAttribute
-
       const pos = (n: any): any => n.__threeObj?.position ?? n
 
       const isHot = (id: string) => (hotRef.current.get(id) ?? 0) > Date.now()
-
-      // ── node firing: scale-pulse the Three.js object — the neuron itself swells ──
-      const nodePulse = new Map<string, { obj: any; t0: number; boost: number }>()
-      const fireNode = (n: any, boost = 1) => {
-        const obj = n?.__threeObj
-        if (!obj || nodePulse.has(n.id)) return
-        if (obj.userData.kmBase === undefined) obj.userData.kmBase = obj.scale?.x || 1
-        nodePulse.set(n.id, { obj, t0: performance.now(), boost })
-      }
-      // hubs fire most — weighted pool of the most-connected neurons
-      const firingPool = [...nodes3d].sort((a: any, b: any) => (b.links ?? 0) - (a.links ?? 0)).slice(0, 800)
-
-      const stepNodePulses = () => {
-        const nowP = performance.now()
-        for (const [id, p] of nodePulse) {
-          const k = (nowP - p.t0) / 420
-          if (k >= 1) {
-            p.obj.scale.setScalar(p.obj.userData.kmBase)
-            nodePulse.delete(id)
-            continue
-          }
-          p.obj.scale.setScalar(p.obj.userData.kmBase * (1 + 0.55 * p.boost * (1 - k)))
-        }
-      }
 
       const spawnLinkPulse = (hotOnly: boolean): Pulse | null => {
         let pool = links3d
@@ -256,7 +211,7 @@ export default function GraphView() {
             sprite.position.copy(tmp)
             sprite.material.opacity = p.life * flicker
             sprite.scale.setScalar((p.hot ? 7 : 4.5) * (1.6 - p.life * 0.6) + Math.random())
-            ;(sprite.material.color as THREE.Color).setHex(p.hot ? 0x7dd3fc : 0x38bdf8)
+            ;(sprite.material.color as THREE.Color).setHex(p.hot ? 0xe0f2fe : 0x67e8f9)
             continue
           }
 
@@ -279,29 +234,10 @@ export default function GraphView() {
           sprite.position.copy(tmp)
           sprite.material.opacity = Math.min(1, p.life * 2) * flicker
           sprite.scale.setScalar(p.hot ? 2.6 + Math.random() * 1.6 : 1.4 + Math.random() * 0.9)
-          ;(sprite.material.color as THREE.Color).setHex(p.hot ? 0x7dd3fc : 0x38bdf8)
+          ;(sprite.material.color as THREE.Color).setHex(p.hot ? 0xe0f2fe : 0x67e8f9)
         }
         for (let i = pulses.length; i < sprites.length; i++) sprites[i].material.opacity = 0
 
-        // ── ambient neural firing: hubs + hot nodes swell rhythmically ──
-        stepNodePulses()
-        // halo cloud tracks node positions every frame
-        for (let i = 0; i < N; i++) {
-          const p = pos(nodes3d[i])
-          gAttr.setXYZ(i, p.x ?? 0, p.y ?? 0, p.z ?? 0)
-        }
-        gAttr.needsUpdate = true
-        const fireCount = 3 + (hotRef.current.size > 0 ? 4 : 0)
-        for (let i = 0; i < fireCount; i++) {
-          let n: any
-          if (hotRef.current.size > 0 && Math.random() < 0.65) {
-            const hotIds = [...hotRef.current.keys()]
-            n = nodeById.get(hotIds[Math.floor(Math.random() * hotIds.length)])
-          } else {
-            n = firingPool[Math.floor(Math.random() * firingPool.length)]
-          }
-          if (n) fireNode(n, isHot(n.id) ? 1.7 : 1)
-        }
       }
       tick()
 
@@ -324,8 +260,7 @@ export default function GraphView() {
           const id = e.path.replace(/\.md$/, '')
           if (nodeById.has(id)) {
             heatNode(id)
-            // the written neuron fires hard, plus a couple of synapse bursts
-            fireNode(nodeById.get(id), 2.2)
+            // synapse bursts along the written node's links
             for (const l of links3d) {
               const s: any = typeof l.source === 'object' ? l.source.id : l.source
               const t: any = typeof l.target === 'object' ? l.target.id : l.target
@@ -365,7 +300,6 @@ export default function GraphView() {
       cancelAnimationFrame(rafRef.current)
       graphRef.current?.__heatCleanup?.()
       graphRef.current?.__offPush?.()
-      graphRef.current?.__glowDispose?.()
       for (const sp of spritesRef.current) { sp.parent?.remove(sp); sp.material.dispose() }
       spritesRef.current = []
       graphRef.current?._destructor?.()
