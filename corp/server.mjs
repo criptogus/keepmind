@@ -11,7 +11,7 @@ import {
   can, hashPassword, verifyPassword, userIdFromEmail,
   resolveInside, canReadFile, canWriteFile, normalizePolicy, accessCtxForUser,
   clampTeamAutonomy, scanText, scanVault, publicScan, redactSecrets, walkMarkdown,
-  defaultOrg, readJson, writeJsonAtomic, ensureVaultShape, appendAudit, readAudit,
+  defaultOrg, mergeAgentCatalog, readJson, writeJsonAtomic, ensureVaultShape, appendAudit, readAudit,
   verifyRs256
 } from './lib.mjs'
 import { createOidc, oidcFromEnv } from './oidc.mjs'
@@ -611,12 +611,15 @@ export function createCorp(opts = {}) {
       seen.add(id)
       const teamId = org.teams.some(team => team.id === agent.teamId) ? agent.teamId : 'everyone'
       const autonomyMax = clampTeamAutonomy(agent.autonomyMax || 'supervised', org.policy.autonomyCeiling)
+      const prev = org.agents.find((a) => a.id === id)
       next.push({
         id,
         name: String(agent.name || id).slice(0, 80),
         enabled: !!agent.enabled,
         teamId,
-        autonomyMax
+        autonomyMax,
+        kind: String(agent.kind || prev?.kind || 'builtin').slice(0, 40),
+        description: String(agent.description || prev?.description || '').slice(0, 200)
       })
     }
     org.agents = next
@@ -697,7 +700,7 @@ function loadOrg(file, name) {
     name: typeof loaded.name === 'string' ? loaded.name : base.name,
     users: loaded.users,
     teams: Array.isArray(loaded.teams) && loaded.teams.length ? loaded.teams : base.teams,
-    agents: Array.isArray(loaded.agents) ? loaded.agents : base.agents,
+    agents: mergeAgentCatalog(loaded.agents, base.agents),
     policy: { ...base.policy, ...(loaded.policy || {}), byokRequired: true, memberKeys: false }
   }
 }

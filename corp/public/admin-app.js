@@ -248,13 +248,13 @@ function members(data) {
 function agents(data) {
   const modes = state.meta?.autonomy || []
   const rows = (data.agents || []).map(agent => `<tr>
-    <td>${esc(agent.name)}<div class="sub">${esc(agent.id)}</div></td>
+    <td>${esc(agent.name)}<div class="sub">${esc(agent.id)}${agent.kind === 'app' ? ' · app' : ''}${agent.description ? ` — ${esc(agent.description)}` : ''}</div></td>
     <td>${esc(agent.teamId)}</td>
     <td><select data-agent-autonomy="${esc(agent.id)}" ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''}>${modes.map(m => `<option ${(agent.autonomyMax || 'supervised') === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></td>
     <td><input type="checkbox" data-agent="${esc(agent.id)}" ${agent.enabled ? 'checked' : ''} ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''}/></td>
   </tr>`).join('')
   const writer = state.me.role === 'owner' || state.me.role === 'admin'
-  return `<p class="sub">Não é Paperclip ainda: aqui você **autoriza** agentes do tenant (brain, ingest, sync). Runtime MCP vem no roadmap.</p>
+  return `<p class="sub">Autorize agentes do tenant (brain, ingest, sync, <strong>Cursor Composer</strong> como conector de app). Runtime MCP completo vem no roadmap v0.4.</p>
     <form id="agents"><table><thead><tr><th>Agente</th><th>Time</th><th>Autonomia máx.</th><th>Ligado</th></tr></thead><tbody>${rows}</tbody></table>
     ${writer ? '<p><button class="btn" type="submit">Salvar agentes</button></p>' : ''}</form>`
 }

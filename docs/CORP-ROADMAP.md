@@ -14,7 +14,7 @@
 ## Paperclip vs Corp
 
 Paperclip: org chart de agentes, metas, budget, runtime.  
-Corp **hoje**: catálogo (`brain` / `ingest` / `sync`), política, BYOK, auditoria, chat com memória injetada (RAG leve). **v0.4** aproxima runtime MCP.
+Corp **hoje**: catálogo (`brain` / `composer` / `ingest` / `sync`), política, BYOK, auditoria, chat com memória injetada (RAG leve). **Composer** = conector Cursor Agent (MCP). **v0.4** aproxima runtime MCP.
 
 ## Governança por cargo
 

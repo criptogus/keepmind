@@ -29,7 +29,14 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
       ai: { provider: providers[0] ?? 'local', model: 'org-default' },
       localLlm: { modelId: 'qwen2.5-3b' },
       github: { repoUrl: null, login: org.name },
-      mcpServers: org.agents.filter(a => a.enabled).map(a => ({ id: a.id, name: a.name, kind: a.id, enabled: true })),
+      mcpServers: org.agents
+        .filter((a) => a.enabled)
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          kind: a.kind === 'app' || a.id === 'composer' ? 'app' : 'builtin',
+          enabled: true
+        })),
       agents: [{ id: 'brain', name: 'KeepMind', emoji: '🧠', persona: 'Corporate second brain.', builtin: true }],
       automations: [],
       corp: {

@@ -349,6 +349,21 @@ export function publicScan(scan, withPaths) {
   return { ...base, secrets: scan.secrets, pii: scan.pii }
 }
 
+/** Add new catalog agents (e.g. composer) to existing org.json without dropping custom rows. */
+export function mergeAgentCatalog(loaded, baseAgents) {
+  const byId = new Map((Array.isArray(loaded) ? loaded : []).map((a) => [a.id, a]))
+  return baseAgents.map((def) => {
+    const cur = byId.get(def.id)
+    if (!cur) return { ...def }
+    return {
+      ...def,
+      ...cur,
+      kind: cur.kind ?? def.kind,
+      description: cur.description ?? def.description
+    }
+  })
+}
+
 export function defaultOrg(name = 'KeepMind Corp') {
   return {
     version: 1,
@@ -356,9 +371,10 @@ export function defaultOrg(name = 'KeepMind Corp') {
     users: [],
     teams: [{ id: 'everyone', name: 'Everyone', autonomy: 'supervised' }],
     agents: [
-      { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone', autonomyMax: 'supervised' },
-      { id: 'ingest', name: 'Ingest', enabled: false, teamId: 'everyone', autonomyMax: 'supervised' },
-      { id: 'sync', name: 'Sync', enabled: false, teamId: 'everyone', autonomyMax: 'supervised' }
+      { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Chat e RAG do second brain corporativo' },
+      { id: 'composer', name: 'Cursor Composer', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'app', description: 'Agente Cursor com MCP KeepMind (sb_search, sb_remember)' },
+      { id: 'ingest', name: 'Ingest', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Captura e ingestão de notas' },
+      { id: 'sync', name: 'Sync', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Sincronização com repositório externo' }
     ],
     policy: defaultPolicy()
   }

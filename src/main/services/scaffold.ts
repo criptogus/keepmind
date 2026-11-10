@@ -54,8 +54,9 @@ Tools: \`sb_search\` (search memory first!), \`sb_read\`, \`sb_write\`,
 \`sb_list\`, \`sb_tree\`, \`sb_tasks\`, \`sb_query\` (structured filters:
 tasks by status/priority/due, notes by tag, entities by text).
 
-Claude Code picks it up automatically via \`.mcp.json\`. Codex, Gemini CLI,
-OpenCode or any MCP client can spawn the same command.
+Claude Code picks it up automatically via \`.mcp.json\`. **Cursor Composer**
+(Agent mode) uses \`.cursor/mcp.json\` + \`.cursor/rules/keepmind-memory.mdc\`.
+Codex, Gemini CLI, OpenCode or any MCP client can spawn the same command.
 
 ## Conventions
 
@@ -82,6 +83,20 @@ const mcpJsonFor = (dirArg: string) => JSON.stringify({
 // Cursor reads .cursor/mcp.json; Gemini CLI reads .gemini/settings.json —
 // same mcpServers shape, so agents in those tools connect with zero config.
 const GEMINI_NOTE = 'Read AGENTS.md — it documents this KeepMind memory repo, its conventions, and the bundled MCP server (tools/keepmind-mcp.mjs).\n'
+
+const COMPOSER_RULE = `---
+description: KeepMind memory — search before answering, append after work (Composer)
+globs:
+alwaysApply: true
+---
+
+You have the **keepmind** MCP server (sb_search, sb_read, sb_append, sb_remember, …).
+
+1. Before answering about the user, their work, or prior decisions: run **sb_search**.
+2. After meaningful work: **sb_append** or **sb_remember** — never rewrite history.
+3. Follow repo **AGENTS.md** if present; it overrides generic layout guesses.
+4. Never store secrets or credentials in memory.
+`
 
 function mcpServerSource(): string {
   // tools/keepmind-mcp.mjs ships inside the app bundle (and the repo)
@@ -128,6 +143,7 @@ export async function ensureRepoScaffold(gh: GitHubConfig): Promise<string[]> {
     ...nativeDocs,
     ['.mcp.json', mcpJson],
     ['.cursor/mcp.json', mcpJson],
+    ['.cursor/rules/keepmind-memory.mdc', COMPOSER_RULE],
     ['.gemini/settings.json', mcpJson],
     ['tools/keepmind-mcp.mjs', mcpServerSource()]
   ]
