@@ -4,6 +4,7 @@ const state = { me: null, meta: null, section: 'overview', data: null, toast: ''
 const SECTIONS = [
   ['overview', 'Visão', () => true],
   ['policy', 'Política', () => true],
+  ['secrets', 'Chaves org', role => role === 'owner' || role === 'admin'],
   ['teams', 'Times', () => true],
   ['members', 'Pessoas', role => role === 'owner' || role === 'admin'],
   ['agents', 'Agentes', () => true],
@@ -72,9 +73,13 @@ async function boot() {
 async function load() {
   if (state.section === 'overview') state.data = (await api('/api/overview')).body
   if (state.section === 'policy') state.data = (await api('/api/policy')).body
+  if (state.section === 'secrets') state.data = (await api('/api/org-secrets')).body
   if (state.section === 'teams') state.data = (await api('/api/teams')).body
   if (state.section === 'members') state.data = (await api('/api/members')).body
-  if (state.section === 'agents') state.data = (await api('/api/agents')).body
+  if (state.section === 'agents') {
+    const agents = await api('/api/agents')
+    state.data = agents.body
+  }
   if (state.section === 'vault') state.data = (await api('/api/files')).body
   if (state.section === 'audit') state.data = (await api('/api/audit')).body
   if (state.section === 'scan') state.data = (await api('/api/scan')).body
@@ -127,6 +132,7 @@ function section() {
   if (!data.ok && data.error) return `<p>${esc(COPY[data.error] || 'Sem acesso a esta área.')}</p>`
   if (state.section === 'overview') return overview(data)
   if (state.section === 'policy') return policy(data.policy)
+  if (state.section === 'secrets') return orgSecrets(data)
   if (state.section === 'teams') return teams(data)
   if (state.section === 'members') return members(data)
   if (state.section === 'agents') return agents(data)
@@ -147,6 +153,22 @@ function overview(data) {
       <div class="panel"><div class="k">Segredos / PII</div><div class="v">${scan.secretTotal ?? '—'} / ${scan.piiTotal ?? '—'}</div></div>
     </div>
     <div class="panel"><div class="k">BYOK da empresa</div><p>Chaves pessoais não entram. A política exige a chave da organização, no ambiente do servidor.</p></div>`
+}
+
+function orgSecrets(data) {
+  const providers = data.providers || {}
+  const rows = ['openai', 'anthropic', 'gemini', 'grok'].map(id => {
+    const set = providers[id]
+    return `<tr>
+      <td>${esc(id)}</td>
+      <td>${set ? 'configurada' : 'vazia'}</td>
+      <td><input name="${esc(id)}" type="password" autocomplete="new-password" placeholder="${set ? 'Substituir…' : 'Colar chave…'}" /></td>
+    </tr>`
+  }).join('')
+  return `<p class="sub">Chaves da organização (BYOK). Nunca são exibidas de volta — só o status. Membros não podem cadastrar chave pessoal no Brain.</p>
+    <form id="secrets" class="panel"><table><thead><tr><th>Provedor</th><th>Status</th><th>Nova chave</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="row"><button class="btn" type="submit">Salvar chaves</button>
+    <button type="button" class="btn ghost" id="clear-secrets">Limpar todas</button></p></form>`
 }
 
 function policy(policy) {
@@ -184,7 +206,7 @@ function teams(data) {
 function members(data) {
   if (!data.members) return '<p>A lista de pessoas fica com dono e admin.</p>'
   const rows = data.members.map(member => `<tr>
-    <td>${esc(member.name)}<div class="sub">${esc(member.email)}</div></td>
+    <td>${esc(member.name)}<div class="sub">${esc(member.email)}${member.title ? ` · ${esc(member.title)}` : ''}</div></td>
     <td><span class="pill">${esc(member.role)}</span></td>
     <td>${esc(member.teamId)}</td>
     <td>${member.disabled ? 'inativa' : 'ativa'}</td>
@@ -192,6 +214,7 @@ function members(data) {
   return `<form id="member" class="panel">
       <div class="row">
         <input name="name" placeholder="Nome" autocomplete="name" required />
+        <input name="title" placeholder="Cargo (opcional)" autocomplete="off" />
         <input name="email" type="email" placeholder="Email" autocomplete="off" required />
         <input name="password" type="password" placeholder="Senha (12+)" autocomplete="new-password" required />
         <select name="role"><option>member</option><option>auditor</option><option>admin</option>${state.me.role === 'owner' ? '<option>owner</option>' : ''}</select>
@@ -202,13 +225,16 @@ function members(data) {
 }
 
 function agents(data) {
+  const modes = state.meta?.autonomy || []
   const rows = (data.agents || []).map(agent => `<tr>
-    <td>${esc(agent.name)}</td>
+    <td>${esc(agent.name)}<div class="sub">${esc(agent.id)}</div></td>
     <td>${esc(agent.teamId)}</td>
+    <td><select data-agent-autonomy="${esc(agent.id)}" ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''}>${modes.map(m => `<option ${(agent.autonomyMax || 'supervised') === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></td>
     <td><input type="checkbox" data-agent="${esc(agent.id)}" ${agent.enabled ? 'checked' : ''} ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''}/></td>
   </tr>`).join('')
   const writer = state.me.role === 'owner' || state.me.role === 'admin'
-  return `<form id="agents"><table><thead><tr><th>Agente</th><th>Time</th><th>Ligado</th></tr></thead><tbody>${rows}</tbody></table>
+  return `<p class="sub">Não é Paperclip ainda: aqui você **autoriza** agentes do tenant (brain, ingest, sync). Runtime MCP vem no roadmap.</p>
+    <form id="agents"><table><thead><tr><th>Agente</th><th>Time</th><th>Autonomia máx.</th><th>Ligado</th></tr></thead><tbody>${rows}</tbody></table>
     ${writer ? '<p><button class="btn" type="submit">Salvar agentes</button></p>' : ''}</form>`
 }
 
@@ -276,6 +302,28 @@ function bind() {
     state.section = 'overview'
     render()
   })
+  document.querySelector('#secrets')?.addEventListener('submit', async event => {
+    event.preventDefault()
+    const form = new FormData(event.target)
+    const providers = {}
+    for (const id of ['openai', 'anthropic', 'gemini', 'grok']) {
+      const v = String(form.get(id) || '').trim()
+      if (v) providers[id] = v
+    }
+    const res = await api('/api/org-secrets', { method: 'PUT', body: JSON.stringify({ providers }) })
+    state.toast = res.body.ok ? 'Chaves salvas.' : (COPY[res.body.error] || 'Não salvou.')
+    if (res.body.ok) state.data = res.body
+    render()
+  })
+  document.querySelector('#clear-secrets')?.addEventListener('click', async () => {
+    const res = await api('/api/org-secrets', {
+      method: 'PUT',
+      body: JSON.stringify({ providers: { openai: '', anthropic: '', gemini: '', grok: '' } })
+    })
+    state.toast = res.body.ok ? 'Chaves removidas.' : 'Não limpou.'
+    if (res.body.ok) state.data = res.body
+    render()
+  })
   document.querySelector('#policy')?.addEventListener('submit', async event => {
     event.preventDefault()
     const form = new FormData(event.target)
@@ -310,7 +358,13 @@ function bind() {
     const form = new FormData(event.target)
     const res = await api('/api/members', {
       method: 'POST',
-      body: JSON.stringify({ name: form.get('name'), email: form.get('email'), password: form.get('password'), role: form.get('role') })
+      body: JSON.stringify({
+        name: form.get('name'),
+        title: form.get('title'),
+        email: form.get('email'),
+        password: form.get('password'),
+        role: form.get('role')
+      })
     })
     state.error = res.body.ok ? '' : (COPY[res.body.error] || res.body.message || 'Não adicionou.')
     state.toast = res.body.ok ? 'Pessoa adicionada.' : ''
@@ -321,7 +375,8 @@ function bind() {
     event.preventDefault()
     const agents = (state.data.agents || []).map(agent => ({
       ...agent,
-      enabled: !!document.querySelector(`[data-agent="${CSS.escape(agent.id)}"]`)?.checked
+      enabled: !!document.querySelector(`[data-agent="${CSS.escape(agent.id)}"]`)?.checked,
+      autonomyMax: document.querySelector(`[data-agent-autonomy="${CSS.escape(agent.id)}"]`)?.value || agent.autonomyMax
     }))
     const res = await api('/api/agents', { method: 'PUT', body: JSON.stringify({ agents }) })
     state.toast = res.body.ok ? 'Agentes salvos.' : (COPY[res.body.error] || 'Não salvou.')

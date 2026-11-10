@@ -339,9 +339,9 @@ export function defaultOrg(name = 'KeepMind Corp') {
     users: [],
     teams: [{ id: 'everyone', name: 'Everyone', autonomy: 'supervised' }],
     agents: [
-      { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone' },
-      { id: 'ingest', name: 'Ingest', enabled: false, teamId: 'everyone' },
-      { id: 'sync', name: 'Sync', enabled: false, teamId: 'everyone' }
+      { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone', autonomyMax: 'supervised' },
+      { id: 'ingest', name: 'Ingest', enabled: false, teamId: 'everyone', autonomyMax: 'supervised' },
+      { id: 'sync', name: 'Sync', enabled: false, teamId: 'everyone', autonomyMax: 'supervised' }
     ],
     policy: defaultPolicy()
   }

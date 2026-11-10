@@ -4,7 +4,7 @@
 
 O app de desktop **gratuito** (KeepMind pessoal) continua o produto individual. A edição **Corp** entrega o mesmo cérebro e as regras da empresa num **aplicativo de desktop instalável** (Windows, macOS, Linux): o servidor local sobe automaticamente — usuários finais e TI **não** precisam instalar Node, npm nem Docker.
 
-Desenho completo: [`docs/ENTERPRISE.md`](../docs/ENTERPRISE.md).
+Desenho completo: [`docs/ENTERPRISE.md`](../docs/ENTERPRISE.md). Roadmap: [`docs/CORP-ROADMAP.md`](../docs/CORP-ROADMAP.md).
 
 ## Por que instalar?
 

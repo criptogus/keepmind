@@ -17,6 +17,7 @@ import {
 import { createOidc, oidcFromEnv } from './oidc.mjs'
 import { mountBrainApi } from './brain-api.mjs'
 import { ensureUserBrain } from './memory-layout.mjs'
+import { orgSecretStatus, setOrgSecrets } from './org-secrets.mjs'
 
 const CORP_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(CORP_ROOT, 'public')
@@ -103,6 +104,7 @@ export function createCorp(opts = {}) {
       id,
       email,
       name: String(name || email).slice(0, 80),
+      title: '',
       role,
       teamId: org.teams.some(team => team.id === teamId) ? teamId : 'everyone',
       disabled: false,
@@ -117,7 +119,15 @@ export function createCorp(opts = {}) {
   }
 
   function publicUser(user) {
-    return { id: user.id, email: user.email, name: user.name, role: user.role, teamId: user.teamId, disabled: !!user.disabled }
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      title: user.title || '',
+      role: user.role,
+      teamId: user.teamId,
+      disabled: !!user.disabled
+    }
   }
 
   function userFromToken(token) {
@@ -330,6 +340,11 @@ export function createCorp(opts = {}) {
       return send(res, 200, { ok: true, policy: org.policy })
     }
     if (url.pathname === '/api/policy' && req.method === 'PUT') return writePolicy(req, res, user)
+    if (url.pathname === '/api/org-secrets' && req.method === 'GET') {
+      if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+      return send(res, 200, { ok: true, ...orgSecretStatus(vault) })
+    }
+    if (url.pathname === '/api/org-secrets' && req.method === 'PUT') return writeOrgSecrets(req, res, user)
     if (url.pathname === '/api/teams' && req.method === 'GET') {
       return send(res, 200, { ok: true, teams: org.teams, ceiling: org.policy.autonomyCeiling })
     }
@@ -395,6 +410,20 @@ export function createCorp(opts = {}) {
     return send(res, 200, { ok: true, policy: org.policy, teams: org.teams })
   }
 
+  async function writeOrgSecrets(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    const patch = body.providers && typeof body.providers === 'object' ? body.providers : body
+    const clean = {}
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === '' || value === null) clean[key] = ''
+      else if (typeof value === 'string') clean[key] = value
+    }
+    const status = setOrgSecrets(vault, clean)
+    audit(user, 'org_secrets_update', { providers: Object.keys(clean) })
+    return send(res, 200, { ok: true, ...status })
+  }
+
   async function writeTeams(req, res, user) {
     if (!can(user.role, 'teams.write')) return send(res, 403, { ok: false, error: 'forbidden' })
     const body = await readBody(req)
@@ -456,7 +485,14 @@ export function createCorp(opts = {}) {
       err.code = 'bad_user'
       throw err
     }
-    const created = addUser({ email, name: body.name, role, teamId: body.teamId || 'everyone', password })
+    const created = addUser({
+      email,
+      name: body.name,
+      role,
+      teamId: body.teamId || 'everyone',
+      password
+    })
+    if (body.title) created.title = String(body.title).slice(0, 80)
     persistOrg()
     audit(user, 'member_create', { email, role })
     return send(res, 201, { ok: true, member: publicUser(created) })
@@ -499,6 +535,7 @@ export function createCorp(opts = {}) {
     }
     if (body.teamId && org.teams.some(team => team.id === body.teamId)) target.teamId = body.teamId
     if (body.name) target.name = String(body.name).slice(0, 80)
+    if (body.title !== undefined) target.title = String(body.title || '').slice(0, 80)
     persistOrg()
     audit(user, 'member_update', { id: target.id, role: target.role, disabled: !!target.disabled })
     return send(res, 200, { ok: true, member: publicUser(target) })
@@ -524,7 +561,14 @@ export function createCorp(opts = {}) {
       }
       seen.add(id)
       const teamId = org.teams.some(team => team.id === agent.teamId) ? agent.teamId : 'everyone'
-      next.push({ id, name: String(agent.name || id).slice(0, 80), enabled: !!agent.enabled, teamId })
+      const autonomyMax = clampTeamAutonomy(agent.autonomyMax || 'supervised', org.policy.autonomyCeiling)
+      next.push({
+        id,
+        name: String(agent.name || id).slice(0, 80),
+        enabled: !!agent.enabled,
+        teamId,
+        autonomyMax
+      })
     }
     org.agents = next
     persistOrg()

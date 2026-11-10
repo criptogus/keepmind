@@ -4,6 +4,7 @@ import {
   resolveInside, canReadFile, canWriteFile, walkMarkdown, scanText, readAudit, autonomyRank, PROVIDERS
 } from './lib.mjs'
 import { userMemoryRoot, memoryRel, ensureUserBrain } from './memory-layout.mjs'
+import { getOrgSecret } from './org-secrets.mjs'
 
 export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   return async function brainApi(req, res, url, user) {
@@ -136,15 +137,11 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
 
   if (sub === 'chat' && req.method === 'POST') {
     const body = await readJsonBody(req)
-    const message = String(body.message || '')
-    const reply = [
-      '**KeepMind Corp (web)**',
-      '',
-      `You asked: ${message.slice(0, 200)}`,
-      '',
-      'Full agentic chat on the org LLM ships next. Your memory, skills, and governance already live in this vault.'
-    ].join('\n')
-    return json(res, 200, { reply })
+    const message = String(body.message || '').trim()
+    if (!message) return json(res, 400, { error: 'empty' })
+  const reply = await corpChatReply(org, vault, user, message)
+    audit(user, 'chat', { provider: reply.provider })
+    return json(res, 200, { reply: reply.text })
   }
 
   if (sub === 'config' && req.method === 'PATCH') {
@@ -230,6 +227,54 @@ function graphForUser(vault, user) {
     if (n > 80) break
   }
   return { nodes, links }
+}
+
+async function corpChatReply(org, vault, user, message) {
+  const team = org.teams.find(t => t.id === user.teamId) ?? org.teams[0]
+  const brainOn = org.agents.find(a => a.id === 'brain')?.enabled
+  if (!brainOn) {
+    return {
+      provider: 'policy',
+      text: 'O agente **Brain** está desligado na governança. Peça a um admin para ativá-lo em **Agentes**.'
+    }
+  }
+  if (org.policy.providers.includes('openai')) {
+    const key = getOrgSecret(vault, 'openai')
+    if (key) {
+      try {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: `Você é o assistente KeepMind Corp. Usuário: ${user.name}. Teto de autonomia da org: ${org.policy.autonomyCeiling}. Time: ${team.autonomy}. Responda em português, de forma objetiva.`
+              },
+              { role: 'user', content: message.slice(0, 4000) }
+            ],
+            max_tokens: 900
+          })
+        })
+        const data = await res.json()
+        const text = data.choices?.[0]?.message?.content
+        if (text) return { text, provider: 'openai' }
+      } catch { /* fallback abaixo */ }
+    }
+  }
+  return {
+    provider: 'stub',
+    text: [
+      '**KeepMind Corp**',
+      '',
+      'Para chat com modelo de nuvem: em **Governança → Chaves da organização**, cadastre a chave (ex.: OpenAI) e marque o provedor em **Política**.',
+      '',
+      `Provedores permitidos: ${org.policy.providers.join(', ') || 'nenhum'}.`,
+      '',
+      `Sua mensagem: ${message.slice(0, 400)}`
+    ].join('\n')
+  }
 }
 
 function ledgerVerb(op) {
