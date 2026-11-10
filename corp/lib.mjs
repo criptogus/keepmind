@@ -8,7 +8,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFi
 import path from 'node:path'
 import { sharedRuleFor, peopleRuleFor, ruleAllows, normalizeSharedAccess, normalizePeopleAccess } from './abac.mjs'
 
-export const CORP_VERSION = '0.7.0'
+export const CORP_VERSION = '0.8.0'
 export const ROLES = ['owner', 'admin', 'member', 'auditor']
 export const AUTONOMY = ['supervised', 'autopilot', 'autonomous']
 export const PROVIDERS = ['local', 'ollama', 'openai', 'anthropic', 'gemini', 'grok']

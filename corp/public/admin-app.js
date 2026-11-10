@@ -99,7 +99,10 @@ async function load() {
     state.data = agents.body
   }
   if (state.section === 'vault') state.data = (await api('/api/files')).body
-  if (state.section === 'audit') state.data = (await api('/api/audit')).body
+  if (state.section === 'audit') {
+    const audit = await api('/api/audit')
+    state.data = audit.body
+  }
   if (state.section === 'scan') state.data = (await api('/api/scan')).body
 }
 
@@ -300,7 +303,10 @@ function githubSync(data) {
       <label>Repo<input name="repo" value="${esc(cfg.repo || '')}" placeholder="corp-memory"/></label>
       <label>Branch<input name="branch" value="${esc(cfg.branch || 'main')}"/></label>
       <label>Prefixo no repo<input name="repoPrefix" value="${esc(cfg.repoPrefix || 'corp-vault')}"/></label>
-      <p class="sub">Token: ${data.hasToken ? 'ok' : 'faltando'} · Último: ${esc(cfg.lastMessage || '—')}</p>
+      <label><input type="checkbox" name="scheduleEnabled" ${cfg.scheduleEnabled ? 'checked' : ''}/> Agendamento (verifica a cada 5 min)</label>
+      <label>Intervalo alvo (min)<input type="number" name="intervalMinutes" min="15" max="1440" value="${esc(cfg.intervalMinutes || 60)}"/></label>
+      <label>Secret CI (header X-KeepMind-Hook)<input type="password" name="hookSecret" placeholder="${cfg.hookSecretSet ? 'Substituir…' : 'opcional'}" autocomplete="new-password"/></label>
+      <p class="sub">Token: ${data.hasToken ? 'ok' : 'faltando'} · Último: ${esc(cfg.lastMessage || '—')} · POST /api/hooks/github-sync</p>
       <div class="row">
         <button class="btn" type="submit">Salvar</button>
         <button type="button" class="btn ghost" id="github-run">Sync agora</button>
@@ -366,7 +372,9 @@ function vault(data) {
 function audit(data) {
   if (!data.entries) return '<p>A auditoria fica com dono, admin e auditor.</p>'
   const rows = data.entries.map(entry => `<tr><td>${esc(entry.ts)}</td><td>${esc(entry.actor)}</td><td>${esc(entry.op)}</td><td>${esc(entry.path || entry.email || '')}</td></tr>`).join('')
-  return `<table><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Onde</th></tr></thead><tbody>${rows}</tbody></table>`
+  return `<p class="row"><a class="btn ghost" href="/api/audit/export?format=ndjson" download>Export NDJSON (SIEM)</a>
+    <a class="btn ghost" href="/api/audit/export?format=csv" download>Export CSV</a></p>
+    <table><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Onde</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
 function scan(data) {
@@ -464,7 +472,10 @@ function bind() {
         owner: form.get('owner'),
         repo: form.get('repo'),
         branch: form.get('branch'),
-        repoPrefix: form.get('repoPrefix')
+        repoPrefix: form.get('repoPrefix'),
+        scheduleEnabled: !!form.get('scheduleEnabled'),
+        intervalMinutes: Number(form.get('intervalMinutes')) || 60,
+        hookSecret: form.get('hookSecret')
       })
     })
     state.toast = res.body.ok ? 'GitHub sync salvo.' : (res.body.message || 'Não salvou.')

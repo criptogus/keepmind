@@ -27,6 +27,9 @@ import { meteringSnapshot } from './team-usage.mjs'
 import { readGithubSync, writeGithubSync } from './github-sync-store.mjs'
 import { runGithubSync } from './github-sync.mjs'
 import { byokReport } from './byok-meter.mjs'
+import { auditExportNdjson, auditExportCsv } from './audit-export.mjs'
+import { startGithubSyncScheduler } from './github-sync-scheduler.mjs'
+import { verifyGithubHookSecret } from './github-sync-store.mjs'
 
 const CORP_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(CORP_ROOT, 'public')
@@ -87,6 +90,11 @@ export function createCorp(opts = {}) {
 
   ensureOwner(env)
   persistOrg()
+  if (!opts.disableGithubScheduler) {
+    startGithubSyncScheduler(vault, {
+      audit: (actor, op, extra) => appendAudit(vault, { actor, role: 'system', op, ...extra })
+    })
+  }
 
   function persistOrg() {
     writeJsonAtomic(orgFile, org)
@@ -211,6 +219,9 @@ export function createCorp(opts = {}) {
       }
       if (url.pathname === '/api/health' && req.method === 'GET') {
         return send(res, 200, { ok: true, edition: 'keepmind-corp', version: CORP_VERSION })
+      }
+      if (url.pathname === '/api/hooks/github-sync' && req.method === 'POST') {
+        return await githubSyncHook(req, res)
       }
       if (url.pathname === '/api/meta' && req.method === 'GET') {
         return send(res, 200, {
@@ -415,6 +426,7 @@ export function createCorp(opts = {}) {
       const limit = Number(url.searchParams.get('limit') || 50)
       return send(res, 200, { ok: true, entries: readAudit(vault, limit) })
     }
+    if (url.pathname === '/api/audit/export' && req.method === 'GET') return auditExportRoute(req, res, user, url)
     if (url.pathname === '/api/scan' && req.method === 'GET') {
       if (!can(user.role, 'scan.read')) return send(res, 403, { ok: false, error: 'forbidden' })
       return send(res, 200, { ok: true, scan: publicScan(scanVault(vault), can(user.role, 'scan.paths')) })
@@ -456,7 +468,10 @@ export function createCorp(opts = {}) {
       owner: body.owner,
       repo: body.repo,
       branch: body.branch || 'main',
-      repoPrefix: body.repoPrefix || 'corp-vault'
+      repoPrefix: body.repoPrefix || 'corp-vault',
+      scheduleEnabled: !!body.scheduleEnabled,
+      intervalMinutes: Number(body.intervalMinutes) || 60,
+      hookSecret: body.hookSecret
     })
     audit(user, 'github_sync_config', { enabled: config.enabled, repo: `${config.owner}/${config.repo}` })
     return send(res, 200, { ok: true, config })
@@ -479,6 +494,36 @@ export function createCorp(opts = {}) {
     if (!can(user.role, 'policy.read')) return send(res, 403, { ok: false, error: 'forbidden' })
     const days = Number(url.searchParams.get('days') || 30)
     return send(res, 200, { ok: true, report: byokReport(vault, days) })
+  }
+
+  function auditExportRoute(req, res, user, url) {
+    if (!can(user.role, 'audit.read')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const format = String(url.searchParams.get('format') || 'ndjson').toLowerCase()
+    const limit = Number(url.searchParams.get('limit') || 500)
+    const since = url.searchParams.get('since') || undefined
+    const body = format === 'csv' ? auditExportCsv(vault, { limit, since }) : auditExportNdjson(vault, { limit, since })
+    res.writeHead(200, {
+      'content-type': format === 'csv' ? 'text/csv; charset=utf-8' : 'application/x-ndjson',
+      'content-disposition': `attachment; filename="keepmind-audit.${format === 'csv' ? 'csv' : 'ndjson'}"`,
+      'cache-control': 'no-store'
+    })
+    res.end(body)
+    audit(user, 'audit_export', { format, limit })
+    return true
+  }
+
+  async function githubSyncHook(req, res) {
+    const secret = req.headers['x-keepmind-hook'] || req.headers['x-github-sync-secret']
+    if (!verifyGithubHookSecret(vault, secret)) {
+      return send(res, 403, { ok: false, error: 'forbidden' })
+    }
+    try {
+      const result = await runGithubSync(vault, 'both')
+      appendAudit(vault, { actor: 'ci', role: 'system', op: 'github_sync_hook', ...result })
+      return send(res, 200, { ok: true, ...result })
+    } catch (err) {
+      return send(res, 400, { ok: false, error: err.code || 'github_error', message: err.message })
+    }
   }
 
   function listSyncTokensRoute(res, user) {

@@ -68,6 +68,7 @@ try {
   const corp = createCorp({
     dataDir: path.join(root, 'data'),
     vault: path.join(root, 'vault'),
+    disableGithubScheduler: true,
     env: {
       KEEPMIND_CORP_OWNER_EMAIL: 'owner@example.com',
       KEEPMIND_CORP_OWNER_PASSWORD: 'correct-horse-battery'
@@ -91,7 +92,12 @@ try {
   assert.match(page.text, /login\.js/)
 
   const rootUi = mkdtempSync(path.join(tmpdir(), 'keepmind-corp-ui-'))
-  const corpUi = createCorp({ dataDir: path.join(rootUi, 'data'), vault: path.join(rootUi, 'vault'), env: {} })
+  const corpUi = createCorp({
+    dataDir: path.join(rootUi, 'data'),
+    vault: path.join(rootUi, 'vault'),
+    disableGithubScheduler: true,
+    env: {}
+  })
   const uiSrv = await listen(corpUi)
   const metaUi = await call(uiSrv.port, '/api/meta')
   assert.equal(metaUi.json.setupRequired, true)

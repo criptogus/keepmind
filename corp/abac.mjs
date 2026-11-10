@@ -20,6 +20,8 @@ export function normalizePeopleAccess(rules) {
   for (const row of rules) {
     const prefix = String(row.prefix || '').trim().replace(/\\/g, '/').replace(/^\/+/, '')
     if (!prefix.startsWith('people/')) continue
+    // Fine-grained: prefer prefixes under people/<id>/memory/...
+    if (prefix.includes('/memory/') && prefix.split('/').length < 4) continue
     const roles = Array.isArray(row.roles) ? row.roles.map(String) : []
     const titles = Array.isArray(row.titles) ? row.titles.map((t) => String(t).toLowerCase()) : []
     const teams = Array.isArray(row.teams) ? row.teams.map(String) : []
