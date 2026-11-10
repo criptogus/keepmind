@@ -56,11 +56,17 @@ replaceable runtime, the repo is the brain:
 
 ## KeepMind Corp
 
-The desktop app above is the individual product. **KeepMind Corp** is the same
-second brain in the browser, with company governance: [corp/README.md](corp/README.md),
-[docs/ENTERPRISE.md](docs/ENTERPRISE.md). First visit runs a short **onboarding**
-(owner account + org name); then `/brain/` is the full KeepMind UI and IT uses
-`/admin/` for policy, SSO, and audit. Installable builds: `npm run dist:corp:mac|win|linux`.
+The free desktop app above is the **individual** product. **KeepMind Corp** is the
+same second brain plus organization governance, shipped primarily as an
+**installable desktop app** (Windows `.exe`, macOS `.dmg`, Linux `.AppImage`) that
+starts a local corp server automatically — no Docker or separate server install for
+normal users. Details: [corp/README.md](corp/README.md), [docs/ENTERPRISE.md](docs/ENTERPRISE.md).
+
+**End users / IT:** install **KeepMind Corp** from your team's build artifacts.
+
+**Packagers:** `npm run dist:corp:mac` | `dist:corp:win` | `dist:corp:linux` (output in `dist-corp/`).
+
+**Developers only** (hack the server/UI locally):
 
 ```bash
 npm run corp:build-brain && npm run corp

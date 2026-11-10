@@ -46,17 +46,21 @@ customer-sovereign infrastructure**.
    legal hold, eDiscovery over the vault, DPA. The audit ledger + PII scan
    are good starting points.
 6. **Packaging** — Individual Electron desktop stays the free product. **KeepMind Corp**
-   ships as self-hosted web (`corp/server.mjs` + `/brain/`), optional Docker, and an
-   optional **Corp Electron** shell (`index-corp.ts`) that embeds the same server for
-   Windows/macOS/Linux. Managed SaaS remains a separate bet.
+   ships primarily as an **installable Corp Electron app** (`index-corp.ts` +
+   `electron-builder.corp.yml`) that embeds `corp/server.mjs` and `/brain/` for
+   Windows/macOS/Linux, with first-run onboarding. Developers run
+   `npm run corp:build-brain && npm run corp` locally. A **Docker-only** server path
+   (`corp/Dockerfile`, `docker-compose.yml`) is optional self-host for rare cases and
+   is **not** the primary product or support path. Managed SaaS remains a separate bet.
 
 ## Deployment options
 
-- **Self-hosted "KeepMind Enterprise"** (recommended first step): single
-  Node container + web UI, vault in the customer's GitHub/GitLab repo or
-  S3-compatible storage reusing existing sync/crypto primitives. License +
-  support model. Lowest effort, and "runs in your VPC" is itself a selling
-  point.
+- **Corp desktop install** (recommended for this slice): IT or users install
+  **KeepMind Corp** from `.dmg` / `.exe` / `.AppImage`; the app runs the org server
+  locally with onboarding on first launch. Packagers use `npm run dist:corp:*`.
+- **Self-hosted web / VPC** (future or custom): Node server + browser UI, vault in
+  the customer's GitHub/GitLab repo or S3-compatible storage reusing existing
+  sync/crypto primitives — distinct from the primary Electron deliverable today.
 - **Managed SaaS with tenant isolation**: higher margin, much higher cost —
   billing, isolation, compliance overhead.
 - **Hybrid**: desktop stays free/individual; Corp is the same brain core +
@@ -91,10 +95,11 @@ The open question in the gaps list is settled for this slice by the partitioned 
 
 ## What the slice ships
 
-`corp/` is a separate Node process and container: **the KeepMind second-brain
-UI** at `/brain/` plus **organization governance** at `/admin/`. Run
-`npm run corp:build-brain` then `npm run corp`, or `docker compose` in `corp/`.
-See [`corp/README.md`](../corp/README.md).
+`corp/` is a Node server plus **the KeepMind second-brain UI** at `/brain/` and
+**organization governance** at `/admin/`. **Ship** with `npm run dist:corp:*`
+(Electron embeds the server). **Develop** with `npm run corp:build-brain` then
+`npm run corp`. Optional Docker in `corp/` is not the main install path — see
+[`corp/README.md`](../corp/README.md).
 
 - Single tenant, self-hosted.
 - Same renderer as the desktop app (Today, Brain, Skills, Chat, Security) with

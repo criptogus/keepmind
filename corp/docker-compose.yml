@@ -1,3 +1,5 @@
+# OPCIONAL — não é o caminho principal do KeepMind Corp (produto = app desktop).
+# Mantido apenas para auto-hospedagem experimental do servidor web.
 services:
   keepmind-corp:
     build:

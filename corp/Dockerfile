@@ -1,5 +1,5 @@
-# Build KeepMind Corp image from the repo root:
-#   docker build -f corp/Dockerfile -t keepmind-corp .
+# OPCIONAL — KeepMind Corp ships as an Electron desktop app; this image is not the
+# primary product path. Build from repo root: docker build -f corp/Dockerfile -t keepmind-corp .
 FROM node:22-alpine AS brain
 WORKDIR /app
 COPY package.json package-lock.json ./
