@@ -1,8 +1,9 @@
 # KeepMind Corp — Enterprise Edition (Roadmap)
 
-> Status: **future product line, not scheduled.** This document captures the
-> analysis and design direction for a corporate version of KeepMind. It exists
-> so the decision can be revisited with full context instead of re-derived.
+> Status: **MVP slice is in `corp/`.** The desktop app stays the individual
+> product. This document is still the design direction. The first slice is a
+> self-hosted admin plane, not the full enterprise program (no SCIM, HSM,
+> SOC 2 package, or managed SaaS yet).
 
 ## Thesis
 
@@ -44,17 +45,20 @@ customer-sovereign infrastructure**.
 5. **Compliance** — SOC 2, ISO 27001, LGPD/GDPR: data residency, retention,
    legal hold, eDiscovery over the vault, DPA. The audit ledger + PII scan
    are good starting points.
-6. **Packaging** — Electron desktop is not the enterprise form factor.
-   Options: web app (the React renderer is already web-capable), self-hosted
-   container, or managed SaaS.
+6. **Packaging** — Individual Electron desktop stays the free product. **KeepMind Corp**
+   ships primarily as an **installable Corp Electron app** (`index-corp.ts` +
+   `electron-builder.corp.yml`) that embeds `corp/server.mjs` and `/brain/` for
+   Windows/macOS/Linux, with first-run onboarding. Developers run
+   `npm run corp:build-brain && npm run corp` locally. Managed SaaS remains a separate bet.
 
 ## Deployment options
 
-- **Self-hosted "KeepMind Enterprise"** (recommended first step): single
-  Node container + web UI, vault in the customer's GitHub/GitLab repo or
-  S3-compatible storage reusing existing sync/crypto primitives. License +
-  support model. Lowest effort, and "runs in your VPC" is itself a selling
-  point.
+- **Corp desktop install** (recommended for this slice): IT or users install
+  **KeepMind Corp** from `.dmg` / `.exe` / `.AppImage`; the app runs the org server
+  locally with onboarding on first launch. Packagers use `npm run dist:corp:*`.
+- **Self-hosted web / VPC** (future or custom): Node server + browser UI, vault in
+  the customer's GitHub/GitLab repo or S3-compatible storage reusing existing
+  sync/crypto primitives — distinct from the primary Electron deliverable today.
 - **Managed SaaS with tenant isolation**: higher margin, much higher cost —
   billing, isolation, compliance overhead.
 - **Hybrid**: desktop stays free/individual; Corp is the same brain core +
@@ -71,6 +75,38 @@ customer-sovereign infrastructure**.
 ## Go-to-market note
 
 The buyer is a security/compliance committee, not the individual dev who
-adopts the desktop app. Validate demand with 2–3 companies before building —
-the "sovereign agent memory" narrative is real, but the purchasing motion is
-different from the current one.
+adopts the desktop app. Validate demand with 2–3 companies before treating
+this as a sold product — the "sovereign agent memory" narrative is real, but
+the purchasing motion is different from the current one. The slice below
+exists so that conversation can run against a real console.
+
+## Decision recorded
+
+Memory is **partitioned personal vaults plus a shared company layer**.
+
+- `people/<id>/` is one person's memory. Another member cannot read it.
+- `shared/` is the company layer.
+- An owner or admin can see the whole tenant. An auditor sees the ledger and
+  scan totals, not the body of a personal file.
+
+The open question in the gaps list is settled for this slice by the partitioned model above.
+
+## What the slice ships
+
+`corp/` is a Node server plus **the KeepMind second-brain UI** at `/brain/` and
+**organization governance** at `/admin/`. **Ship** with `npm run dist:corp:*`
+(Electron embeds the server). **Develop** with `npm run corp:build-brain` then
+`npm run corp`. See
+[`corp/README.md`](../corp/README.md).
+
+- Single tenant, self-hosted.
+- Same renderer as the desktop app (Today, Brain, Skills, Chat, Security) with
+  a corporate API shim and policy in `getConfig().corp`.
+- Local break-glass owner plus OIDC (authorization code + PKCE, RS256 tokens).
+- Roles: owner, admin, member, auditor.
+- Governance console: agents, provider allow-list, per-team autonomy ceiling,
+  people, scan, audit.
+- Personal memory under `people/<id>/memory/` (desktop-compatible layout) plus
+  `shared/memory/` for the company layer.
+- Secret / PII scan, `KMS1` skipped at preview, ledger at `ops/activity.jsonl`.
+- Organization BYOK — personal provider keys blocked in policy payloads and UI.

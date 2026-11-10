@@ -54,6 +54,24 @@ replaceable runtime, the repo is the brain:
 - **📋 Insights & daily summaries** — the brain analyzes your memory and surfaces what matters, automatically once a day.
 - **🤖 Plug in your other AIs** — one copy-paste prompt teaches Claude, Codex, Grok or Gemini to read/write memory in your repo (emails sent, PDFs made, decisions — everything remembered).
 
+## KeepMind Corp
+
+The free desktop app above is the **individual** product. **KeepMind Corp** is the
+same second brain plus organization governance, shipped primarily as an
+**installable desktop app** (Windows `.exe`, macOS `.dmg`, Linux `.AppImage`) that
+starts a local corp server automatically — no Docker or separate server install for
+normal users. Details: [corp/README.md](corp/README.md), [docs/ENTERPRISE.md](docs/ENTERPRISE.md).
+
+**End users / IT:** install **KeepMind Corp** from your team's build artifacts.
+
+**Packagers:** `npm run dist:corp:mac` | `dist:corp:win` | `dist:corp:linux` (output in `dist-corp/`).
+
+**Developers only** (hack the server/UI locally):
+
+```bash
+npm run corp:build-brain && npm run corp
+```
+
 ## Architecture
 
 ```

@@ -15,5 +15,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run corp:build-brain
+      - run: npm run corp:check
       - run: npm run typecheck
       - run: npm run build
+      - run: test -f out/main/index-corp.js

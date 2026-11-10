@@ -1,0 +1,11 @@
+.ob-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.ob-card { width: min(520px, 100%); }
+.ob-steps { display: flex; gap: 8px; margin-bottom: 20px; }
+.ob-steps span { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); }
+.ob-steps span.on { background: linear-gradient(90deg, #38bdf8, #a78bfa); }
+.ob-illus { border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 16px; margin: 16px 0; background: rgba(0,0,0,.25); font-size: 14px; line-height: 1.55; }
+.ob-illus ul { margin: 8px 0 0 1.1em; padding: 0; }
+.ob-illus li { margin: 6px 0; }
+.ob-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+.ob-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 540px) { .ob-grid-2 { grid-template-columns: 1fr; } }
