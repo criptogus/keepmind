@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { readJson, writeJsonAtomic } from './lib.mjs'
 
-const PROVIDERS = ['openai', 'anthropic', 'gemini', 'grok', 'oidc']
+const PROVIDERS = ['openai', 'anthropic', 'gemini', 'grok', 'oidc', 'github']
 
 function secretsPath(vault) {
   return path.join(vault, 'ops', 'org-secrets.json')

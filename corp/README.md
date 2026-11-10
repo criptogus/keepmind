@@ -105,6 +105,14 @@ Registre no `.cursor/mcp.json` apontando para o bridge. Ative **Composer** e res
 KEEPMIND_CORP_DATA=./corp/data KEEPMIND_CORP_TOKEN='…' npm run corp:mcp
 ```
 
+### ABAC em `people/` (v0.7)
+
+Em **Política**, JSON `peopleAccess` — ex.: diretores leem `people/lead/memory/inbox`.
+
+### GitHub corporativo (v0.7)
+
+**Chaves org → github** (PAT `repo`). **Admin → GitHub sync** — push/pull de `shared/`.
+
 ### Metering (v0.6)
 
 **Admin → Times** — orçamento diário em unidades (MCP=1, chat nuvem=10).  

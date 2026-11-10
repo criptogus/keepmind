@@ -18,12 +18,15 @@ import { createOidc, oidcFromEnv } from './oidc.mjs'
 import { mountBrainApi, listCorpMemoryFiles } from './brain-api.mjs'
 import { mountMcpApi } from './mcp-api.mjs'
 import { ensureUserBrain } from './memory-layout.mjs'
-import { orgSecretStatus, setOrgSecrets } from './org-secrets.mjs'
+import { orgSecretStatus, setOrgSecrets, getOrgSecret } from './org-secrets.mjs'
 import { streamVaultBackup } from './vault-backup.mjs'
 import { readOidcVaultConfig, oidcVaultStatus, writeOidcVaultConfig, clearOidcVaultConfig } from './oidc-store.mjs'
 import { listSyncTokens, createSyncToken, revokeSyncToken, resolveSyncBearer } from './sync-tokens-store.mjs'
 import { loadOrg } from './org-persist.mjs'
 import { meteringSnapshot } from './team-usage.mjs'
+import { readGithubSync, writeGithubSync } from './github-sync-store.mjs'
+import { runGithubSync } from './github-sync.mjs'
+import { byokReport } from './byok-meter.mjs'
 
 const CORP_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(CORP_ROOT, 'public')
@@ -428,12 +431,54 @@ export function createCorp(opts = {}) {
       return revokeSyncTokenRoute(res, user, id)
     }
     if (url.pathname === '/api/metering' && req.method === 'GET') return meteringRoute(res, user)
+    if (url.pathname === '/api/github-sync' && req.method === 'GET') return githubSyncGet(res, user)
+    if (url.pathname === '/api/github-sync' && req.method === 'PUT') return githubSyncPut(req, res, user)
+    if (url.pathname === '/api/github-sync/run' && req.method === 'POST') return githubSyncRun(req, res, user)
+    if (url.pathname === '/api/byok-report' && req.method === 'GET') return byokReportRoute(res, user, url)
     return send(res, 404, { ok: false, error: 'not_found' })
   }
 
   function meteringRoute(res, user) {
     if (!can(user.role, 'policy.read')) return send(res, 403, { ok: false, error: 'forbidden' })
     return send(res, 200, { ok: true, ...meteringSnapshot(org) })
+  }
+
+  function githubSyncGet(res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    return send(res, 200, { ok: true, config: readGithubSync(vault), hasToken: Boolean(getOrgSecret(vault, 'github')) })
+  }
+
+  async function githubSyncPut(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    const config = writeGithubSync(vault, {
+      enabled: !!body.enabled,
+      owner: body.owner,
+      repo: body.repo,
+      branch: body.branch || 'main',
+      repoPrefix: body.repoPrefix || 'corp-vault'
+    })
+    audit(user, 'github_sync_config', { enabled: config.enabled, repo: `${config.owner}/${config.repo}` })
+    return send(res, 200, { ok: true, config })
+  }
+
+  async function githubSyncRun(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    const direction = body.direction === 'push' || body.direction === 'pull' ? body.direction : 'both'
+    try {
+      const result = await runGithubSync(vault, direction)
+      audit(user, 'github_sync_run', { pushed: result.pushed, pulled: result.pulled })
+      return send(res, 200, { ok: true, ...result })
+    } catch (err) {
+      return send(res, 400, { ok: false, error: err.code || 'github_error', message: err.message })
+    }
+  }
+
+  function byokReportRoute(res, user, url) {
+    if (!can(user.role, 'policy.read')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const days = Number(url.searchParams.get('days') || 30)
+    return send(res, 200, { ok: true, report: byokReport(vault, days) })
   }
 
   function listSyncTokensRoute(res, user) {
@@ -789,7 +834,9 @@ const STATUS = {
   bad_user: 400,
   bad_token: 400,
   last_owner: 409,
-  oidc_down: 502
+  oidc_down: 502,
+  github_off: 400,
+  github_error: 502
 }
 
 function validEmail(email) {

@@ -6,9 +6,9 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync, renameSync, existsSync } from 'node:fs'
 import path from 'node:path'
-import { sharedRuleFor, ruleAllows, normalizeSharedAccess } from './abac.mjs'
+import { sharedRuleFor, peopleRuleFor, ruleAllows, normalizeSharedAccess, normalizePeopleAccess } from './abac.mjs'
 
-export const CORP_VERSION = '0.6.0'
+export const CORP_VERSION = '0.7.0'
 export const ROLES = ['owner', 'admin', 'member', 'auditor']
 export const AUTONOMY = ['supervised', 'autopilot', 'autonomous']
 export const PROVIDERS = ['local', 'ollama', 'openai', 'anthropic', 'gemini', 'grok']
@@ -136,7 +136,12 @@ export function canReadFile(role, userId, rel, accessCtx = {}) {
     if (rule) return ruleAllows(rule, { role, title: accessCtx.title, teamId: accessCtx.teamId })
     return role === 'member' || role === 'auditor'
   }
-  if (part.kind === 'person') return role === 'member' && part.id === userId
+  if (part.kind === 'person') {
+    if (role === 'member' && part.id === userId) return true
+    const rule = peopleRuleFor(rel, accessCtx.peopleAccess)
+    if (rule && role === 'member') return ruleAllows(rule, { role, title: accessCtx.title, teamId: accessCtx.teamId })
+    return false
+  }
   if (part.kind === 'ops') return role === 'auditor'
   return false
 }
@@ -175,6 +180,7 @@ export function defaultPolicy() {
     retentionDays: 365,
     residency: 'customer-vpc',
     sharedAccess: [],
+    peopleAccess: [],
     cloudAllowed: false
   }
 }
@@ -212,6 +218,9 @@ export function normalizePolicy(input, prev = defaultPolicy()) {
     sharedAccess: normalizeSharedAccess(
       Array.isArray(input.sharedAccess) ? input.sharedAccess : prev.sharedAccess
     ),
+    peopleAccess: normalizePeopleAccess(
+      Array.isArray(input.peopleAccess) ? input.peopleAccess : prev.peopleAccess
+    ),
     cloudAllowed: providers.some(item => item !== 'local' && item !== 'ollama')
   }
 }
@@ -220,7 +229,8 @@ export function accessCtxForUser(user, org) {
   return {
     title: user.title,
     teamId: user.teamId,
-    sharedAccess: normalizeSharedAccess(org.policy?.sharedAccess)
+    sharedAccess: normalizeSharedAccess(org.policy?.sharedAccess),
+    peopleAccess: normalizePeopleAccess(org.policy?.peopleAccess)
   }
 }
 

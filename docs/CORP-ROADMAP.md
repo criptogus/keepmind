@@ -11,7 +11,8 @@
 | **v0.3** | Backup, SSO admin, busca híbrida, RAG no chat, ABAC `shared/`, import/export memória | ✅ PR #7 |
 | **v0.4** | Tokens sync (Bearer), corp-push CLI, rerank semântico opcional, Composer conector | ✅ PR #7 |
 | **v0.5** | MCP runtime HTTP + bridge, quotas agentes, sync bidirecional desktop/CLI | ✅ PR #7 |
-| **v0.6** | MCP stdio in-process, sync agendado desktop, metering por time | 🚧 Esta branch |
+| **v0.6** | MCP stdio in-process, sync agendado desktop, metering por time | ✅ PR #7 |
+| **v0.7** | ABAC people/, GitHub corporativo, relatório BYOK | 🚧 Esta branch |
 
 ## Paperclip vs Corp
 
@@ -59,8 +60,14 @@ Corp **hoje**: catálogo (`brain` / `composer` / `ingest` / `sync`), política, 
 2. **Sync agendado** — intervalo no desktop quando **Corp sync** está enabled  
 3. **Metering** — `budgetDaily` por time, **Admin → Metering**, unidades MCP/chat
 
-## v0.7 (próximo)
+## v0.7 (em andamento)
 
-- ABAC em `people/` por cargo  
-- Sync Corp ↔ GitHub corporativo  
-- Relatório de custo BYOK (tokens OpenAI estimados)  
+1. **ABAC `people/`** — `policy.peopleAccess` (cargo/time) no admin  
+2. **GitHub corporativo** — Admin → GitHub sync (`shared/` + política); PAT em Chaves org  
+3. **BYOK report** — `ops/byok-usage.jsonl` + **Metering** (estimativa USD)
+
+## v0.8 (próximo)
+
+- ABAC fino em subpastas `people/*/memory/`  
+- GitHub sync agendado + CI hook  
+- Export de auditoria para SIEM  

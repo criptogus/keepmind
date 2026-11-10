@@ -10,6 +10,7 @@ import { userMemoryRoot, memoryRel, ensureUserBrain } from './memory-layout.mjs'
 import { getOrgSecret } from './org-secrets.mjs'
 import { fileMtime } from './mcp-runtime.mjs'
 import { assertTeamBudget, recordTeamUsage, UNIT_CHAT_CLOUD } from './team-usage.mjs'
+import { recordByokUsage } from './byok-meter.mjs'
 
 export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   return async function brainApi(req, res, url, user, syncCtx = null) {
@@ -370,6 +371,11 @@ async function corpChatReply(org, vault, user, message, persistOrg) {
         const text = data.choices?.[0]?.message?.content
         if (text) {
           recordTeamUsage(team, UNIT_CHAT_CLOUD)
+          recordByokUsage(vault, {
+            provider: 'openai',
+            promptChars: message.length + memoryCtx.length,
+            completionChars: text.length
+          })
           persistOrg?.()
           return { text, provider: 'openai' }
         }

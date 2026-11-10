@@ -9,6 +9,7 @@ const SECTIONS = [
   ['sso', 'SSO (OIDC)', role => role === 'owner' || role === 'admin'],
   ['teams', 'Times', () => true],
   ['metering', 'Metering', role => role === 'owner' || role === 'admin'],
+  ['github', 'GitHub sync', role => role === 'owner' || role === 'admin'],
   ['members', 'Pessoas', role => role === 'owner' || role === 'admin'],
   ['agents', 'Agentes', () => true],
   ['vault', 'Cofre', () => true],
@@ -87,7 +88,11 @@ async function load() {
   }
   if (state.section === 'sso') state.data = (await api('/api/oidc-config')).body
   if (state.section === 'teams') state.data = (await api('/api/teams')).body
-  if (state.section === 'metering') state.data = (await api('/api/metering')).body
+  if (state.section === 'metering') {
+    const [meter, byok] = await Promise.all([api('/api/metering'), api('/api/byok-report?days=30')])
+    state.data = { ok: true, ...meter.body, byok: byok.body.report }
+  }
+  if (state.section === 'github') state.data = (await api('/api/github-sync')).body
   if (state.section === 'members') state.data = (await api('/api/members')).body
   if (state.section === 'agents') {
     const agents = await api('/api/agents')
@@ -150,6 +155,7 @@ function section() {
   if (state.section === 'sso') return ssoConfig(data)
   if (state.section === 'teams') return teams(data)
   if (state.section === 'metering') return metering(data)
+  if (state.section === 'github') return githubSync(data)
   if (state.section === 'members') return members(data)
   if (state.section === 'agents') return agents(data)
   if (state.section === 'vault') return vault(data)
@@ -208,7 +214,7 @@ function syncTokens(data) {
 
 function orgSecrets(data) {
   const providers = data.providers || {}
-  const rows = ['openai', 'anthropic', 'gemini', 'grok'].map(id => {
+  const rows = ['openai', 'anthropic', 'gemini', 'grok', 'github'].map(id => {
     const set = providers[id]
     return `<tr>
       <td>${esc(id)}</td>
@@ -239,6 +245,9 @@ function policy(policy) {
     <label>Residência<input name="residency" value="${esc(policy.residency)}" ${writer ? '' : 'disabled'}/></label>
     <label>ABAC — pastas <code>shared/</code> (JSON)
       <textarea name="sharedAccess" rows="6" ${writer ? '' : 'disabled'} placeholder='[{"prefix":"shared/finance","roles":["owner","admin"],"titles":["CFO"]}]'>${esc(JSON.stringify(policy.sharedAccess || [], null, 2))}</textarea>
+    </label>
+    <label>ABAC — pastas <code>people/</code> por cargo/time (JSON)
+      <textarea name="peopleAccess" rows="5" ${writer ? '' : 'disabled'} placeholder='[{"prefix":"people/lead/memory/inbox","roles":[],"titles":["diretor"],"teams":["leadership"]}]'>${esc(JSON.stringify(policy.peopleAccess || [], null, 2))}</textarea>
     </label>
     ${writer ? '<button class="btn" type="submit">Salvar política</button>' : ''}
   </form>`
@@ -275,7 +284,28 @@ function metering(data) {
   return `<p class="sub">Paperclip-light: cotas por agente + orçamento por time (unidades, não USD).</p>
     <h3>Times</h3><table><thead><tr><th>Time</th><th>Budget/dia</th><th>Uso</th><th>Restante</th></tr></thead><tbody>${teams}</tbody></table>
     <h3>Agentes</h3><table><thead><tr><th>Agente</th><th>Cota/dia</th><th>Uso</th></tr></thead><tbody>${agents}</tbody></table>
-    <p class="sub">Custos: MCP=${costs.mcp ?? 1} · chat nuvem=${costs.chatCloud ?? 10}</p>`
+    <p class="sub">Custos: MCP=${costs.mcp ?? 1} · chat nuvem=${costs.chatCloud ?? 10}</p>
+    <h3>BYOK (estimativa 30d)</h3>
+    <p class="sub">${esc(data.byok?.disclaimer || '')}</p>
+    <p><strong>Total ~$${esc(data.byok?.totalEstUsd ?? 0)}</strong> · ${esc(data.byok?.rows ?? 0)} chamadas</p>
+    <pre class="panel">${esc(JSON.stringify(data.byok?.providers || {}, null, 2))}</pre>`
+}
+
+function githubSync(data) {
+  const cfg = data.config || {}
+  return `<p class="sub">Espelha <code>shared/</code> + snapshot de política no GitHub corporativo. Token PAT em <strong>Chaves org → github</strong>. Não sincroniza <code>people/</code>.</p>
+    <form id="github-sync" class="panel">
+      <label><input type="checkbox" name="enabled" ${cfg.enabled ? 'checked' : ''}/> Ativo</label>
+      <label>Owner<input name="owner" value="${esc(cfg.owner || '')}" placeholder="org-name"/></label>
+      <label>Repo<input name="repo" value="${esc(cfg.repo || '')}" placeholder="corp-memory"/></label>
+      <label>Branch<input name="branch" value="${esc(cfg.branch || 'main')}"/></label>
+      <label>Prefixo no repo<input name="repoPrefix" value="${esc(cfg.repoPrefix || 'corp-vault')}"/></label>
+      <p class="sub">Token: ${data.hasToken ? 'ok' : 'faltando'} · Último: ${esc(cfg.lastMessage || '—')}</p>
+      <div class="row">
+        <button class="btn" type="submit">Salvar</button>
+        <button type="button" class="btn ghost" id="github-run">Sync agora</button>
+      </div>
+    </form>`
 }
 
 function members(data) {
@@ -406,7 +436,7 @@ function bind() {
     event.preventDefault()
     const form = new FormData(event.target)
     const providers = {}
-    for (const id of ['openai', 'anthropic', 'gemini', 'grok']) {
+    for (const id of ['openai', 'anthropic', 'gemini', 'grok', 'github']) {
       const v = String(form.get(id) || '').trim()
       if (v) providers[id] = v
     }
@@ -422,6 +452,29 @@ function bind() {
     })
     state.toast = res.body.ok ? 'Chaves removidas.' : 'Não limpou.'
     if (res.body.ok) state.data = res.body
+    render()
+  })
+  document.querySelector('#github-sync')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const form = new FormData(event.target)
+    const res = await api('/api/github-sync', {
+      method: 'PUT',
+      body: JSON.stringify({
+        enabled: !!form.get('enabled'),
+        owner: form.get('owner'),
+        repo: form.get('repo'),
+        branch: form.get('branch'),
+        repoPrefix: form.get('repoPrefix')
+      })
+    })
+    state.toast = res.body.ok ? 'GitHub sync salvo.' : (res.body.message || 'Não salvou.')
+    if (res.body.ok) await load()
+    render()
+  })
+  document.querySelector('#github-run')?.addEventListener('click', async () => {
+    const res = await api('/api/github-sync/run', { method: 'POST', body: JSON.stringify({ direction: 'both' }) })
+    state.toast = res.body.ok ? res.body.message : (res.body.message || 'Falhou.')
+    if (res.body.ok) await load()
     render()
   })
   document.querySelector('#sync-token')?.addEventListener('submit', async (event) => {
@@ -469,6 +522,15 @@ function bind() {
         sharedAccess: (() => {
           try {
             const raw = String(form.get('sharedAccess') || '[]')
+            const parsed = JSON.parse(raw)
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        })(),
+        peopleAccess: (() => {
+          try {
+            const raw = String(form.get('peopleAccess') || '[]')
             const parsed = JSON.parse(raw)
             return Array.isArray(parsed) ? parsed : []
           } catch {

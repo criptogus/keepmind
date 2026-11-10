@@ -10,7 +10,7 @@ import {
 } from './lib.mjs'
 import { createCorp } from './server.mjs'
 import { rankMemoryFiles } from './search-hybrid.mjs'
-import { normalizeSharedAccess } from './abac.mjs'
+import { normalizeSharedAccess, normalizePeopleAccess } from './abac.mjs'
 
 const secret = `sk-${'a'.repeat(24)}`
 assert.equal(safeRel('../etc/passwd'), null)
@@ -26,6 +26,9 @@ assert.equal(canWriteFile('member', 'ana', 'shared/x.md'), false)
 const abac = normalizeSharedAccess([{ prefix: 'shared/finance', roles: [], titles: ['cfo'], teams: [] }])
 assert.equal(canReadFile('member', 'ana', 'shared/finance/ledger.md', { sharedAccess: abac, title: 'CFO Brasil', teamId: 'everyone' }), true)
 assert.equal(canReadFile('member', 'ana', 'shared/finance/ledger.md', { sharedAccess: abac, title: 'Estagiário', teamId: 'everyone' }), false)
+const peopleAbac = normalizePeopleAccess([{ prefix: 'people/owner/memory/inbox', roles: [], titles: ['cfo'], teams: [] }])
+assert.equal(canReadFile('member', 'ana', 'people/owner/memory/inbox/x.md', { peopleAccess: peopleAbac, title: 'CFO Brasil', teamId: 'everyone' }), true)
+assert.equal(canReadFile('member', 'ana', 'people/owner/memory/inbox/x.md', { peopleAccess: peopleAbac, title: 'estagiário', teamId: 'everyone' }), false)
 assert.equal(rankMemoryFiles([{ abs: '/x', rel: 'people/a/memory/inbox/x.md' }], 'acordo cliente', () => 'acordo com cliente hoje').length, 1)
 assert.equal(canWriteFile('auditor', 'ana', 'people/ana/notes.md'), false)
 assert.throws(() => normalizePolicy({ memberKeys: true }), /BYOK/)
