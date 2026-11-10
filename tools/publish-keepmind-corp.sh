@@ -20,5 +20,13 @@ if ! gh repo view criptogus/keepmind-corp &>/dev/null; then
   exit 1
 fi
 
-git push -u "$REMOTE" "${REF}:main"
+if ! git push -u "$REMOTE" "${REF}:main" 2>&1; then
+  echo ""
+  echo "Push failed (often: cursor[bot] has no write access to keepmind-corp)."
+  echo "Fix one of:"
+  echo "  • GitHub → Settings → Applications → Cursor → Repository access → add keepmind-corp"
+  echo "  • Or push from your machine: git push -u $URL ${REF}:main"
+  echo "  • Or: keepmind-corp → Import → https://github.com/criptogus/keepmind (branch ${REF})"
+  exit 1
+fi
 echo "Pushed ${REF} -> keepmind-corp:main"
