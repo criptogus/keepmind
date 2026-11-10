@@ -5,6 +5,7 @@ extends: electron-builder.yml
 directories:
   output: dist-corp
 files:
+  - out/main/index-corp.js
   - package.json
   - LICENSE
   - NOTICE

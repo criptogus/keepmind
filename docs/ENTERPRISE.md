@@ -49,9 +49,7 @@ customer-sovereign infrastructure**.
    ships primarily as an **installable Corp Electron app** (`index-corp.ts` +
    `electron-builder.corp.yml`) that embeds `corp/server.mjs` and `/brain/` for
    Windows/macOS/Linux, with first-run onboarding. Developers run
-   `npm run corp:build-brain && npm run corp` locally. A **Docker-only** server path
-   (`corp/Dockerfile`, `docker-compose.yml`) is optional self-host for rare cases and
-   is **not** the primary product or support path. Managed SaaS remains a separate bet.
+   `npm run corp:build-brain && npm run corp` locally. Managed SaaS remains a separate bet.
 
 ## Deployment options
 

@@ -74,12 +74,12 @@ npm run corp:build-brain
 npm run corp:check
 ```
 
-## Auto-hospedagem via Docker (opcional, não é o produto principal)
+### Publicar instaladores (CI)
 
-> **Direção do produto:** Corp é um **app desktop instalável**. Os arquivos abaixo existem só para quem, por exceção, quer rodar **apenas** o servidor web em um host Linux — sem suporte oficial como caminho de venda ou onboarding de usuário final. Prefira sempre o instalador Electron.
+Tag no repositório dispara build nos três sistemas:
 
 ```bash
-docker compose -f corp/docker-compose.yml up --build
+git tag corp-v0.1.0 && git push origin corp-v0.1.0
 ```
 
-Na primeira vez, abra `http://localhost:8787/` e conclua o onboarding (owner não é obrigatório no `.env`).
+Artefatos ficam na **GitHub Release** ligada à tag (workflow `release-corp.yml`).
