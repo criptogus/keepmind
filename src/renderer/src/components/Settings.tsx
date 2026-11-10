@@ -1,6 +1,5 @@
 import MemorySecurity from './MemorySecurity'
 import CorpSyncCard from './CorpSyncCard'
-import CorpSyncCard from './CorpSyncCard'
 import { useEffect, useState } from 'react'
 import { IconSparkle } from './icons'
 
