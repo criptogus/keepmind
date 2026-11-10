@@ -20,7 +20,7 @@ const COPY = {
   above_ceiling: 'A autonomia do time não pode passar do teto da empresa.',
   secret_blocked: 'A nota tem uma credencial e não foi salva.',
   last_owner: 'O último dono continua dono.',
-  setup_required: 'Falta o dono inicial. Defina KEEPMIND_CORP_OWNER_EMAIL e KEEPMIND_CORP_OWNER_PASSWORD.',
+  setup_required: 'Ainda não há dono. Conclua o onboarding na página inicial.',
   bad_user: 'Confira o email, a senha (12 caracteres) e o papel.',
   unauthorized: 'Entre de novo.'
 }

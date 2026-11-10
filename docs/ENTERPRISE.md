@@ -45,9 +45,10 @@ customer-sovereign infrastructure**.
 5. **Compliance** — SOC 2, ISO 27001, LGPD/GDPR: data residency, retention,
    legal hold, eDiscovery over the vault, DPA. The audit ledger + PII scan
    are good starting points.
-6. **Packaging** — Electron desktop is not the enterprise form factor.
-   Options: web app (the React renderer is already web-capable), self-hosted
-   container, or managed SaaS.
+6. **Packaging** — Individual Electron desktop stays the free product. **KeepMind Corp**
+   ships as self-hosted web (`corp/server.mjs` + `/brain/`), optional Docker, and an
+   optional **Corp Electron** shell (`index-corp.ts`) that embeds the same server for
+   Windows/macOS/Linux. Managed SaaS remains a separate bet.
 
 ## Deployment options
 

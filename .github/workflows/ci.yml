@@ -19,3 +19,4 @@ jobs:
       - run: npm run corp:check
       - run: npm run typecheck
       - run: npm run build
+      - run: test -f out/main/index-corp.js

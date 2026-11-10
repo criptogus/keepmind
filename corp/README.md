@@ -37,7 +37,13 @@ npm run corp
 
 Portal: `http://127.0.0.1:8787` → onboarding ou login → **KeepMind** em `/brain/`.
 
-Docker: `docker compose up --build` dentro desta pasta (veja `.env.example`).
+Docker (compila o `/brain/` na imagem):
+
+```bash
+docker compose -f corp/docker-compose.yml up --build
+```
+
+Na primeira vez, abra `http://localhost:8787/` e conclua o onboarding (owner não é obrigatório no `.env`).
 
 ## App desktop (Windows, macOS, Linux)
 
