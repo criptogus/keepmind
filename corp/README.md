@@ -67,6 +67,20 @@ npm run corp
 
 Portal: `http://127.0.0.1:8787` → onboarding ou login → **KeepMind** em `/brain/`.
 
+## Sync desktop → Corp (v0.4)
+
+1. Admin → **Agentes** — ligue **Sync**.  
+2. Admin → **Sync (tokens)** — gere um token (segredo exibido uma vez).  
+3. No desktop ou CI:
+
+```bash
+KEEPMIND_CORP_TOKEN='…' node tools/corp-push.mjs \
+  --url http://127.0.0.1:8787 \
+  --dir ./memory
+```
+
+Alternativa: export JSON do Brain + `--bundle ./export.json`. Requer escopos `memory:import` no token.
+
 ## Verificação
 
 ```bash

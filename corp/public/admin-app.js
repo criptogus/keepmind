@@ -5,6 +5,7 @@ const SECTIONS = [
   ['overview', 'Visão', () => true],
   ['policy', 'Política', () => true],
   ['secrets', 'Chaves org', role => role === 'owner' || role === 'admin'],
+  ['sync', 'Sync (tokens)', role => role === 'owner' || role === 'admin'],
   ['sso', 'SSO (OIDC)', role => role === 'owner' || role === 'admin'],
   ['teams', 'Times', () => true],
   ['members', 'Pessoas', role => role === 'owner' || role === 'admin'],
@@ -75,6 +76,14 @@ async function load() {
   if (state.section === 'overview') state.data = (await api('/api/overview')).body
   if (state.section === 'policy') state.data = (await api('/api/policy')).body
   if (state.section === 'secrets') state.data = (await api('/api/org-secrets')).body
+  if (state.section === 'sync') {
+    const [tokens, agents, members] = await Promise.all([
+      api('/api/sync-tokens'),
+      api('/api/agents'),
+      api('/api/members')
+    ])
+    state.data = { ok: true, tokens: tokens.body.tokens, agents: agents.body.agents, members: members.body.members }
+  }
   if (state.section === 'sso') state.data = (await api('/api/oidc-config')).body
   if (state.section === 'teams') state.data = (await api('/api/teams')).body
   if (state.section === 'members') state.data = (await api('/api/members')).body
@@ -135,6 +144,7 @@ function section() {
   if (state.section === 'overview') return overview(data)
   if (state.section === 'policy') return policy(data.policy)
   if (state.section === 'secrets') return orgSecrets(data)
+  if (state.section === 'sync') return syncTokens(data)
   if (state.section === 'sso') return ssoConfig(data)
   if (state.section === 'teams') return teams(data)
   if (state.section === 'members') return members(data)
@@ -171,6 +181,26 @@ function ssoConfig(data) {
       <div class="row"><button class="btn" type="submit">Salvar SSO</button>
       <button type="button" class="btn ghost" id="clear-sso">Remover</button></div>
     </form>`
+}
+
+function syncTokens(data) {
+  const syncOn = (data.agents || []).some((a) => a.id === 'sync' && a.enabled)
+  const rows = (data.tokens || []).map((row) => `<tr>
+    <td>${esc(row.label)}<div class="sub">${esc(row.id)}</div></td>
+    <td>${esc(row.userEmail || row.userId)}</td>
+    <td>${row.revokedAt ? 'revogado' : 'ativo'}</td>
+    <td><button type="button" class="btn ghost" data-revoke-token="${esc(row.id)}" ${row.revokedAt ? 'disabled' : ''}>Revogar</button></td>
+  </tr>`).join('') || '<tr><td colspan="4">Nenhum token ainda.</td></tr>'
+  const members = (data.members || []).map((m) => `<option value="${esc(m.id)}">${esc(m.email)}</option>`).join('')
+  return `<p class="sub">Tokens <code>Bearer</code> para <code>tools/corp-push.mjs</code> e automação desktop → Corp. Requer agente <strong>Sync</strong> ligado. O segredo aparece só na criação.</p>
+    ${syncOn ? '' : '<p class="err">Ative o agente <strong>Sync</strong> em Agentes antes de usar tokens.</p>'}
+  <form id="sync-token" class="panel">
+    <label>Rótulo<input name="label" value="desktop-sync" /></label>
+    <label>Pessoa (partição de memória)<select name="userId">${members}</select></label>
+    <button class="btn" type="submit">Gerar token</button>
+  </form>
+  <div id="sync-secret" class="panel" hidden></div>
+  <table><thead><tr><th>Token</th><th>Usuário</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
 function orgSecrets(data) {
@@ -367,6 +397,38 @@ function bind() {
     state.toast = res.body.ok ? 'Chaves removidas.' : 'Não limpou.'
     if (res.body.ok) state.data = res.body
     render()
+  })
+  document.querySelector('#sync-token')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const form = new FormData(event.target)
+    const res = await api('/api/sync-tokens', {
+      method: 'POST',
+      body: JSON.stringify({ label: form.get('label'), userId: form.get('userId') })
+    })
+    if (res.body.ok && res.body.token?.secret) {
+      const box = document.querySelector('#sync-secret')
+      if (box) {
+        box.hidden = false
+        box.innerHTML = `<p class="sub"><strong>Copie agora</strong> — não mostramos de novo:</p>
+          <pre>${esc(res.body.token.secret)}</pre>
+          <p class="sub">Use: <code>KEEPMIND_CORP_TOKEN=… node tools/corp-push.mjs --url … --dir ./memory</code></p>`
+      }
+      toast('Token criado.')
+      await load()
+      render()
+      return
+    }
+    state.toast = res.body.message || COPY[res.body.error] || 'Não criou token.'
+    render()
+  })
+  document.querySelectorAll('[data-revoke-token]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const id = button.dataset.revokeToken
+      const res = await api(`/api/sync-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      state.toast = res.body.ok ? 'Token revogado.' : (COPY[res.body.error] || 'Não revogou.')
+      if (res.body.ok) await load()
+      render()
+    })
   })
   document.querySelector('#policy')?.addEventListener('submit', async event => {
     event.preventDefault()

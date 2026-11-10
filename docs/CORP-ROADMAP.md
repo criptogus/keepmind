@@ -8,8 +8,8 @@
 |--------|------|--------|
 | **v0.1** (`corp-v01`) | Onboarding, Electron, brain + `/admin/` | ✅ Release |
 | **v0.2** | BYOK admin, chat OpenAI, agentes autonomia | ✅ PR #7 |
-| **v0.3** | Backup, SSO admin, busca híbrida, RAG no chat, ABAC `shared/`, import/export memória | 🚧 Esta branch |
-| **v0.4** | MCP runtime, sync desktop, metering agentes | Planejado |
+| **v0.3** | Backup, SSO admin, busca híbrida, RAG no chat, ABAC `shared/`, import/export memória | ✅ PR #7 |
+| **v0.4** | Tokens sync (Bearer), corp-push CLI, rerank semântico opcional, Composer conector | 🚧 Esta branch |
 
 ## Paperclip vs Corp
 
@@ -38,9 +38,15 @@ Corp **hoje**: catálogo (`brain` / `composer` / `ingest` / `sync`), política, 
 5. ABAC em pastas `shared/*`  
 6. Briefing e export/import de memória pessoal  
 
-## v0.4 (próximo)
+## v0.4 (em andamento)
+
+1. **Tokens de sync** — Admin → Sync; `Bearer` em `/api/brain/import|export` com agente **Sync** ligado  
+2. **CLI** — `node tools/corp-push.mjs` (bundle ou pasta `memory/`)  
+3. **Busca/chat** — rerank OpenAI (`embed-rerank.mjs`) quando há chave org + provedor `openai`  
+4. **Composer** — conector Cursor Agent (card Connectors + rule `.cursor/rules/keepmind-memory.mdc`)
+
+## v0.5 (próximo)
 
 - Worker MCP corporativo com auditoria por tool call  
-- Embeddings / busca semântica real  
-- Conector KeepMind desktop → Corp (push inbox/skills)  
+- Sync bidirecional automático desktop ↔ Corp  
 - Registro de agentes externos + quotas (Paperclip-light)  

@@ -5,11 +5,12 @@ import {
   accessCtxForUser
 } from './lib.mjs'
 import { rankMemoryFiles } from './search-hybrid.mjs'
+import { rerankWithEmbeddings } from './embed-rerank.mjs'
 import { userMemoryRoot, memoryRel, ensureUserBrain } from './memory-layout.mjs'
 import { getOrgSecret } from './org-secrets.mjs'
 
 export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
-  return async function brainApi(req, res, url, user) {
+  return async function brainApi(req, res, url, user, syncCtx = null) {
     if (!url.pathname.startsWith('/api/brain/')) return false
     const org = getOrg()
     ensureUserBrain(vault, user.id, user.name)
@@ -94,22 +95,39 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
 
   if (sub === 'search' && req.method === 'GET') {
     const q = String(url.searchParams.get('q') || '').trim()
-    const ranked = rankMemoryFiles(memoryFiles(vault, user, org), q, f => readFileSync(f.abs, 'utf8'))
-    const hits = ranked.map(row => ({
+    let ranked = rankMemoryFiles(memoryFiles(vault, user, org), q, (f) => readFileSync(f.abs, 'utf8'))
+    let semantic = false
+    const openai = getOrgSecret(vault, 'openai')
+    if (openai && org.policy.providers.includes('openai') && ranked.length > 1) {
+      const reranked = await rerankWithEmbeddings(
+        ranked,
+        q,
+        (f) => readFileSync(f.abs, 'utf8'),
+        openai
+      )
+      ranked = reranked.hits
+      semantic = reranked.semantic
+    }
+    const hits = ranked.map((row) => ({
       path: row.file.rel.replace(/^people\/[^/]+\/memory\//, ''),
       title: row.file.rel,
       snippet: row.snippet
     }))
     return json(res, 200, {
       hits,
-      semantic: false,
+      semantic,
       hybrid: true,
-      notice: hits.length ? 'Busca híbrida por relevância (termos). Embeddings completos no roadmap.' : 'Nada encontrado na sua partição.',
+      notice: hits.length
+        ? (semantic ? 'Busca híbrida + rerank semântico (OpenAI embeddings).' : 'Busca híbrida por relevância (termos).')
+        : 'Nada encontrado na sua partição.',
       asOf: null
     })
   }
 
   if (sub === 'export' && req.method === 'GET') {
+    if (syncCtx && !syncCtx.scopes.includes('memory:export')) {
+      return json(res, 403, { error: 'forbidden', message: 'Token sem escopo memory:export.' })
+    }
     const ctx = accessCtxForUser(user, org)
     const bundle = []
     for (const file of memoryFiles(vault, user, org)) {
@@ -122,11 +140,14 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
         })
       } catch { /* skip */ }
     }
-    audit(user, 'memory_export', { count: bundle.length })
+    audit(user, 'memory_export', { count: bundle.length, tokenId: syncCtx?.tokenId })
     return json(res, 200, { version: 1, edition: 'keepmind-corp', files: bundle })
   }
 
   if (sub === 'import' && req.method === 'POST') {
+    if (syncCtx && !syncCtx.scopes.includes('memory:import')) {
+      return json(res, 403, { error: 'forbidden', message: 'Token sem escopo memory:import.' })
+    }
     const body = await readJsonBody(req)
     const files = Array.isArray(body.files) ? body.files : []
     const ctx = accessCtxForUser(user, org)
@@ -141,7 +162,7 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
       writeFileSync(located.abs, content)
       wrote += 1
     }
-    audit(user, 'memory_import', { count: wrote })
+    audit(user, 'memory_import', { count: wrote, tokenId: syncCtx?.tokenId })
     return json(res, 200, { ok: true, imported: wrote })
   }
 
@@ -293,7 +314,18 @@ async function corpChatReply(org, vault, user, message) {
       text: 'O agente **Brain** está desligado na governança. Peça a um admin para ativá-lo em **Agentes**.'
     }
   }
-  const ranked = rankMemoryFiles(memoryFiles(vault, user, org), message, f => readFileSync(f.abs, 'utf8')).slice(0, 4)
+  let ranked = rankMemoryFiles(memoryFiles(vault, user, org), message, (f) => readFileSync(f.abs, 'utf8'))
+  const openaiKey = getOrgSecret(vault, 'openai')
+  if (openaiKey && org.policy.providers.includes('openai') && ranked.length > 1) {
+    const reranked = await rerankWithEmbeddings(
+      ranked,
+      message,
+      (f) => readFileSync(f.abs, 'utf8'),
+      openaiKey
+    )
+    ranked = reranked.hits
+  }
+  ranked = ranked.slice(0, 4)
   const memoryCtx = ranked.length
     ? ranked.map(r => `- ${r.file.rel}: ${r.snippet.replace(/\s+/g, ' ').slice(0, 220)}`).join('\n')
   : '(sem trechos de memória para esta pergunta)'

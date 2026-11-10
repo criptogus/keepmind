@@ -8,7 +8,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFi
 import path from 'node:path'
 import { sharedRuleFor, ruleAllows, normalizeSharedAccess } from './abac.mjs'
 
-export const CORP_VERSION = '0.3.0'
+export const CORP_VERSION = '0.4.0'
 export const ROLES = ['owner', 'admin', 'member', 'auditor']
 export const AUTONOMY = ['supervised', 'autopilot', 'autonomous']
 export const PROVIDERS = ['local', 'ollama', 'openai', 'anthropic', 'gemini', 'grok']
@@ -46,7 +46,9 @@ const ACTIONS = {
   'agents.write': ['owner', 'admin'],
   'audit.read': ['owner', 'admin', 'auditor'],
   'scan.read': ['owner', 'admin', 'auditor'],
-  'scan.paths': ['owner', 'admin']
+  'scan.paths': ['owner', 'admin'],
+  'sync_tokens.read': ['owner', 'admin'],
+  'sync_tokens.write': ['owner', 'admin']
 }
 
 const SHADOW_KEY = /^(api[_-]?key|apikey|secret|token|password|passwd|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key)$/i

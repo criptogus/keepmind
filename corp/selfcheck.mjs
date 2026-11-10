@@ -165,6 +165,37 @@ try {
   const demote = await call(port, '/api/members/owner', { method: 'PATCH', cookie: owner.cookie, body: { role: 'admin' } })
   assert.equal(demote.status, 409)
 
+  const agentsPut = await call(port, '/api/agents', {
+    method: 'PUT',
+    cookie: owner.cookie,
+    body: {
+      agents: (await call(port, '/api/agents', { cookie: owner.cookie })).json.agents.map((a) => (
+        a.id === 'sync' ? { ...a, enabled: true } : a
+      ))
+    }
+  })
+  assert.equal(agentsPut.status, 200)
+  const minted = await call(port, '/api/sync-tokens', {
+    method: 'POST',
+    cookie: owner.cookie,
+    body: { label: 'selfcheck', userId: 'owner' }
+  })
+  assert.equal(minted.status, 201)
+  assert.ok(minted.json.token.secret)
+  const pushed = await call(port, '/api/brain/import', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${minted.json.token.secret}` },
+    body: { files: [{ path: 'inbox/selfcheck-push.md', content: '# sync\n\ntoken import ok\n' }] }
+  })
+  assert.equal(pushed.status, 200)
+  assert.equal(pushed.json.imported, 1)
+  const off = await call(port, '/api/brain/import', {
+    method: 'POST',
+    headers: { authorization: 'Bearer invalid-token-value' },
+    body: { files: [] }
+  })
+  assert.equal(off.status, 401)
+
   await close()
   await checkOidc(root)
   console.log('keepmind corp selfcheck ok')

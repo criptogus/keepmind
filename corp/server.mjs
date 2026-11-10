@@ -20,6 +20,7 @@ import { ensureUserBrain } from './memory-layout.mjs'
 import { orgSecretStatus, setOrgSecrets } from './org-secrets.mjs'
 import { streamVaultBackup } from './vault-backup.mjs'
 import { readOidcVaultConfig, oidcVaultStatus, writeOidcVaultConfig, clearOidcVaultConfig } from './oidc-store.mjs'
+import { listSyncTokens, createSyncToken, revokeSyncToken, resolveSyncBearer } from './sync-tokens-store.mjs'
 
 const CORP_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(CORP_ROOT, 'public')
@@ -214,7 +215,17 @@ export function createCorp(opts = {}) {
       if (url.pathname === '/api/oidc/start' && req.method === 'GET') return await oidcStart(res)
       if (url.pathname === '/api/oidc/callback' && req.method === 'GET') return await oidcCallback(url, res)
       const token = readCookie(req, 'kmcorp')
-      const user = userFromToken(token)
+      let user = userFromToken(token)
+      const bearer = parseBearerToken(req)
+      const syncCtx = bearer ? resolveSyncBearer(vault, bearer) : null
+      let syncAuth = false
+      if (!user && syncCtx) {
+        const bind = org.users.find((item) => item.id === syncCtx.userId && !item.disabled)
+        if (bind) {
+          user = bind
+          syncAuth = true
+        }
+      }
       if (url.pathname === '/api/session' && req.method === 'GET') {
         return send(res, 200, { ok: true, user: user ? publicUser(user) : null })
       }
@@ -222,8 +233,13 @@ export function createCorp(opts = {}) {
       if (url.pathname === '/api/login' && req.method === 'POST') return await login(req, res)
       if (url.pathname === '/api/logout' && req.method === 'POST') return logout(req, token, res)
       if (!user) return send(res, 401, { ok: false, error: 'unauthorized' })
-      if (!sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
-      if (await brainApi(req, res, url, user)) return
+      const syncRoute = syncAuth && syncTokenAllows(url, req.method, syncCtx)
+      if (syncRoute && !org.agents.find((a) => a.id === 'sync' && a.enabled)) {
+        return send(res, 403, { ok: false, error: 'sync_off', message: 'Ative o agente Sync em Agentes.' })
+      }
+      if (!syncRoute && !sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
+      if (await brainApi(req, res, url, user, syncAuth ? syncCtx : null)) return
+      if (syncAuth) return send(res, 403, { ok: false, error: 'forbidden', message: 'Token válido só para export/import de memória.' })
       return await authed(req, res, url, user)
     } catch (err) {
       const code = err.code || 'server_error'
@@ -394,7 +410,51 @@ export function createCorp(opts = {}) {
       return previewFile(res, user, url.searchParams.get('path') || '')
     }
     if (url.pathname === '/api/files' && req.method === 'POST') return writeFile(req, res, user)
+    if (url.pathname === '/api/sync-tokens' && req.method === 'GET') return listSyncTokensRoute(res, user)
+    if (url.pathname === '/api/sync-tokens' && req.method === 'POST') return mintSyncTokenRoute(req, res, user)
+    if (url.pathname.startsWith('/api/sync-tokens/') && req.method === 'DELETE') {
+      const id = decodeURIComponent(url.pathname.slice('/api/sync-tokens/'.length))
+      return revokeSyncTokenRoute(res, user, id)
+    }
     return send(res, 404, { ok: false, error: 'not_found' })
+  }
+
+  function listSyncTokensRoute(res, user) {
+    if (!can(user.role, 'sync_tokens.read')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const rows = listSyncTokens(vault).map((row) => ({
+      ...row,
+      userEmail: org.users.find((u) => u.id === row.userId)?.email ?? row.userId
+    }))
+    return send(res, 200, { ok: true, tokens: rows })
+  }
+
+  async function mintSyncTokenRoute(req, res, user) {
+    if (!can(user.role, 'sync_tokens.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    const label = String(body.label || 'desktop-sync').slice(0, 40)
+    const userId = String(body.userId || user.id).trim()
+    const bind = org.users.find((u) => u.id === userId && !u.disabled)
+    if (!bind) return send(res, 400, { ok: false, error: 'bad_user', message: 'Pessoa inválida.' })
+    const minted = createSyncToken(vault, { label, userId, createdBy: user.id })
+    audit(user, 'sync_token_mint', { tokenId: minted.id, userId })
+    return send(res, 201, {
+      ok: true,
+      token: {
+        id: minted.id,
+        label: minted.label,
+        secret: minted.secret,
+        scopes: minted.scopes,
+        userId: minted.userId
+      }
+    })
+  }
+
+  function revokeSyncTokenRoute(res, user, id) {
+    if (!can(user.role, 'sync_tokens.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    if (!id) return send(res, 400, { ok: false, error: 'bad_token' })
+    if (!revokeSyncToken(vault, id)) return send(res, 404, { ok: false, error: 'not_found' })
+    audit(user, 'sync_token_revoke', { tokenId: id })
+    return send(res, 200, { ok: true })
   }
 
   function overview(res, user) {
@@ -733,6 +793,20 @@ function sameOriginMutation(req) {
   } catch {
     return false
   }
+}
+
+function parseBearerToken(req) {
+  const header = String(req.headers.authorization || '')
+  const match = /^Bearer\s+(.+)$/i.exec(header)
+  return match ? match[1].trim() : ''
+}
+
+function syncTokenAllows(url, method, ctx) {
+  if (!ctx) return false
+  const scopes = ctx.scopes || []
+  if (method === 'GET' && url.pathname === '/api/brain/export') return scopes.includes('memory:export')
+  if (method === 'POST' && url.pathname === '/api/brain/import') return scopes.includes('memory:import')
+  return false
 }
 
 function send(res, status, body) {
