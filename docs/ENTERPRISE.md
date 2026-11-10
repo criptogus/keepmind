@@ -96,7 +96,7 @@ The open question in the gaps list is settled for this slice by the partitioned 
 `corp/` is a Node server plus **the KeepMind second-brain UI** at `/brain/` and
 **organization governance** at `/admin/`. **Ship** with `npm run dist:corp:*`
 (Electron embeds the server). **Develop** with `npm run corp:build-brain` then
-`npm run corp`. Optional Docker in `corp/` is not the main install path — see
+`npm run corp`. See
 [`corp/README.md`](../corp/README.md).
 
 - Single tenant, self-hosted.
