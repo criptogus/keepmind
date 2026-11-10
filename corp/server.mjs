@@ -7,9 +7,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'no
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  CORP_VERSION, ROLES, PROVIDERS, AUTONOMY,
+  CORP_VERSION,   ROLES, PROVIDERS, AUTONOMY,
   can, hashPassword, verifyPassword, userIdFromEmail,
-  resolveInside,   canReadFile, canWriteFile, normalizePolicy,
+  resolveInside, canReadFile, canWriteFile, normalizePolicy, accessCtxForUser,
   clampTeamAutonomy, scanText, scanVault, publicScan, redactSecrets, walkMarkdown,
   defaultOrg, readJson, writeJsonAtomic, ensureVaultShape, appendAudit, readAudit,
   verifyRs256
@@ -18,6 +18,8 @@ import { createOidc, oidcFromEnv } from './oidc.mjs'
 import { mountBrainApi } from './brain-api.mjs'
 import { ensureUserBrain } from './memory-layout.mjs'
 import { orgSecretStatus, setOrgSecrets } from './org-secrets.mjs'
+import { streamVaultBackup } from './vault-backup.mjs'
+import { readOidcVaultConfig, oidcVaultStatus, writeOidcVaultConfig, clearOidcVaultConfig } from './oidc-store.mjs'
 
 const CORP_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(CORP_ROOT, 'public')
@@ -48,8 +50,18 @@ export function createCorp(opts = {}) {
   const org = loadOrg(orgFile, env.KEEPMIND_CORP_ORG_NAME || 'KeepMind Corp')
   const sessions = new Map(Object.entries(readJson(sessionFile, {})))
   const failures = new Map()
-  const oidcConfig = opts.oidc === undefined ? oidcFromEnv(env) : opts.oidc
-  const oidc = oidcConfig ? createOidc(oidcConfig, opts.fetchImpl ?? globalThis.fetch) : null
+  const fetchImpl = opts.fetchImpl ?? globalThis.fetch
+  let oidc = null
+  function refreshOidc() {
+    if (opts.oidc === false) {
+      oidc = null
+      return null
+    }
+    const cfg = opts.oidc !== undefined ? opts.oidc : (readOidcVaultConfig(vault) || oidcFromEnv(env))
+    oidc = cfg ? createOidc(cfg, fetchImpl) : null
+    return oidc
+  }
+  refreshOidc()
   const secureCookie = env.KEEPMIND_CORP_SECURE === '1'
 
   const brainApi = mountBrainApi({
@@ -345,6 +357,13 @@ export function createCorp(opts = {}) {
       return send(res, 200, { ok: true, ...orgSecretStatus(vault) })
     }
     if (url.pathname === '/api/org-secrets' && req.method === 'PUT') return writeOrgSecrets(req, res, user)
+    if (url.pathname === '/api/oidc-config' && req.method === 'GET') {
+      if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+      return send(res, 200, { ok: true, ...oidcVaultStatus(vault), active: !!oidc })
+    }
+    if (url.pathname === '/api/oidc-config' && req.method === 'PUT') return writeOidcConfig(req, res, user)
+    if (url.pathname === '/api/oidc-config' && req.method === 'DELETE') return deleteOidcConfig(req, res, user)
+    if (url.pathname === '/api/backup' && req.method === 'GET') return vaultBackup(req, res, user)
     if (url.pathname === '/api/teams' && req.method === 'GET') {
       return send(res, 200, { ok: true, teams: org.teams, ceiling: org.policy.autonomyCeiling })
     }
@@ -408,6 +427,36 @@ export function createCorp(opts = {}) {
     persistOrg()
     audit(user, 'policy_update', { providers: org.policy.providers, ceiling: org.policy.autonomyCeiling })
     return send(res, 200, { ok: true, policy: org.policy, teams: org.teams })
+  }
+
+  function vaultBackup(req, res, user) {
+    if (user.role !== 'owner') return send(res, 403, { ok: false, error: 'forbidden' })
+    audit(user, 'vault_backup', {})
+    streamVaultBackup(vault, res)
+    return true
+  }
+
+  async function writeOidcConfig(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    try {
+      const status = writeOidcVaultConfig(vault, body)
+      refreshOidc()
+      audit(user, 'oidc_config_update', { issuer: status.issuer })
+      return send(res, 200, { ok: true, ...status, active: !!oidc })
+    } catch (err) {
+      const code = err.code || 'bad_policy'
+      return send(res, 400, { ok: false, error: code, message: err.message })
+    }
+  }
+
+  async function deleteOidcConfig(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    if (!sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
+    const status = clearOidcVaultConfig(vault)
+    refreshOidc()
+    audit(user, 'oidc_config_clear', {})
+    return send(res, 200, { ok: true, ...status, active: !!oidc })
   }
 
   async function writeOrgSecrets(req, res, user) {
@@ -577,14 +626,16 @@ export function createCorp(opts = {}) {
   }
 
   function listFiles(res, user) {
-    const files = scanVaultList().filter(file => canReadFile(user.role, user.id, file.path))
+    const ctx = accessCtxForUser(user, org)
+    const files = scanVaultList().filter(file => canReadFile(user.role, user.id, file.path, ctx))
     return send(res, 200, { ok: true, files })
   }
 
   function previewFile(res, user, rel) {
     const located = resolveInside(vault, rel)
     if (!located) return send(res, 400, { ok: false, error: 'bad_path' })
-    if (!canReadFile(user.role, user.id, located.rel)) return send(res, 403, { ok: false, error: 'forbidden' })
+    const ctx = accessCtxForUser(user, org)
+    if (!canReadFile(user.role, user.id, located.rel, ctx)) return send(res, 403, { ok: false, error: 'forbidden' })
     if (!existsSync(located.abs)) return send(res, 404, { ok: false, error: 'not_found' })
     const raw = readFileSync(located.abs, 'utf8')
     if (raw.startsWith('KMS1\n')) return send(res, 200, { ok: true, path: located.rel, encrypted: true, text: '' })

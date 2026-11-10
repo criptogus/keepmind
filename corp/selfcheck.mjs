@@ -9,6 +9,8 @@ import {
   clampTeamAutonomy, scanText, verifyRs256, redactSecrets
 } from './lib.mjs'
 import { createCorp } from './server.mjs'
+import { rankMemoryFiles } from './search-hybrid.mjs'
+import { normalizeSharedAccess } from './abac.mjs'
 
 const secret = `sk-${'a'.repeat(24)}`
 assert.equal(safeRel('../etc/passwd'), null)
@@ -21,6 +23,10 @@ assert.ok(actions().includes('owner.grant'))
 assert.equal(canReadFile('member', 'ana', 'people/bia/notes.md'), false)
 assert.equal(canReadFile('member', 'ana', 'people/ana/notes.md'), true)
 assert.equal(canWriteFile('member', 'ana', 'shared/x.md'), false)
+const abac = normalizeSharedAccess([{ prefix: 'shared/finance', roles: [], titles: ['cfo'], teams: [] }])
+assert.equal(canReadFile('member', 'ana', 'shared/finance/ledger.md', { sharedAccess: abac, title: 'CFO Brasil', teamId: 'everyone' }), true)
+assert.equal(canReadFile('member', 'ana', 'shared/finance/ledger.md', { sharedAccess: abac, title: 'Estagiário', teamId: 'everyone' }), false)
+assert.equal(rankMemoryFiles([{ abs: '/x', rel: 'people/a/memory/inbox/x.md' }], 'acordo cliente', () => 'acordo com cliente hoje').length, 1)
 assert.equal(canWriteFile('auditor', 'ana', 'people/ana/notes.md'), false)
 assert.throws(() => normalizePolicy({ memberKeys: true }), /BYOK/)
 assert.throws(() => normalizePolicy({ byokRequired: false }), /BYOK/)

@@ -5,6 +5,7 @@ const SECTIONS = [
   ['overview', 'Visão', () => true],
   ['policy', 'Política', () => true],
   ['secrets', 'Chaves org', role => role === 'owner' || role === 'admin'],
+  ['sso', 'SSO (OIDC)', role => role === 'owner' || role === 'admin'],
   ['teams', 'Times', () => true],
   ['members', 'Pessoas', role => role === 'owner' || role === 'admin'],
   ['agents', 'Agentes', () => true],
@@ -74,6 +75,7 @@ async function load() {
   if (state.section === 'overview') state.data = (await api('/api/overview')).body
   if (state.section === 'policy') state.data = (await api('/api/policy')).body
   if (state.section === 'secrets') state.data = (await api('/api/org-secrets')).body
+  if (state.section === 'sso') state.data = (await api('/api/oidc-config')).body
   if (state.section === 'teams') state.data = (await api('/api/teams')).body
   if (state.section === 'members') state.data = (await api('/api/members')).body
   if (state.section === 'agents') {
@@ -133,6 +135,7 @@ function section() {
   if (state.section === 'overview') return overview(data)
   if (state.section === 'policy') return policy(data.policy)
   if (state.section === 'secrets') return orgSecrets(data)
+  if (state.section === 'sso') return ssoConfig(data)
   if (state.section === 'teams') return teams(data)
   if (state.section === 'members') return members(data)
   if (state.section === 'agents') return agents(data)
@@ -152,7 +155,22 @@ function overview(data) {
       <div class="panel"><div class="k">Agentes ligados</div><div class="v">${enabled}</div></div>
       <div class="panel"><div class="k">Segredos / PII</div><div class="v">${scan.secretTotal ?? '—'} / ${scan.piiTotal ?? '—'}</div></div>
     </div>
-    <div class="panel"><div class="k">BYOK da empresa</div><p>Chaves pessoais não entram. A política exige a chave da organização, no ambiente do servidor.</p></div>`
+    <div class="panel"><div class="k">BYOK da empresa</div><p>Chaves pessoais não entram. A política exige a chave da organização, no ambiente do servidor.</p></div>
+    ${state.me.role === 'owner' ? '<p class="row"><a class="btn ghost" href="/api/backup" download>Baixar backup do cofre (.tgz)</a></p>' : ''}`
+}
+
+function ssoConfig(data) {
+  return `<p class="sub">SSO via OpenID Connect. Depois de salvar, o login mostra <strong>Entrar com SSO</strong>. O client secret fica no cofre (como BYOK).</p>
+    <form id="sso" class="panel">
+      <label>Issuer (URL)<input name="issuer" value="${esc(data.issuer || '')}" placeholder="https://idp.suaempresa.com" /></label>
+      <label>Client ID<input name="clientId" value="${esc(data.clientId || '')}" /></label>
+      <label>Redirect URI<input name="redirectUri" value="${esc(data.redirectUri || '')}" placeholder="https://corp.exemplo.com/api/oidc/callback" /></label>
+      <label>Grupo admin (claim)<input name="adminGroup" value="${esc(data.adminGroup || 'keepmind-admins')}" /></label>
+      <label>Client secret<input name="clientSecret" type="password" autocomplete="new-password" placeholder="${data.secretSet ? 'Substituir…' : 'Obrigatório na 1ª vez'}" /></label>
+      <p class="sub">Status: ${data.active ? 'SSO ativo' : 'SSO inativo'} · secret ${data.secretSet ? 'ok' : 'faltando'}</p>
+      <div class="row"><button class="btn" type="submit">Salvar SSO</button>
+      <button type="button" class="btn ghost" id="clear-sso">Remover</button></div>
+    </form>`
 }
 
 function orgSecrets(data) {
@@ -186,6 +204,9 @@ function policy(policy) {
     <label>Teto de autonomia<select name="autonomyCeiling" ${writer ? '' : 'disabled'}>${options}</select></label>
     <label>Retenção em dias<input name="retentionDays" type="number" min="7" max="3650" value="${esc(policy.retentionDays)}" ${writer ? '' : 'disabled'}/></label>
     <label>Residência<input name="residency" value="${esc(policy.residency)}" ${writer ? '' : 'disabled'}/></label>
+    <label>ABAC — pastas <code>shared/</code> (JSON)
+      <textarea name="sharedAccess" rows="6" ${writer ? '' : 'disabled'} placeholder='[{"prefix":"shared/finance","roles":["owner","admin"],"titles":["CFO"]}]'>${esc(JSON.stringify(policy.sharedAccess || [], null, 2))}</textarea>
+    </label>
     ${writer ? '<button class="btn" type="submit">Salvar política</button>' : ''}
   </form>`
 }
@@ -302,6 +323,29 @@ function bind() {
     state.section = 'overview'
     render()
   })
+  document.querySelector('#sso')?.addEventListener('submit', async event => {
+    event.preventDefault()
+    const form = new FormData(event.target)
+    const res = await api('/api/oidc-config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        issuer: form.get('issuer'),
+        clientId: form.get('clientId'),
+        redirectUri: form.get('redirectUri'),
+        adminGroup: form.get('adminGroup'),
+        clientSecret: form.get('clientSecret')
+      })
+    })
+    state.toast = res.body.ok ? 'SSO salvo.' : (res.body.message || COPY[res.body.error] || 'Não salvou.')
+    if (res.body.ok) state.data = res.body
+    render()
+  })
+  document.querySelector('#clear-sso')?.addEventListener('click', async () => {
+    const res = await api('/api/oidc-config', { method: 'DELETE' })
+    state.toast = res.body.ok ? 'SSO removido.' : 'Não removeu.'
+    if (res.body.ok) state.data = res.body
+    render()
+  })
   document.querySelector('#secrets')?.addEventListener('submit', async event => {
     event.preventDefault()
     const form = new FormData(event.target)
@@ -333,7 +377,16 @@ function bind() {
         providers: form.getAll('provider'),
         autonomyCeiling: form.get('autonomyCeiling'),
         retentionDays: Number(form.get('retentionDays')),
-        residency: form.get('residency')
+        residency: form.get('residency'),
+        sharedAccess: (() => {
+          try {
+            const raw = String(form.get('sharedAccess') || '[]')
+            const parsed = JSON.parse(raw)
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        })()
       })
     })
     state.toast = res.body.ok ? 'Política salva.' : (COPY[res.body.error] || 'Não salvou.')

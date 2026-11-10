@@ -1,71 +1,46 @@
 # KeepMind Corp — roadmap (v0.2+)
 
-> Comparação honesta com o que existe hoje (`corp-v01`) e para onde vamos.
+> Comparação honesta com o que existe hoje e para onde vamos.
 
-## Perguntas frequentes
+## Status por versão
 
-### Já temos gestão de agentes estilo Paperclip?
+| Versão | Foco | Estado |
+|--------|------|--------|
+| **v0.1** (`corp-v01`) | Onboarding, Electron, brain + `/admin/` | ✅ Release |
+| **v0.2** | BYOK admin, chat OpenAI, agentes autonomia | ✅ PR #7 |
+| **v0.3** | Backup, SSO admin, busca híbrida, RAG no chat, ABAC `shared/`, import/export memória | 🚧 Esta branch |
+| **v0.4** | MCP runtime, sync desktop, metering agentes | Planejado |
 
-**Não no mesmo nível.** [Paperclip](https://paperclip.ing/) foca em **org chart de agentes**, metas, orçamento por agente e orquestração de “empresa de agentes”.
+## Paperclip vs Corp
 
-No Corp **hoje**:
+Paperclip: org chart de agentes, metas, budget, runtime.  
+Corp **hoje**: catálogo (`brain` / `ingest` / `sync`), política, BYOK, auditoria, chat com memória injetada (RAG leve). **v0.4** aproxima runtime MCP.
 
-| Paperclip (referência) | KeepMind Corp hoje |
-|------------------------|-------------------|
-| Org chart de agentes, metas, budget | Catálogo fixo (`brain`, `ingest`, `sync`) + ligar/desligar + `teamId` |
-| BYO agents, runtime | Agentes **não executam** MCP/workers no servidor Corp |
-| Custo por agente | Sem metering |
-| Governança em runtime | Política de **provedor** + **autonomia** (teto org + por time) |
+## Governança por cargo
 
-**v0.2–v0.3 (esta direção):** painel de agentes com descrição, time, autonomia máxima; BYOK no admin; chat real respeitando política.  
-**v0.4+ (paridade Paperclip-light):** registrar agentes externos, quotas, fila de trabalho, ledger por agente.
+- **RBAC** + partição `people/` / `shared/` ✅  
+- **Cargo** (`title`) em pessoas ✅  
+- **ABAC** por prefixo em `shared/` (roles, times, títulos no JSON de política) ✅ v0.3  
+- ABAC por pasta em `people/` — futuro  
 
-### Governança de dados por cargo da empresa?
+## KeepMind pessoal ↔ Corp
 
-**Parcial.**
+- Layout de memória compatível ✅  
+- **Export/import** via `/api/brain/export` e `/api/brain/import` (bundle JSON) ✅ v0.3  
+- Sync automático desktop — v0.4  
 
-| Camada | Hoje | Próximo |
-|--------|------|---------|
-| **Papel (RBAC)** | `owner`, `admin`, `member`, `auditor` — quem edita política, vê cofre, audita | Mantido |
-| **Partição de dados** | `people/<id>/` privado; `shared/`; owner/admin veem tudo; auditor vê ledger/scan, não corpo pessoal | Mantido |
-| **Time** | `teamId` + autonomia por time (teto da org) | UI melhor |
-| **Cargo (job title)** | Campo `title` em pessoas (metadado, **não** regra de acesso ainda) | v0.2 |
-| **ABAC por cargo** | Não | Ex.: “Diretor vê pasta `shared/finance`” — v0.4 |
+## v0.3 entregue (esta release)
 
-Governança de **conteúdo sensível** (segredos, PII) já existe via varredura + bloqueio de chave pessoal (BYOK).
+1. Backup `.tgz` do cofre (owner) — `/api/backup`  
+2. SSO OIDC configurável no admin (sem depender só de env)  
+3. Busca híbrica por relevância de termos  
+4. Chat com trechos de memória (RAG leve)  
+5. ABAC em pastas `shared/*`  
+6. Briefing e export/import de memória pessoal  
 
-### Second brain conectado com KeepMind?
+## v0.4 (próximo)
 
-**Mesmo produto de UI, cofres diferentes por enquanto.**
-
-| Aspecto | Situação |
-|---------|----------|
-| Interface | Mesmo renderer (Today, Brain, Skills, …) via `corpShim` |
-| Layout de memória | `people/<id>/memory/` compatível com o app pessoal |
-| **Sync automático** | **Não** — KeepMind desktop usa repo/local do usuário; Corp usa vault do tenant |
-| Caminho desejado | Export/import ou sync opcional pessoal → Corp (só política permitir); Corp como “modo trabalho” |
-
-**v0.3:** documentar “levar memória para o Corp” (export de skills/inbox).  
-**v0.4:** conector opcional desktop Corp-aware (mesmo login OIDC, push inbox).
-
----
-
-## v0.2 (em andamento)
-
-1. **BYOK no admin** — cadastro de chaves da org no cofre (`ops/org-secrets.json`), status mascarado, sem vazar em API.
-2. **UI Corp enxuta** — esconder Connect/Crons que não têm backend Corp.
-3. **Cargo (`title`)** em pessoas — preparar governança futura por área.
-4. **Agentes** — coluna autonomia máxima por agente no JSON (persistido).
-5. **Chat mínimo** — se política incluir `openai` e chave da org existir, resposta real (senão mensagem clara).
-
-## v0.3
-
-- Busca semântica / embeddings no vault Corp (ou delegar ao worker `brain`).
-- OIDC assistido no admin (formulário, não só env).
-- Backup/export do vault.
-
-## v0.4
-
-- Runtime de agentes (MCP) com `agents.write` + auditoria por execução.
-- Regras por cargo/pasta (ABAC).
-- Sync opcional KeepMind pessoal ↔ Corp.
+- Worker MCP corporativo com auditoria por tool call  
+- Embeddings / busca semântica real  
+- Conector KeepMind desktop → Corp (push inbox/skills)  
+- Registro de agentes externos + quotas (Paperclip-light)  

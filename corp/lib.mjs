@@ -6,8 +6,9 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync, renameSync, existsSync } from 'node:fs'
 import path from 'node:path'
+import { sharedRuleFor, ruleAllows, normalizeSharedAccess } from './abac.mjs'
 
-export const CORP_VERSION = '0.1.0'
+export const CORP_VERSION = '0.3.0'
 export const ROLES = ['owner', 'admin', 'member', 'auditor']
 export const AUTONOMY = ['supervised', 'autopilot', 'autonomous']
 export const PROVIDERS = ['local', 'ollama', 'openai', 'anthropic', 'gemini', 'grok']
@@ -124,11 +125,15 @@ export function partitionOf(rel) {
   return { kind: 'denied' }
 }
 
-export function canReadFile(role, userId, rel) {
+export function canReadFile(role, userId, rel, accessCtx = {}) {
   const part = partitionOf(rel)
   if (part.kind === 'denied') return false
   if (role === 'owner' || role === 'admin') return true
-  if (part.kind === 'shared') return role === 'member' || role === 'auditor'
+  if (part.kind === 'shared') {
+    const rule = sharedRuleFor(rel, accessCtx.sharedAccess)
+    if (rule) return ruleAllows(rule, { role, title: accessCtx.title, teamId: accessCtx.teamId })
+    return role === 'member' || role === 'auditor'
+  }
   if (part.kind === 'person') return role === 'member' && part.id === userId
   if (part.kind === 'ops') return role === 'auditor'
   return false
@@ -167,6 +172,7 @@ export function defaultPolicy() {
     autonomyCeiling: 'supervised',
     retentionDays: 365,
     residency: 'customer-vpc',
+    sharedAccess: [],
     cloudAllowed: false
   }
 }
@@ -201,7 +207,18 @@ export function normalizePolicy(input, prev = defaultPolicy()) {
     autonomyCeiling,
     retentionDays,
     residency,
+    sharedAccess: normalizeSharedAccess(
+      Array.isArray(input.sharedAccess) ? input.sharedAccess : prev.sharedAccess
+    ),
     cloudAllowed: providers.some(item => item !== 'local' && item !== 'ollama')
+  }
+}
+
+export function accessCtxForUser(user, org) {
+  return {
+    title: user.title,
+    teamId: user.teamId,
+    sharedAccess: normalizeSharedAccess(org.policy?.sharedAccess)
   }
 }
 

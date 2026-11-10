@@ -1,8 +1,10 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import {
-  resolveInside, canReadFile, canWriteFile, walkMarkdown, scanText, readAudit, autonomyRank, PROVIDERS
+  resolveInside, canReadFile, canWriteFile, walkMarkdown, scanText, readAudit, autonomyRank, PROVIDERS,
+  accessCtxForUser
 } from './lib.mjs'
+import { rankMemoryFiles } from './search-hybrid.mjs'
 import { userMemoryRoot, memoryRel, ensureUserBrain } from './memory-layout.mjs'
 import { getOrgSecret } from './org-secrets.mjs'
 
@@ -71,12 +73,12 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   }
 
   if (sub === 'memory' && req.method === 'GET') {
-    return json(res, 200, listMemory(vault, user))
+    return json(res, 200, listMemory(vault, user, org))
   }
 
   if (sub === 'memory/file' && req.method === 'GET') {
     const rel = url.searchParams.get('path') || ''
-    const abs = memoryPath(vault, user, rel)
+    const abs = memoryPath(vault, user, org, rel)
     if (!abs) return json(res, 400, { error: 'bad_path' })
     if (!existsSync(abs)) return json(res, 404, { error: 'not_found' })
     const raw = readFileSync(abs, 'utf8')
@@ -84,20 +86,56 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   }
 
   if (sub === 'search' && req.method === 'GET') {
-    const q = String(url.searchParams.get('q') || '').trim().toLowerCase()
-    const hits = []
-    for (const file of memoryFiles(vault, user)) {
-      if (!q) break
+    const q = String(url.searchParams.get('q') || '').trim()
+    const ranked = rankMemoryFiles(memoryFiles(vault, user, org), q, f => readFileSync(f.abs, 'utf8'))
+    const hits = ranked.map(row => ({
+      path: row.file.rel.replace(/^people\/[^/]+\/memory\//, ''),
+      title: row.file.rel,
+      snippet: row.snippet
+    }))
+    return json(res, 200, {
+      hits,
+      semantic: false,
+      hybrid: true,
+      notice: hits.length ? 'Busca híbrida por relevância (termos). Embeddings completos no roadmap.' : 'Nada encontrado na sua partição.',
+      asOf: null
+    })
+  }
+
+  if (sub === 'export' && req.method === 'GET') {
+    const ctx = accessCtxForUser(user, org)
+    const bundle = []
+    for (const file of memoryFiles(vault, user, org)) {
       try {
-        const content = readFileSync(file.abs, 'utf8')
-        if (content.toLowerCase().includes(q)) {
-          const i = content.toLowerCase().indexOf(q)
-          hits.push({ path: file.rel.replace(/^people\/[^/]+\/memory\//, ''), title: file.rel, snippet: content.slice(Math.max(0, i - 40), i + 80) })
-        }
+        const raw = readFileSync(file.abs, 'utf8')
+        if (raw.startsWith('KMS1\n')) continue
+        bundle.push({
+          path: file.rel.replace(/^people\/[^/]+\/memory\//, ''),
+          content: raw
+        })
       } catch { /* skip */ }
-      if (hits.length >= 20) break
     }
-    return json(res, 200, { hits, semantic: false, notice: 'Corporate web edition: text search over your vault partition.', asOf: null })
+    audit(user, 'memory_export', { count: bundle.length })
+    return json(res, 200, { version: 1, edition: 'keepmind-corp', files: bundle })
+  }
+
+  if (sub === 'import' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    const files = Array.isArray(body.files) ? body.files : []
+    const ctx = accessCtxForUser(user, org)
+    let wrote = 0
+    for (const row of files.slice(0, 200)) {
+      const rel = String(row.path || '').trim()
+      const content = String(row.content ?? '')
+      if (!rel.endsWith('.md') || !rel) continue
+      const full = memoryRel(user.id, rel)
+      const located = resolveInside(vault, full)
+      if (!located || !canWriteFile(user.role, user.id, located.rel)) continue
+      writeFileSync(located.abs, content)
+      wrote += 1
+    }
+    audit(user, 'memory_import', { count: wrote })
+    return json(res, 200, { ok: true, imported: wrote })
   }
 
   if (sub === 'facts' && req.method === 'GET') {
@@ -105,7 +143,14 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   }
 
   if (sub === 'briefing' && req.method === 'GET') {
-    return json(res, 200, { text: `Good ${timeOfDay()}. Your corporate second brain is live. Policy ceiling: ${org.policy.autonomyCeiling}.` })
+    const inbox = memoryFiles(vault, user, org).filter(f => f.rel.includes('/inbox/'))
+    const text = [
+      `Bom ${timeOfDay() === 'morning' ? 'dia' : timeOfDay() === 'afternoon' ? 'tarde' : 'noite'}, ${user.name}.`,
+      `Organização: ${org.name}. Teto de autonomia: ${org.policy.autonomyCeiling}.`,
+      `Sua memória: ${memoryFiles(vault, user, org).length} arquivos (${inbox.length} em inbox).`,
+      'Governança e auditoria ativas — use Captura ou Chat com o agente Brain ligado.'
+    ].join(' ')
+    return json(res, 200, { text })
   }
 
   if (sub === 'policy' && req.method === 'GET') {
@@ -172,24 +217,27 @@ function canAdmin(user) {
   return user.role === 'owner' || user.role === 'admin'
 }
 
-function memoryPath(vault, user, rel) {
+function memoryPath(vault, user, org, rel) {
+    const ctx = accessCtxForUser(user, org)
     const full = memoryRel(user.id, rel)
     const located = resolveInside(vault, full)
-    if (!located || !canReadFile(user.role, user.id, located.rel)) return null
+    if (!located || !canReadFile(user.role, user.id, located.rel, ctx)) return null
     return located.abs
   }
 
-function listMemory(vault, user) {
-    return memoryFiles(vault, user).map(f => ({
+function listMemory(vault, user, org) {
+    return memoryFiles(vault, user, org).map(f => ({
       path: f.rel.replace(/^people\/[^/]+\/memory\//, ''),
       content: ''
     }))
   }
 
-function memoryFiles(vault, user) {
+function memoryFiles(vault, user, org) {
+  const ctx = accessCtxForUser(user, org)
   const root = userMemoryRoot(vault, user.id)
   const files = walkMarkdown(root)
-  const shared = walkMarkdown(path.join(vault, 'shared', 'memory')).filter(f => canReadFile(user.role, user.id, `shared/memory/${f.rel}`))
+  const shared = walkMarkdown(path.join(vault, 'shared', 'memory')).filter(f =>
+    canReadFile(user.role, user.id, `shared/memory/${f.rel}`, ctx))
   return [
     ...files.map(f => ({ rel: memoryRel(user.id, f.rel), abs: f.abs })),
     ...shared.map(f => ({ rel: `shared/memory/${f.rel}`, abs: f.abs }))
@@ -238,6 +286,11 @@ async function corpChatReply(org, vault, user, message) {
       text: 'O agente **Brain** está desligado na governança. Peça a um admin para ativá-lo em **Agentes**.'
     }
   }
+  const ranked = rankMemoryFiles(memoryFiles(vault, user, org), message, f => readFileSync(f.abs, 'utf8')).slice(0, 4)
+  const memoryCtx = ranked.length
+    ? ranked.map(r => `- ${r.file.rel}: ${r.snippet.replace(/\s+/g, ' ').slice(0, 220)}`).join('\n')
+  : '(sem trechos de memória para esta pergunta)'
+
   if (org.policy.providers.includes('openai')) {
     const key = getOrgSecret(vault, 'openai')
     if (key) {
@@ -250,7 +303,7 @@ async function corpChatReply(org, vault, user, message) {
             messages: [
               {
                 role: 'system',
-                content: `Você é o assistente KeepMind Corp. Usuário: ${user.name}. Teto de autonomia da org: ${org.policy.autonomyCeiling}. Time: ${team.autonomy}. Responda em português, de forma objetiva.`
+                content: `Você é o assistente KeepMind Corp. Usuário: ${user.name} (${user.title || 'sem cargo'}). Teto: ${org.policy.autonomyCeiling}. Time: ${team.autonomy}. Use os trechos de memória quando relevantes. Memória:\n${memoryCtx}\nResponda em português.`
               },
               { role: 'user', content: message.slice(0, 4000) }
             ],
