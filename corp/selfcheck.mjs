@@ -170,7 +170,7 @@ try {
     cookie: owner.cookie,
     body: {
       agents: (await call(port, '/api/agents', { cookie: owner.cookie })).json.agents.map((a) => (
-        a.id === 'sync' ? { ...a, enabled: true } : a
+        a.id === 'sync' || a.id === 'composer' ? { ...a, enabled: true } : a
       ))
     }
   })
@@ -195,6 +195,19 @@ try {
     body: { files: [] }
   })
   assert.equal(off.status, 401)
+
+  const mcpSession = await call(port, '/api/mcp/call', {
+    method: 'POST',
+    cookie: owner.cookie,
+    body: { agentId: 'composer', tool: 'sb_search', arguments: { query: 'welcome' } }
+  })
+  assert.equal(mcpSession.status, 200)
+  const mcpBearer = await call(port, '/api/mcp/call', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${minted.json.token.secret}` },
+    body: { agentId: 'composer', tool: 'sb_list', arguments: { limit: 5 } }
+  })
+  assert.equal(mcpBearer.status, 200)
 
   await close()
   await checkOidc(root)

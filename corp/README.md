@@ -81,6 +81,24 @@ KEEPMIND_CORP_TOKEN='…' node tools/corp-push.mjs \
 
 Alternativa: export JSON do Brain + `--bundle ./export.json`. Requer escopos `memory:import` no token.
 
+**Bidirecional (merge por `updatedAt`):**
+
+```bash
+KEEPMIND_CORP_TOKEN='…' node tools/corp-sync.mjs --url http://127.0.0.1:8787 --dir ./memory
+```
+
+### MCP remoto (Composer / agentes externos)
+
+Runtime HTTP: `POST /api/mcp/call` (auditoria em `vault/ops/mcp-invocations.jsonl`).  
+Bridge stdio para Cursor:
+
+```bash
+KEEPMIND_CORP_URL='http://127.0.0.1:8787' KEEPMIND_CORP_TOKEN='…' \
+  node tools/corp-mcp-bridge.mjs
+```
+
+Registre no `.cursor/mcp.json` apontando para o bridge. Ative **Composer** e respeite **cotas diárias** no admin.
+
 ## Verificação
 
 ```bash

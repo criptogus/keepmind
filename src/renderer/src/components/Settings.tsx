@@ -1,4 +1,6 @@
 import MemorySecurity from './MemorySecurity'
+import CorpSyncCard from './CorpSyncCard'
+import CorpSyncCard from './CorpSyncCard'
 import { useEffect, useState } from 'react'
 import { IconSparkle } from './icons'
 
@@ -231,6 +233,7 @@ export default function Settings({ onToast, onActivity }: Props) {
         </div>
 
         <MemorySecurity />
+        {!config?.corp ? <CorpSyncCard onToast={onToast} /> : null}
         {/* Models & runtimes */}
         <ModelsCard onToast={onToast} />
 

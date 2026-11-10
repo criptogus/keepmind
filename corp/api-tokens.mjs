@@ -19,7 +19,7 @@ export function mintToken(label = 'sync') {
     label: String(label).slice(0, 40),
     secret,
     hash: hashToken(secret),
-    scopes: ['memory:import', 'memory:export'],
+    scopes: ['memory:import', 'memory:export', 'mcp:invoke'],
     createdAt: new Date().toISOString()
   }
 }

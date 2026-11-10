@@ -8,7 +8,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFi
 import path from 'node:path'
 import { sharedRuleFor, ruleAllows, normalizeSharedAccess } from './abac.mjs'
 
-export const CORP_VERSION = '0.4.0'
+export const CORP_VERSION = '0.5.0'
 export const ROLES = ['owner', 'admin', 'member', 'auditor']
 export const AUTONOMY = ['supervised', 'autopilot', 'autonomous']
 export const PROVIDERS = ['local', 'ollama', 'openai', 'anthropic', 'gemini', 'grok']
@@ -361,7 +361,10 @@ export function mergeAgentCatalog(loaded, baseAgents) {
       ...def,
       ...cur,
       kind: cur.kind ?? def.kind,
-      description: cur.description ?? def.description
+      description: cur.description ?? def.description,
+      quotaDaily: cur.quotaDaily !== undefined ? cur.quotaDaily : def.quotaDaily,
+      usageToday: cur.usageToday ?? def.usageToday ?? 0,
+      usageDay: cur.usageDay ?? def.usageDay ?? null
     }
   })
 }
@@ -373,10 +376,10 @@ export function defaultOrg(name = 'KeepMind Corp') {
     users: [],
     teams: [{ id: 'everyone', name: 'Everyone', autonomy: 'supervised' }],
     agents: [
-      { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Chat e RAG do second brain corporativo' },
-      { id: 'composer', name: 'Cursor Composer', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'app', description: 'Agente Cursor com MCP KeepMind (sb_search, sb_remember)' },
-      { id: 'ingest', name: 'Ingest', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Captura e ingestão de notas' },
-      { id: 'sync', name: 'Sync', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Sincronização com repositório externo' }
+      { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Chat e RAG do second brain corporativo', quotaDaily: 2000, usageToday: 0, usageDay: null },
+      { id: 'composer', name: 'Cursor Composer', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'app', description: 'Agente Cursor com MCP KeepMind (sb_search, sb_remember)', quotaDaily: 500, usageToday: 0, usageDay: null },
+      { id: 'ingest', name: 'Ingest', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Captura e ingestão de notas', quotaDaily: 300, usageToday: 0, usageDay: null },
+      { id: 'sync', name: 'Sync', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Sincronização com repositório externo', quotaDaily: null, usageToday: 0, usageDay: null }
     ],
     policy: defaultPolicy()
   }

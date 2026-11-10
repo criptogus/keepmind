@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import {
   resolveInside, canReadFile, canWriteFile, walkMarkdown, scanText, readAudit, autonomyRank, PROVIDERS,
@@ -8,6 +8,7 @@ import { rankMemoryFiles } from './search-hybrid.mjs'
 import { rerankWithEmbeddings } from './embed-rerank.mjs'
 import { userMemoryRoot, memoryRel, ensureUserBrain } from './memory-layout.mjs'
 import { getOrgSecret } from './org-secrets.mjs'
+import { fileMtime } from './mcp-runtime.mjs'
 
 export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   return async function brainApi(req, res, url, user, syncCtx = null) {
@@ -136,12 +137,13 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
         if (raw.startsWith('KMS1\n')) continue
         bundle.push({
           path: file.rel.replace(/^people\/[^/]+\/memory\//, ''),
-          content: raw
+          content: raw,
+          updatedAt: fileMtime(file.abs)
         })
       } catch { /* skip */ }
     }
     audit(user, 'memory_export', { count: bundle.length, tokenId: syncCtx?.tokenId })
-    return json(res, 200, { version: 1, edition: 'keepmind-corp', files: bundle })
+    return json(res, 200, { version: 2, edition: 'keepmind-corp', files: bundle })
   }
 
   if (sub === 'import' && req.method === 'POST') {
@@ -150,8 +152,9 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
     }
     const body = await readJsonBody(req)
     const files = Array.isArray(body.files) ? body.files : []
-    const ctx = accessCtxForUser(user, org)
+    const mode = body.merge === 'newer' ? 'newer' : 'force'
     let wrote = 0
+    let skipped = 0
     for (const row of files.slice(0, 200)) {
       const rel = String(row.path || '').trim()
       const content = String(row.content ?? '')
@@ -159,11 +162,19 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
       const full = memoryRel(user.id, rel)
       const located = resolveInside(vault, full)
       if (!located || !canWriteFile(user.role, user.id, located.rel)) continue
+      const remoteAt = Number(row.updatedAt || 0)
+      if (mode === 'newer' && existsSync(located.abs)) {
+        const localAt = statSync(located.abs).mtimeMs
+        if (localAt >= remoteAt && remoteAt > 0) {
+          skipped += 1
+          continue
+        }
+      }
       writeFileSync(located.abs, content)
       wrote += 1
     }
-    audit(user, 'memory_import', { count: wrote, tokenId: syncCtx?.tokenId })
-    return json(res, 200, { ok: true, imported: wrote })
+    audit(user, 'memory_import', { count: wrote, skipped, merge: mode, tokenId: syncCtx?.tokenId })
+    return json(res, 200, { ok: true, imported: wrote, skipped, merge: mode })
   }
 
   if (sub === 'facts' && req.method === 'GET') {
@@ -396,6 +407,10 @@ function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(body))
   return true
+}
+
+export function listCorpMemoryFiles(vault, user, org) {
+  return memoryFiles(vault, user, org)
 }
 
 function readJsonBody(req) {

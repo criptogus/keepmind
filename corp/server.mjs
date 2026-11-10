@@ -15,7 +15,8 @@ import {
   verifyRs256
 } from './lib.mjs'
 import { createOidc, oidcFromEnv } from './oidc.mjs'
-import { mountBrainApi } from './brain-api.mjs'
+import { mountBrainApi, listCorpMemoryFiles } from './brain-api.mjs'
+import { mountMcpApi } from './mcp-api.mjs'
 import { ensureUserBrain } from './memory-layout.mjs'
 import { orgSecretStatus, setOrgSecrets } from './org-secrets.mjs'
 import { streamVaultBackup } from './vault-backup.mjs'
@@ -70,6 +71,13 @@ export function createCorp(opts = {}) {
     getOrg: () => org,
     audit: (user, op, extra) => audit(user, op, extra),
     persistOrg
+  })
+  const mcpApi = mountMcpApi({
+    vault,
+    getOrg: () => org,
+    audit: (user, op, extra) => audit(user, op, extra),
+    persistOrg,
+    memoryFilesForUser: listCorpMemoryFiles
   })
 
   ensureOwner(env)
@@ -239,7 +247,8 @@ export function createCorp(opts = {}) {
       }
       if (!syncRoute && !sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
       if (await brainApi(req, res, url, user, syncAuth ? syncCtx : null)) return
-      if (syncAuth) return send(res, 403, { ok: false, error: 'forbidden', message: 'Token válido só para export/import de memória.' })
+      if (await mcpApi(req, res, url, user, syncAuth ? syncCtx : null)) return
+      if (syncAuth) return send(res, 403, { ok: false, error: 'forbidden', message: 'Token válido só para export/import/MCP.' })
       return await authed(req, res, url, user)
     } catch (err) {
       const code = err.code || 'server_error'
@@ -679,7 +688,12 @@ export function createCorp(opts = {}) {
         teamId,
         autonomyMax,
         kind: String(agent.kind || prev?.kind || 'builtin').slice(0, 40),
-        description: String(agent.description || prev?.description || '').slice(0, 200)
+        description: String(agent.description || prev?.description || '').slice(0, 200),
+        quotaDaily: agent.quotaDaily === null || agent.quotaDaily === ''
+          ? null
+          : (Number(agent.quotaDaily ?? prev?.quotaDaily) || null),
+        usageToday: Number(agent.usageToday ?? prev?.usageToday ?? 0),
+        usageDay: agent.usageDay ?? prev?.usageDay ?? null
       })
     }
     org.agents = next
@@ -739,6 +753,10 @@ export function createCorp(opts = {}) {
 
 const STATUS = {
   shadow_key: 400,
+  quota_exceeded: 429,
+  agent_off: 403,
+  bad_agent: 400,
+  bad_tool: 400,
   above_ceiling: 400,
   bad_policy: 400,
   bad_autonomy: 400,
@@ -806,6 +824,8 @@ function syncTokenAllows(url, method, ctx) {
   const scopes = ctx.scopes || []
   if (method === 'GET' && url.pathname === '/api/brain/export') return scopes.includes('memory:export')
   if (method === 'POST' && url.pathname === '/api/brain/import') return scopes.includes('memory:import')
+  if (method === 'POST' && url.pathname === '/api/mcp/call') return scopes.includes('mcp:invoke')
+  if (method === 'GET' && url.pathname === '/api/mcp/tools') return scopes.includes('mcp:invoke')
   return false
 }
 

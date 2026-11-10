@@ -138,6 +138,10 @@ The desktop app's **Connectors** screen has a **Cursor Composer** card with
 copy-paste snippets. In **KeepMind Corp**, enable the **Cursor Composer**
 agent in **Admin → Agentes** so policy allows that connector class (app).
 
+**Corp remote vault:** run `tools/corp-mcp-bridge.mjs` with org URL + sync token
+(`mcp:invoke` scope) and register that command in `.cursor/mcp.json` instead of
+local `keepmind-mcp.mjs`.
+
 ## Gemini CLI
 
 `.gemini/settings.json` ships in the repo — Gemini CLI loads it

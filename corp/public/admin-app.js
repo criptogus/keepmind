@@ -281,11 +281,13 @@ function agents(data) {
     <td>${esc(agent.name)}<div class="sub">${esc(agent.id)}${agent.kind === 'app' ? ' · app' : ''}${agent.description ? ` — ${esc(agent.description)}` : ''}</div></td>
     <td>${esc(agent.teamId)}</td>
     <td><select data-agent-autonomy="${esc(agent.id)}" ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''}>${modes.map(m => `<option ${(agent.autonomyMax || 'supervised') === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></td>
+    <td><input type="number" min="0" placeholder="∞" data-agent-quota="${esc(agent.id)}" value="${agent.quotaDaily ?? ''}" ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''} style="width:5rem"/></td>
+    <td class="sub">${esc(agent.usageToday ?? 0)}${agent.usageDay ? ` · ${esc(agent.usageDay)}` : ''}</td>
     <td><input type="checkbox" data-agent="${esc(agent.id)}" ${agent.enabled ? 'checked' : ''} ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''}/></td>
   </tr>`).join('')
   const writer = state.me.role === 'owner' || state.me.role === 'admin'
   return `<p class="sub">Autorize agentes do tenant (brain, ingest, sync, <strong>Cursor Composer</strong> como conector de app). Runtime MCP completo vem no roadmap v0.4.</p>
-    <form id="agents"><table><thead><tr><th>Agente</th><th>Time</th><th>Autonomia máx.</th><th>Ligado</th></tr></thead><tbody>${rows}</tbody></table>
+    <form id="agents"><table><thead><tr><th>Agente</th><th>Time</th><th>Autonomia máx.</th><th>Cota/dia</th><th>Uso hoje</th><th>Ligado</th></tr></thead><tbody>${rows}</tbody></table>
     ${writer ? '<p><button class="btn" type="submit">Salvar agentes</button></p>' : ''}</form>`
 }
 
@@ -488,11 +490,16 @@ function bind() {
   })
   document.querySelector('#agents')?.addEventListener('submit', async event => {
     event.preventDefault()
-    const agents = (state.data.agents || []).map(agent => ({
-      ...agent,
-      enabled: !!document.querySelector(`[data-agent="${CSS.escape(agent.id)}"]`)?.checked,
-      autonomyMax: document.querySelector(`[data-agent-autonomy="${CSS.escape(agent.id)}"]`)?.value || agent.autonomyMax
-    }))
+    const agents = (state.data.agents || []).map(agent => {
+      const qRaw = document.querySelector(`[data-agent-quota="${CSS.escape(agent.id)}"]`)?.value
+      const quotaDaily = qRaw === '' || qRaw == null ? null : Number(qRaw)
+      return {
+        ...agent,
+        enabled: !!document.querySelector(`[data-agent="${CSS.escape(agent.id)}"]`)?.checked,
+        autonomyMax: document.querySelector(`[data-agent-autonomy="${CSS.escape(agent.id)}"]`)?.value || agent.autonomyMax,
+        quotaDaily: Number.isFinite(quotaDaily) ? quotaDaily : null
+      }
+    })
     const res = await api('/api/agents', { method: 'PUT', body: JSON.stringify({ agents }) })
     state.toast = res.body.ok ? 'Agentes salvos.' : (COPY[res.body.error] || 'Não salvou.')
     if (res.body.ok) state.data = res.body

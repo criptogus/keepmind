@@ -9,7 +9,8 @@
 | **v0.1** (`corp-v01`) | Onboarding, Electron, brain + `/admin/` | ✅ Release |
 | **v0.2** | BYOK admin, chat OpenAI, agentes autonomia | ✅ PR #7 |
 | **v0.3** | Backup, SSO admin, busca híbrida, RAG no chat, ABAC `shared/`, import/export memória | ✅ PR #7 |
-| **v0.4** | Tokens sync (Bearer), corp-push CLI, rerank semântico opcional, Composer conector | 🚧 Esta branch |
+| **v0.4** | Tokens sync (Bearer), corp-push CLI, rerank semântico opcional, Composer conector | ✅ PR #7 |
+| **v0.5** | MCP runtime HTTP + bridge, quotas agentes, sync bidirecional desktop/CLI | 🚧 Esta branch |
 
 ## Paperclip vs Corp
 
@@ -45,8 +46,14 @@ Corp **hoje**: catálogo (`brain` / `composer` / `ingest` / `sync`), política, 
 3. **Busca/chat** — rerank OpenAI (`embed-rerank.mjs`) quando há chave org + provedor `openai`  
 4. **Composer** — conector Cursor Agent (card Connectors + rule `.cursor/rules/keepmind-memory.mdc`)
 
-## v0.5 (próximo)
+## v0.5 (em andamento)
 
-- Worker MCP corporativo com auditoria por tool call  
-- Sync bidirecional automático desktop ↔ Corp  
-- Registro de agentes externos + quotas (Paperclip-light)  
+1. **MCP runtime** — `POST /api/mcp/call` + audit `ops/mcp-invocations.jsonl` + `tools/corp-mcp-bridge.mjs` (stdio → Corp)  
+2. **Quotas** — `quotaDaily` / uso diário por agente (Composer, Brain, …) no admin  
+3. **Sync bidirecional** — export v2 (`updatedAt`), import `merge: newer`, `tools/corp-sync.mjs`, Settings desktop **Corp sync**
+
+## v0.6 (próximo)
+
+- Worker MCP stdio embutido no servidor Corp (sem bridge HTTP)  
+- Agendamento automático de sync no desktop (interval)  
+- Metering Paperclip-light (orçamento por time / custo estimado)  
