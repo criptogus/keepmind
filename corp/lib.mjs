@@ -8,7 +8,7 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFi
 import path from 'node:path'
 import { sharedRuleFor, ruleAllows, normalizeSharedAccess } from './abac.mjs'
 
-export const CORP_VERSION = '0.5.0'
+export const CORP_VERSION = '0.6.0'
 export const ROLES = ['owner', 'admin', 'member', 'auditor']
 export const AUTONOMY = ['supervised', 'autopilot', 'autonomous']
 export const PROVIDERS = ['local', 'ollama', 'openai', 'anthropic', 'gemini', 'grok']
@@ -352,6 +352,21 @@ export function publicScan(scan, withPaths) {
 }
 
 /** Add new catalog agents (e.g. composer) to existing org.json without dropping custom rows. */
+export function mergeTeamCatalog(loaded, baseTeams) {
+  const byId = new Map((Array.isArray(loaded) ? loaded : []).map((t) => [t.id, t]))
+  return baseTeams.map((def) => {
+    const cur = byId.get(def.id)
+    if (!cur) return { ...def }
+    return {
+      ...def,
+      ...cur,
+      budgetDaily: cur.budgetDaily !== undefined ? cur.budgetDaily : def.budgetDaily,
+      usageToday: cur.usageToday ?? def.usageToday ?? 0,
+      usageDay: cur.usageDay ?? def.usageDay ?? null
+    }
+  })
+}
+
 export function mergeAgentCatalog(loaded, baseAgents) {
   const byId = new Map((Array.isArray(loaded) ? loaded : []).map((a) => [a.id, a]))
   return baseAgents.map((def) => {
@@ -374,7 +389,14 @@ export function defaultOrg(name = 'KeepMind Corp') {
     version: 1,
     name,
     users: [],
-    teams: [{ id: 'everyone', name: 'Everyone', autonomy: 'supervised' }],
+    teams: [{
+      id: 'everyone',
+      name: 'Everyone',
+      autonomy: 'supervised',
+      budgetDaily: 10000,
+      usageToday: 0,
+      usageDay: null
+    }],
     agents: [
       { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Chat e RAG do second brain corporativo', quotaDaily: 2000, usageToday: 0, usageDay: null },
       { id: 'composer', name: 'Cursor Composer', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'app', description: 'Agente Cursor com MCP KeepMind (sb_search, sb_remember)', quotaDaily: 500, usageToday: 0, usageDay: null },

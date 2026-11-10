@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { invokeCorpMcpTool, MCP_TOOLS } from './mcp-runtime.mjs'
 import { assertAgentQuota, recordAgentUsage } from './agent-usage.mjs'
+import { assertTeamBudget, recordTeamUsage, UNIT_MCP } from './team-usage.mjs'
 
 export function mountMcpApi({ vault, getOrg, audit, persistOrg, memoryFilesForUser }) {
   return async function mcpApi(req, res, url, user, syncCtx) {
@@ -29,6 +30,7 @@ export function mountMcpApi({ vault, getOrg, audit, persistOrg, memoryFilesForUs
         return json(res, 403, { error: 'agent_off', message: 'Ative o agente Brain.' })
       }
       try {
+        assertTeamBudget(org, user.teamId)
         const agent = assertAgentQuota(org, agentId)
         const files = memoryFilesForUser(vault, user, org)
         const text = invokeCorpMcpTool({
@@ -42,12 +44,14 @@ export function mountMcpApi({ vault, getOrg, audit, persistOrg, memoryFilesForUs
           readAbs: (abs) => readFileSync(abs, 'utf8')
         })
         recordAgentUsage(agent)
+        const team = org.teams.find((t) => t.id === user.teamId) ?? org.teams[0]
+        recordTeamUsage(team, UNIT_MCP)
         persistOrg()
         audit(user, 'mcp_tool', { agentId, tool, tokenId: syncCtx?.tokenId })
         return json(res, 200, { ok: true, tool, text })
       } catch (e) {
         const code = e.code || 'mcp_error'
-        const status = code === 'secret_blocked' ? 400 : code === 'quota_exceeded' ? 429 : 400
+        const status = code === 'secret_blocked' ? 400 : code === 'quota_exceeded' || code === 'team_budget_exceeded' ? 429 : 400
         return json(res, status, { ok: false, error: code, message: e.message })
       }
     }

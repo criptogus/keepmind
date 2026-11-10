@@ -209,6 +209,10 @@ try {
   })
   assert.equal(mcpBearer.status, 200)
 
+  const meter = await call(port, '/api/metering', { cookie: owner.cookie })
+  assert.equal(meter.status, 200)
+  assert.ok(Array.isArray(meter.json.teams))
+
   await close()
   await checkOidc(root)
   console.log('keepmind corp selfcheck ok')

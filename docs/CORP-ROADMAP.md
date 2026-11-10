@@ -10,7 +10,8 @@
 | **v0.2** | BYOK admin, chat OpenAI, agentes autonomia | ✅ PR #7 |
 | **v0.3** | Backup, SSO admin, busca híbrida, RAG no chat, ABAC `shared/`, import/export memória | ✅ PR #7 |
 | **v0.4** | Tokens sync (Bearer), corp-push CLI, rerank semântico opcional, Composer conector | ✅ PR #7 |
-| **v0.5** | MCP runtime HTTP + bridge, quotas agentes, sync bidirecional desktop/CLI | 🚧 Esta branch |
+| **v0.5** | MCP runtime HTTP + bridge, quotas agentes, sync bidirecional desktop/CLI | ✅ PR #7 |
+| **v0.6** | MCP stdio in-process, sync agendado desktop, metering por time | 🚧 Esta branch |
 
 ## Paperclip vs Corp
 
@@ -46,14 +47,20 @@ Corp **hoje**: catálogo (`brain` / `composer` / `ingest` / `sync`), política, 
 3. **Busca/chat** — rerank OpenAI (`embed-rerank.mjs`) quando há chave org + provedor `openai`  
 4. **Composer** — conector Cursor Agent (card Connectors + rule `.cursor/rules/keepmind-memory.mdc`)
 
-## v0.5 (em andamento)
+## v0.5 (entregue)
 
-1. **MCP runtime** — `POST /api/mcp/call` + audit `ops/mcp-invocations.jsonl` + `tools/corp-mcp-bridge.mjs` (stdio → Corp)  
-2. **Quotas** — `quotaDaily` / uso diário por agente (Composer, Brain, …) no admin  
-3. **Sync bidirecional** — export v2 (`updatedAt`), import `merge: newer`, `tools/corp-sync.mjs`, Settings desktop **Corp sync**
+1. **MCP runtime** — `POST /api/mcp/call` + audit + `tools/corp-mcp-bridge.mjs`  
+2. **Quotas** — `quotaDaily` por agente  
+3. **Sync bidirecional** — `corp-sync.mjs` + Settings **Corp sync**
 
-## v0.6 (próximo)
+## v0.6 (em andamento)
 
-- Worker MCP stdio embutido no servidor Corp (sem bridge HTTP)  
-- Agendamento automático de sync no desktop (interval)  
-- Metering Paperclip-light (orçamento por time / custo estimado)  
+1. **MCP stdio in-process** — `npm run corp:mcp` / `corp/mcp-stdio-worker.mjs` (vault local, sem HTTP)  
+2. **Sync agendado** — intervalo no desktop quando **Corp sync** está enabled  
+3. **Metering** — `budgetDaily` por time, **Admin → Metering**, unidades MCP/chat
+
+## v0.7 (próximo)
+
+- ABAC em `people/` por cargo  
+- Sync Corp ↔ GitHub corporativo  
+- Relatório de custo BYOK (tokens OpenAI estimados)  

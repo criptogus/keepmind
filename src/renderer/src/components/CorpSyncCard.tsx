@@ -68,7 +68,7 @@ export default function CorpSyncCard({ onToast }: Props) {
       <label>Sync token<input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Bearer token" autoComplete="off" /></label>
       <label>
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        {' '}Enable scheduled sync (interval below — run manually with Sync now for now)
+        {' '}Enable automatic sync on this interval (desktop app must stay open)
       </label>
       <label>Interval (minutes)<input type="number" min={15} max={1440} value={intervalMinutes} onChange={(e) => setIntervalMinutes(Number(e.target.value))} /></label>
       {status ? <p className="faint mono" style={{ fontSize: 11.5 }}>Last: {status}</p> : null}

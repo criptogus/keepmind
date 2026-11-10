@@ -17,6 +17,7 @@ import { checkForUpdates, installUpdate, updaterStatus } from './services/update
 import { listModels, deleteModel } from './services/models'
 import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
 import { corpSyncNow } from './services/corp-sync'
+import { reconcileCorpSyncSchedule } from './services/corp-sync-scheduler'
 import { analyzeHealth, applyHealth } from './services/health'
 import { evolutionHints, installSkill, keepSkillCopy, listVaultSkills, loadSakNotes, loadSkillThreats, reviewVaultSkill, scanSkillThreats, searchRegistry, skillTrust, skillsSnapshot } from './services/skillsHub'
 import { attachVaultCrypto, securityStatus, securityScan, securityConfigure, encryptAll, decryptAll, securityAiAlerts, type SecurityPatch } from './services/security'
@@ -197,9 +198,15 @@ export function registerIpc(
   })
   ipcMain.handle('config:updateCorpSync', (_e, patch: any) => {
     validateCorpSyncPatch(patch)
-    return store.updateCorpSync(stripForbiddenKeys(patch))
+    const cfg = store.updateCorpSync(stripForbiddenKeys(patch))
+    reconcileCorpSyncSchedule(store)
+    return cfg
   })
-  ipcMain.handle('corpSync:now', async () => corpSyncNow(store))
+  ipcMain.handle('corpSync:now', async () => {
+    const result = await corpSyncNow(store)
+    reconcileCorpSyncSchedule(store)
+    return result
+  })
   ipcMain.handle('corpSync:status', () => store.get().corpSync ?? {})
   ipcMain.handle('config:updateMcp', (_e, id: string, patch: any) => {
     reqStr(id, 'mcp id', 128)
@@ -747,6 +754,8 @@ export function registerIpc(
     } catch { /* ignore */ }
     return false
   })
+
+  reconcileCorpSyncSchedule(store)
 }
 
 const mcpLogs: string[] = []

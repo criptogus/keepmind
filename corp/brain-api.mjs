@@ -9,6 +9,7 @@ import { rerankWithEmbeddings } from './embed-rerank.mjs'
 import { userMemoryRoot, memoryRel, ensureUserBrain } from './memory-layout.mjs'
 import { getOrgSecret } from './org-secrets.mjs'
 import { fileMtime } from './mcp-runtime.mjs'
+import { assertTeamBudget, recordTeamUsage, UNIT_CHAT_CLOUD } from './team-usage.mjs'
 
 export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   return async function brainApi(req, res, url, user, syncCtx = null) {
@@ -223,7 +224,7 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
     const body = await readJsonBody(req)
     const message = String(body.message || '').trim()
     if (!message) return json(res, 400, { error: 'empty' })
-  const reply = await corpChatReply(org, vault, user, message)
+  const reply = await corpChatReply(org, vault, user, message, persistOrg)
     audit(user, 'chat', { provider: reply.provider })
     return json(res, 200, { reply: reply.text })
   }
@@ -316,8 +317,13 @@ function graphForUser(vault, user) {
   return { nodes, links }
 }
 
-async function corpChatReply(org, vault, user, message) {
+async function corpChatReply(org, vault, user, message, persistOrg) {
   const team = org.teams.find(t => t.id === user.teamId) ?? org.teams[0]
+  try {
+    assertTeamBudget(org, user.teamId)
+  } catch (e) {
+    return { provider: 'policy', text: e.message }
+  }
   const brainOn = org.agents.find(a => a.id === 'brain')?.enabled
   if (!brainOn) {
     return {
@@ -362,7 +368,11 @@ async function corpChatReply(org, vault, user, message) {
         })
         const data = await res.json()
         const text = data.choices?.[0]?.message?.content
-        if (text) return { text, provider: 'openai' }
+        if (text) {
+          recordTeamUsage(team, UNIT_CHAT_CLOUD)
+          persistOrg?.()
+          return { text, provider: 'openai' }
+        }
       } catch { /* fallback abaixo */ }
     }
   }

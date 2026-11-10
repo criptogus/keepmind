@@ -19,6 +19,7 @@
     "corp:build-brain": "vite build --config vite.corp.config.mts",
     "corp:dev-brain": "vite --config vite.corp.config.mts",
     "corp:check": "node corp/selfcheck.mjs",
+    "corp:mcp": "node corp/mcp-stdio-worker.mjs",
     "corp:prepare-desktop": "npm run corp:build-brain",
     "dist:corp": "KEEPMIND_EDITION=corp electron-vite build && npm run corp:prepare-desktop && electron-builder --config electron-builder.corp.yml",
     "dist:corp:mac": "KEEPMIND_EDITION=corp electron-vite build && npm run corp:prepare-desktop && electron-builder --config electron-builder.corp.yml --mac dmg zip",

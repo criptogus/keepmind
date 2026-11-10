@@ -11,7 +11,7 @@ import {
   can, hashPassword, verifyPassword, userIdFromEmail,
   resolveInside, canReadFile, canWriteFile, normalizePolicy, accessCtxForUser,
   clampTeamAutonomy, scanText, scanVault, publicScan, redactSecrets, walkMarkdown,
-  defaultOrg, mergeAgentCatalog, readJson, writeJsonAtomic, ensureVaultShape, appendAudit, readAudit,
+  defaultOrg, readJson, writeJsonAtomic, ensureVaultShape, appendAudit, readAudit,
   verifyRs256
 } from './lib.mjs'
 import { createOidc, oidcFromEnv } from './oidc.mjs'
@@ -22,6 +22,8 @@ import { orgSecretStatus, setOrgSecrets } from './org-secrets.mjs'
 import { streamVaultBackup } from './vault-backup.mjs'
 import { readOidcVaultConfig, oidcVaultStatus, writeOidcVaultConfig, clearOidcVaultConfig } from './oidc-store.mjs'
 import { listSyncTokens, createSyncToken, revokeSyncToken, resolveSyncBearer } from './sync-tokens-store.mjs'
+import { loadOrg } from './org-persist.mjs'
+import { meteringSnapshot } from './team-usage.mjs'
 
 const CORP_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(CORP_ROOT, 'public')
@@ -425,7 +427,13 @@ export function createCorp(opts = {}) {
       const id = decodeURIComponent(url.pathname.slice('/api/sync-tokens/'.length))
       return revokeSyncTokenRoute(res, user, id)
     }
+    if (url.pathname === '/api/metering' && req.method === 'GET') return meteringRoute(res, user)
     return send(res, 404, { ok: false, error: 'not_found' })
+  }
+
+  function meteringRoute(res, user) {
+    if (!can(user.role, 'policy.read')) return send(res, 403, { ok: false, error: 'forbidden' })
+    return send(res, 200, { ok: true, ...meteringSnapshot(org) })
   }
 
   function listSyncTokensRoute(res, user) {
@@ -561,14 +569,29 @@ export function createCorp(opts = {}) {
         throw err
       }
       seen.add(id)
+      const prev = org.teams.find((t) => t.id === id)
+      const budgetRaw = team.budgetDaily
+      const budgetDaily = budgetRaw === '' || budgetRaw === undefined
+        ? (prev?.budgetDaily ?? null)
+        : (budgetRaw === null ? null : Number(budgetRaw))
       next.push({
         id,
         name: String(team.name || id).slice(0, 80),
-        autonomy: clampTeamAutonomy(team.autonomy, org.policy.autonomyCeiling)
+        autonomy: clampTeamAutonomy(team.autonomy, org.policy.autonomyCeiling),
+        budgetDaily: Number.isFinite(budgetDaily) ? budgetDaily : (budgetDaily === null ? null : prev?.budgetDaily ?? null),
+        usageToday: Number(prev?.usageToday ?? 0),
+        usageDay: prev?.usageDay ?? null
       })
     }
     if (!next.some(team => team.id === 'everyone')) {
-      next.unshift({ id: 'everyone', name: 'Everyone', autonomy: 'supervised' })
+      next.unshift({
+        id: 'everyone',
+        name: 'Everyone',
+        autonomy: 'supervised',
+        budgetDaily: 10000,
+        usageToday: 0,
+        usageDay: null
+      })
     }
     org.teams = next
     for (const member of org.users) {
@@ -754,6 +777,7 @@ export function createCorp(opts = {}) {
 const STATUS = {
   shadow_key: 400,
   quota_exceeded: 429,
+  team_budget_exceeded: 429,
   agent_off: 403,
   bad_agent: 400,
   bad_tool: 400,
@@ -766,21 +790,6 @@ const STATUS = {
   bad_token: 400,
   last_owner: 409,
   oidc_down: 502
-}
-
-function loadOrg(file, name) {
-  const loaded = readJson(file, null)
-  const base = defaultOrg(name)
-  if (!loaded || !Array.isArray(loaded.users)) return base
-  return {
-    ...base,
-    ...loaded,
-    name: typeof loaded.name === 'string' ? loaded.name : base.name,
-    users: loaded.users,
-    teams: Array.isArray(loaded.teams) && loaded.teams.length ? loaded.teams : base.teams,
-    agents: mergeAgentCatalog(loaded.agents, base.agents),
-    policy: { ...base.policy, ...(loaded.policy || {}), byokRequired: true, memberKeys: false }
-  }
 }
 
 function validEmail(email) {

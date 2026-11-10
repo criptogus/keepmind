@@ -8,6 +8,7 @@ const SECTIONS = [
   ['sync', 'Sync (tokens)', role => role === 'owner' || role === 'admin'],
   ['sso', 'SSO (OIDC)', role => role === 'owner' || role === 'admin'],
   ['teams', 'Times', () => true],
+  ['metering', 'Metering', role => role === 'owner' || role === 'admin'],
   ['members', 'Pessoas', role => role === 'owner' || role === 'admin'],
   ['agents', 'Agentes', () => true],
   ['vault', 'Cofre', () => true],
@@ -86,6 +87,7 @@ async function load() {
   }
   if (state.section === 'sso') state.data = (await api('/api/oidc-config')).body
   if (state.section === 'teams') state.data = (await api('/api/teams')).body
+  if (state.section === 'metering') state.data = (await api('/api/metering')).body
   if (state.section === 'members') state.data = (await api('/api/members')).body
   if (state.section === 'agents') {
     const agents = await api('/api/agents')
@@ -147,6 +149,7 @@ function section() {
   if (state.section === 'sync') return syncTokens(data)
   if (state.section === 'sso') return ssoConfig(data)
   if (state.section === 'teams') return teams(data)
+  if (state.section === 'metering') return metering(data)
   if (state.section === 'members') return members(data)
   if (state.section === 'agents') return agents(data)
   if (state.section === 'vault') return vault(data)
@@ -248,10 +251,31 @@ function teams(data) {
     <td><input data-team="${esc(team.id)}" data-field="name" value="${esc(team.name)}" ${lock}/></td>
     <td>${esc(team.id)}</td>
     <td><select data-team="${esc(team.id)}" data-field="autonomy" ${lock}>${(state.meta?.autonomy || []).map(mode => `<option ${team.autonomy === mode ? 'selected' : ''}>${esc(mode)}</option>`).join('')}</select></td>
+    <td><input type="number" min="0" placeholder="∞" data-team="${esc(team.id)}" data-field="budget" value="${team.budgetDaily ?? ''}" ${lock} style="width:6rem"/></td>
+    <td class="sub">${esc(team.usageToday ?? 0)}</td>
   </tr>`).join('')
-  return `<p class="sub">Teto atual: ${esc(data.ceiling || '')}.</p>
-    <form id="teams"><table><thead><tr><th>Nome</th><th>Id</th><th>Autonomia</th></tr></thead><tbody>${rows}</tbody></table>
+  return `<p class="sub">Teto atual: ${esc(data.ceiling || '')}. <strong>Orçamento/dia</strong> = unidades abstratas (MCP=1, chat nuvem=10).</p>
+    <form id="teams"><table><thead><tr><th>Nome</th><th>Id</th><th>Autonomia</th><th>Budget/dia</th><th>Uso hoje</th></tr></thead><tbody>${rows}</tbody></table>
     ${writer ? '<p class="row"><button class="btn" type="submit">Salvar times</button></p>' : ''}</form>`
+}
+
+function metering(data) {
+  const teams = (data.teams || []).map((t) => `<tr>
+    <td>${esc(t.name)} <span class="sub">${esc(t.id)}</span></td>
+    <td>${t.budgetDaily ?? '—'}</td>
+    <td>${esc(t.usageToday ?? 0)}</td>
+    <td>${t.remaining ?? '—'}</td>
+  </tr>`).join('')
+  const agents = (data.agents || []).map((a) => `<tr>
+    <td>${esc(a.name)}</td>
+    <td>${a.quotaDaily ?? '—'}</td>
+    <td>${esc(a.usageToday ?? 0)}</td>
+  </tr>`).join('')
+  const costs = data.unitCosts || {}
+  return `<p class="sub">Paperclip-light: cotas por agente + orçamento por time (unidades, não USD).</p>
+    <h3>Times</h3><table><thead><tr><th>Time</th><th>Budget/dia</th><th>Uso</th><th>Restante</th></tr></thead><tbody>${teams}</tbody></table>
+    <h3>Agentes</h3><table><thead><tr><th>Agente</th><th>Cota/dia</th><th>Uso</th></tr></thead><tbody>${agents}</tbody></table>
+    <p class="sub">Custos: MCP=${costs.mcp ?? 1} · chat nuvem=${costs.chatCloud ?? 10}</p>`
 }
 
 function members(data) {
@@ -459,11 +483,16 @@ function bind() {
   })
   document.querySelector('#teams')?.addEventListener('submit', async event => {
     event.preventDefault()
-    const teams = (state.data.teams || []).map(team => ({
-      id: team.id,
-      name: document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="name"]`)?.value || team.name,
-      autonomy: document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="autonomy"]`)?.value || team.autonomy
-    }))
+    const teams = (state.data.teams || []).map(team => {
+      const bRaw = document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="budget"]`)?.value
+      const budgetDaily = bRaw === '' || bRaw == null ? null : Number(bRaw)
+      return {
+        id: team.id,
+        name: document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="name"]`)?.value || team.name,
+        autonomy: document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="autonomy"]`)?.value || team.autonomy,
+        budgetDaily: Number.isFinite(budgetDaily) ? budgetDaily : null
+      }
+    })
     const res = await api('/api/teams', { method: 'PUT', body: JSON.stringify({ teams }) })
     state.error = res.body.ok ? '' : (COPY[res.body.error] || res.body.message || 'Não salvou.')
     state.toast = res.body.ok ? 'Times salvos.' : ''

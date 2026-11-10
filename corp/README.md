@@ -99,6 +99,17 @@ KEEPMIND_CORP_URL='http://127.0.0.1:8787' KEEPMIND_CORP_TOKEN='…' \
 
 Registre no `.cursor/mcp.json` apontando para o bridge. Ative **Composer** e respeite **cotas diárias** no admin.
 
+**Stdio in-process (sem HTTP)** — na mesma máquina do servidor Corp:
+
+```bash
+KEEPMIND_CORP_DATA=./corp/data KEEPMIND_CORP_TOKEN='…' npm run corp:mcp
+```
+
+### Metering (v0.6)
+
+**Admin → Times** — orçamento diário em unidades (MCP=1, chat nuvem=10).  
+**Admin → Metering** — visão de uso por time e agente.
+
 ## Verificação
 
 ```bash

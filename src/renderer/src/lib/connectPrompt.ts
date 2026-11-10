@@ -127,7 +127,8 @@ You have the **keepmind** MCP server (sb_search, sb_read, sb_append, sb_remember
             '3. Abra **Composer** (Agent), não só o chat inline.',
             '4. Na primeira mensagem: “Leia AGENTS.md e busque na memória antes de responder.”',
             '',
-            '**KeepMind Corp:** use `tools/corp-mcp-bridge.mjs` com `KEEPMIND_CORP_URL` + `KEEPMIND_CORP_TOKEN` em vez de `keepmind-mcp.mjs` local.'
+            '**KeepMind Corp (remoto):** `tools/corp-mcp-bridge.mjs` + URL + token.',
+            '**KeepMind Corp (local):** `npm run corp:mcp` com `KEEPMIND_CORP_DATA` + token (sem HTTP).'
           ].join('\n')
         }
       ],
