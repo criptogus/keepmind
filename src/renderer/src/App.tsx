@@ -14,6 +14,7 @@ import Skills from './components/Skills'
 import Security from './components/Security'
 import Login from './components/Login'
 import CorpBar from './components/CorpBar'
+import CorpOnboarding from './components/CorpOnboarding'
 
 type View = 'today' | 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
@@ -170,10 +171,18 @@ export default function App() {
   }
 
   if (!config.onboardingDone) {
+    const corpEdition = Boolean((config as { corp?: unknown }).corp)
     return (
       <>
         <NeuralField activity={0.7} />
-        <Wizard config={config} onDone={loadConfig} onToast={toast} />
+        {corpEdition ? (
+          <CorpOnboarding
+            org={(config as { corp?: { org?: string } }).corp?.org}
+            onDone={loadConfig}
+          />
+        ) : (
+          <Wizard config={config} onDone={loadConfig} onToast={toast} />
+        )}
         <ToastWrap toasts={toasts} onDismiss={id => setToasts(t => t.filter(x => x.id !== id))} />
       </>
     )

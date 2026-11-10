@@ -51,6 +51,23 @@ input, textarea, select { font-family: inherit; }
 .corp-bar__meta { color: var(--muted); }
 .corp-bar__link { color: var(--cyan); margin-left: auto; text-decoration: none; }
 .corp-bar__link:hover { text-decoration: underline; }
+.corp-onboard {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center; padding: 24px;
+  background: rgba(3,7,18,.82); backdrop-filter: blur(8px);
+}
+.corp-onboard__panel {
+  width: min(520px, 100%); padding: 28px 26px; border-radius: 16px;
+  border: 1px solid var(--line); background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0,0,0,.45);
+}
+.corp-onboard__brand { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; }
+.corp-onboard__tag { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.corp-onboard__body { line-height: 1.55; color: var(--muted); margin: 0 0 20px; }
+.corp-onboard__dots { display: flex; gap: 8px; margin-bottom: 18px; }
+.corp-onboard__dots span { width: 28px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12); }
+.corp-onboard__dots span.on { background: linear-gradient(90deg, var(--cyan), #a78bfa); }
+.corp-onboard__actions { display: flex; justify-content: space-between; gap: 12px; }
 .app:has(.corp-bar) {
   display: grid;
   grid-template-rows: auto 1fr;

@@ -79,6 +79,36 @@ try {
   const page = await call(port, '/')
   assert.equal(page.status, 200)
   assert.match(page.text, /KeepMind Corp/)
+  assert.match(page.text, /login\.js/)
+
+  const rootUi = mkdtempSync(path.join(tmpdir(), 'keepmind-corp-ui-'))
+  const corpUi = createCorp({ dataDir: path.join(rootUi, 'data'), vault: path.join(rootUi, 'vault'), env: {} })
+  const uiSrv = await listen(corpUi)
+  const metaUi = await call(uiSrv.port, '/api/meta')
+  assert.equal(metaUi.json.setupRequired, true)
+  const setupUi = await call(uiSrv.port, '/api/setup', {
+    method: 'POST',
+    body: {
+      orgName: 'UI Test Org',
+      name: 'Pat',
+      email: 'pat-ui@example.com',
+      password: 'long-password-here',
+      confirm: 'long-password-here'
+    }
+  })
+  assert.equal(setupUi.status, 201)
+  assert.ok(setupUi.cookie)
+  assert.equal((await call(uiSrv.port, '/api/meta')).json.setupRequired, false)
+  const cfg = await call(uiSrv.port, '/api/brain/config', { cookie: setupUi.cookie })
+  assert.equal(cfg.json.onboardingDone, false)
+  await call(uiSrv.port, '/api/brain/config', {
+    method: 'PATCH',
+    cookie: setupUi.cookie,
+    body: { onboardingDone: true }
+  })
+  assert.equal((await call(uiSrv.port, '/api/brain/config', { cookie: setupUi.cookie })).json.onboardingDone, true)
+  uiSrv.close()
+  rmSync(rootUi, { recursive: true, force: true })
 
   const bad = await call(port, '/api/login', { method: 'POST', body: { email: 'owner@example.com', password: 'wrong-password-here' } })
   assert.equal(bad.status, 401)

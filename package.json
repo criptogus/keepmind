@@ -19,6 +19,11 @@
     "corp:build-brain": "vite build --config vite.corp.config.mts",
     "corp:dev-brain": "vite --config vite.corp.config.mts",
     "corp:check": "node corp/selfcheck.mjs",
+    "corp:prepare-desktop": "npm run corp:build-brain",
+    "dist:corp": "KEEPMIND_EDITION=corp electron-vite build && npm run corp:prepare-desktop && electron-builder --config electron-builder.corp.yml",
+    "dist:corp:mac": "KEEPMIND_EDITION=corp electron-vite build && npm run corp:prepare-desktop && electron-builder --config electron-builder.corp.yml --mac dmg zip",
+    "dist:corp:win": "KEEPMIND_EDITION=corp electron-vite build && npm run corp:prepare-desktop && electron-builder --config electron-builder.corp.yml --win nsis --x64 --arm64",
+    "dist:corp:linux": "KEEPMIND_EDITION=corp electron-vite build && npm run corp:prepare-desktop && electron-builder --config electron-builder.corp.yml --linux AppImage --x64",
     "dist:mac": "electron-vite build && node scripts/prune-onnxruntime.mjs darwin && electron-builder --mac dmg zip",
     "dist:win": "electron-vite build && node scripts/prune-onnxruntime.mjs win32 && electron-builder --win nsis --x64 --arm64",
     "dist:linux": "electron-vite build && node scripts/prune-onnxruntime.mjs linux && electron-builder --linux AppImage --x64"

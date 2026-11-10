@@ -5,7 +5,7 @@ import {
 } from './lib.mjs'
 import { userMemoryRoot, memoryRel, ensureUserBrain } from './memory-layout.mjs'
 
-export function mountBrainApi({ vault, getOrg, audit }) {
+export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   return async function brainApi(req, res, url, user) {
     if (!url.pathname.startsWith('/api/brain/')) return false
     const org = getOrg()
@@ -13,10 +13,14 @@ export function mountBrainApi({ vault, getOrg, audit }) {
     const sub = url.pathname.slice('/api/brain/'.length)
 
   if (sub === 'config' && req.method === 'GET') {
+    return json(res, 200, brainConfig(org, user))
+  }
+
+  function brainConfig(org, user) {
     const team = org.teams.find(t => t.id === user.teamId) ?? org.teams[0]
     const providers = org.policy.providers.filter(p => PROVIDERS.includes(p))
-    return json(res, 200, {
-      onboardingDone: true,
+    return {
+      onboardingDone: user.onboardingDone === true,
       edition: 'keepmind-corp',
       autonomy: team.autonomy,
       ai: { provider: providers[0] ?? 'local', model: 'org-default' },
@@ -34,7 +38,7 @@ export function mountBrainApi({ vault, getOrg, audit }) {
         teamAutonomy: team.autonomy,
         adminUrl: canAdmin(user) ? '/admin/' : null
       }
-    })
+    }
   }
 
   if (sub === 'governance' && req.method === 'GET') {
@@ -154,7 +158,13 @@ export function mountBrainApi({ vault, getOrg, audit }) {
     if (body.apiKey || body.openaiKey || body.anthropicKey) {
       return json(res, 400, { error: 'shadow_key', message: 'Provider keys are organization-managed.' })
     }
-    return json(res, 200, { ok: true })
+    if (body.onboardingDone === true) {
+      const live = org.users.find(u => u.id === user.id)
+      if (live) live.onboardingDone = true
+      persistOrg?.()
+      user.onboardingDone = true
+    }
+    return json(res, 200, brainConfig(org, user))
   }
 
   return json(res, 404, { error: 'not_found' })

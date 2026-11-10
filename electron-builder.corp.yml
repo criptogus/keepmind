@@ -1,0 +1,33 @@
+appId: com.keepmind.corp
+productName: KeepMind Corp
+icon: build/icon
+extends: electron-builder.yml
+directories:
+  output: dist-corp
+files:
+  - package.json
+  - LICENSE
+  - NOTICE
+extraMetadata:
+  main: ./out/main/index-corp.js
+  name: keepmind-corp
+  description: KeepMind Corp — corporate second brain with organization governance.
+extraResources:
+  - from: corp
+    to: corp
+    filter:
+      - "**/*"
+      - "!data/**"
+asar: true
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+linux:
+  category: Office
+  target:
+    - AppImage

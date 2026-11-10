@@ -87,7 +87,7 @@ function render() {
 
 function login() {
   const sso = state.meta?.oidc ? '<a class="btn ghost" href="/api/oidc/start">Entrar com SSO</a>' : ''
-  const setup = state.meta?.setupRequired ? `<p class="err">${esc(COPY.setup_required)}</p>` : ''
+  const setup = state.meta?.setupRequired ? `<p class="err">Ainda não há dono. Abra a <a href="/">página inicial</a> e conclua o onboarding.</p>` : ''
   return `<div class="login"><form class="card" id="login">
     <div class="mark">KeepMind Corp</div>
     <h1>Governança</h1>

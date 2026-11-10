@@ -11,6 +11,7 @@ export default defineConfig({
         external: ['better-sqlite3-multiple-ciphers'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          'index-corp': resolve(__dirname, 'src/main/index-corp.ts'),
           cli: resolve(__dirname, 'src/main/cli.ts'),
           'derived-learnings': resolve(__dirname, 'src/main/services/derived-learnings.ts'),
           'mcp-keys': resolve(__dirname, 'src/main/services/security/keys.ts'),

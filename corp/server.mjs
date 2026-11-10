@@ -28,6 +28,7 @@ const STATIC = {
   '/index.html': 'index.html',
   '/login.js': 'login.js',
   '/login.css': 'login.css',
+  '/onboarding.css': 'onboarding.css',
   '/admin': 'admin.html',
   '/admin/': 'admin.html',
   '/admin.html': 'admin.html',
@@ -50,7 +51,12 @@ export function createCorp(opts = {}) {
   const oidc = oidcConfig ? createOidc(oidcConfig, opts.fetchImpl ?? globalThis.fetch) : null
   const secureCookie = env.KEEPMIND_CORP_SECURE === '1'
 
-  const brainApi = mountBrainApi({ vault, getOrg: () => org, audit: (user, op, extra) => audit(user, op, extra) })
+  const brainApi = mountBrainApi({
+    vault,
+    getOrg: () => org,
+    audit: (user, op, extra) => audit(user, op, extra),
+    persistOrg
+  })
 
   ensureOwner(env)
   persistOrg()
@@ -100,6 +106,7 @@ export function createCorp(opts = {}) {
       role,
       teamId: org.teams.some(team => team.id === teamId) ? teamId : 'everyone',
       disabled: false,
+      onboardingDone: false,
       oidcSub: oidcSub || null,
       passwordSalt: secret?.salt ?? null,
       passwordHash: secret?.hash ?? null
@@ -189,6 +196,7 @@ export function createCorp(opts = {}) {
       if (url.pathname === '/api/session' && req.method === 'GET') {
         return send(res, 200, { ok: true, user: user ? publicUser(user) : null })
       }
+      if (url.pathname === '/api/setup' && req.method === 'POST') return await firstSetup(req, res)
       if (url.pathname === '/api/login' && req.method === 'POST') return await login(req, res)
       if (url.pathname === '/api/logout' && req.method === 'POST') return logout(req, token, res)
       if (!user) return send(res, 401, { ok: false, error: 'unauthorized' })
@@ -201,6 +209,35 @@ export function createCorp(opts = {}) {
       if (status === 500) console.error(err)
       return send(res, status, { ok: false, error: code, message: status === 500 ? 'Something went wrong.' : err.message })
     }
+  }
+
+  async function firstSetup(req, res) {
+    if (!sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
+    if (org.users.some(user => user.role === 'owner')) {
+      return send(res, 409, { ok: false, error: 'setup_done', message: 'A conta de dono já existe.' })
+    }
+    const body = await readBody(req)
+    const orgName = String(body.orgName || '').trim().slice(0, 80)
+    const name = String(body.name || '').trim().slice(0, 80)
+    const email = String(body.email || '').trim().toLowerCase()
+    const password = String(body.password || '')
+    const confirm = String(body.confirm || '')
+    if (!orgName) return send(res, 400, { ok: false, error: 'bad_org', message: 'Informe o nome da empresa.' })
+    if (!name) return send(res, 400, { ok: false, error: 'bad_name', message: 'Informe seu nome.' })
+    if (!validEmail(email)) return send(res, 400, { ok: false, error: 'bad_email', message: 'Email inválido.' })
+    if (password.length < 12) {
+      return send(res, 400, { ok: false, error: 'weak_password', message: 'Use uma senha com pelo menos 12 caracteres.' })
+    }
+    if (password !== confirm) {
+      return send(res, 400, { ok: false, error: 'mismatch', message: 'As senhas não conferem.' })
+    }
+    org.name = orgName
+    const user = addUser({ email, name, role: 'owner', teamId: 'everyone', password })
+    persistOrg()
+    audit(user, 'setup_complete', { org: orgName })
+    const issued = openSession(user)
+    res.setHeader('Set-Cookie', cookie(issued))
+    return send(res, 201, { ok: true, user: publicUser(user) })
   }
 
   async function login(req, res) {

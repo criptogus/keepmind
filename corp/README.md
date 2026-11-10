@@ -15,22 +15,39 @@ Desenho completo: [`docs/ENTERPRISE.md`](../docs/ENTERPRISE.md).
 
 Membros não configuram chave de provedor na interface: a empresa traz BYOK no ambiente do servidor.
 
-## Subir
+## Primeira subida (onboarding)
+
+Não há usuário embutido. Na **primeira vez**, o portal em `/` abre um assistente em 4 passos:
+
+1. Explica o que é Corp (brain + governança).
+2. Nome da organização.
+3. Conta **owner** (nome + email).
+4. Senha (mín. 12 caracteres).
+
+Alternativa para automação: ainda vale `KEEPMIND_CORP_OWNER_EMAIL` e `KEEPMIND_CORP_OWNER_PASSWORD` no ambiente (pula o wizard se definidos antes do primeiro login).
+
+Depois do login, um tour rápido no `/brain/` marca o onboarding do usuário como concluído.
+
+## Subir (servidor web)
 
 ```bash
 npm run corp:build-brain   # compila a UI KeepMind (base /brain/)
-KEEPMIND_CORP_OWNER_EMAIL=voce@empresa.com \
-KEEPMIND_CORP_OWNER_PASSWORD='uma-senha-longa' \
 npm run corp
 ```
 
-Portal: `http://127.0.0.1:8787` → login → **KeepMind** em `/brain/`.
+Portal: `http://127.0.0.1:8787` → onboarding ou login → **KeepMind** em `/brain/`.
 
 Docker: `docker compose up --build` dentro desta pasta (veja `.env.example`).
 
-## Próximo passo (desktop Corp)
+## App desktop (Windows, macOS, Linux)
 
-O mesmo núcleo pode empacotar como app Electron **KeepMind Corp** apontando para a política do servidor — o web já valida memória + governança sem fork da UX.
+O pacote **KeepMind Corp** embute o servidor Node e abre a janela no portal local. Dados em `userData/keepmind-corp/`.
+
+```bash
+npm run dist:corp:mac    # ou dist:corp:win / dist:corp:linux / dist:corp
+```
+
+Saída em `dist-corp/`. Cada máquina faz o onboarding na primeira execução (conta owner + nome da org).
 
 ## Verificação
 
