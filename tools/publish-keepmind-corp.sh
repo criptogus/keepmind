@@ -25,13 +25,26 @@ if ! gh repo view criptogus/keepmind-corp &>/dev/null; then
   exit 1
 fi
 
-if ! git push -u "$REMOTE" "${REF}:main"; then
+push_target() {
+  if [ -f "$SSH_KEY" ]; then
+  # Cursor rewrites git@github.com → cursor[bot] HTTPS; bypass for deploy-key SSH.
+    GIT_SSH_COMMAND="$GIT_SSH_COMMAND" \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    git -c commit.gpgsign=false push -u git@github.com:criptogus/keepmind-corp.git "${REF}:main"
+    return
+  fi
+  git push -u "$REMOTE" "${REF}:main"
+}
+
+if ! push_target; then
   echo ""
-  echo "Push failed (often: cursor[bot] has no write access to keepmind-corp)."
-  echo "Fix one of:"
-  echo "  • GitHub → Settings → Applications → Cursor → Repository access → add keepmind-corp"
-  echo "  • Or push from your machine: git push -u $URL ${REF}:main"
-  echo "  • Or: keepmind-corp → Import → https://github.com/criptogus/keepmind (branch ${REF})"
+  echo "Push failed."
+  if [ -f "$SSH_KEY" ]; then
+    echo "  • Add deploy key (write) on keepmind-corp: repo Settings → Deploy keys"
+    echo "    Public key: ${SSH_KEY}.pub"
+  else
+    echo "  • Secret GH_TOKEN on Cloud environment, or Cursor App access to keepmind-corp"
+  fi
   exit 1
 fi
 echo "Pushed ${REF} -> keepmind-corp:main"
