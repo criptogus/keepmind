@@ -9,6 +9,8 @@ import {
   clampTeamAutonomy, scanText, verifyRs256, redactSecrets
 } from './lib.mjs'
 import { createCorp } from './server.mjs'
+import { rankMemoryFiles } from './search-hybrid.mjs'
+import { normalizeSharedAccess, normalizePeopleAccess } from './abac.mjs'
 
 const secret = `sk-${'a'.repeat(24)}`
 assert.equal(safeRel('../etc/passwd'), null)
@@ -21,6 +23,13 @@ assert.ok(actions().includes('owner.grant'))
 assert.equal(canReadFile('member', 'ana', 'people/bia/notes.md'), false)
 assert.equal(canReadFile('member', 'ana', 'people/ana/notes.md'), true)
 assert.equal(canWriteFile('member', 'ana', 'shared/x.md'), false)
+const abac = normalizeSharedAccess([{ prefix: 'shared/finance', roles: [], titles: ['cfo'], teams: [] }])
+assert.equal(canReadFile('member', 'ana', 'shared/finance/ledger.md', { sharedAccess: abac, title: 'CFO Brasil', teamId: 'everyone' }), true)
+assert.equal(canReadFile('member', 'ana', 'shared/finance/ledger.md', { sharedAccess: abac, title: 'Estagiário', teamId: 'everyone' }), false)
+const peopleAbac = normalizePeopleAccess([{ prefix: 'people/owner/memory/inbox', roles: [], titles: ['cfo'], teams: [] }])
+assert.equal(canReadFile('member', 'ana', 'people/owner/memory/inbox/x.md', { peopleAccess: peopleAbac, title: 'CFO Brasil', teamId: 'everyone' }), true)
+assert.equal(canReadFile('member', 'ana', 'people/owner/memory/inbox/x.md', { peopleAccess: peopleAbac, title: 'estagiário', teamId: 'everyone' }), false)
+assert.equal(rankMemoryFiles([{ abs: '/x', rel: 'people/a/memory/inbox/x.md' }], 'acordo cliente', () => 'acordo com cliente hoje').length, 1)
 assert.equal(canWriteFile('auditor', 'ana', 'people/ana/notes.md'), false)
 assert.throws(() => normalizePolicy({ memberKeys: true }), /BYOK/)
 assert.throws(() => normalizePolicy({ byokRequired: false }), /BYOK/)
@@ -59,6 +68,7 @@ try {
   const corp = createCorp({
     dataDir: path.join(root, 'data'),
     vault: path.join(root, 'vault'),
+    disableGithubScheduler: true,
     env: {
       KEEPMIND_CORP_OWNER_EMAIL: 'owner@example.com',
       KEEPMIND_CORP_OWNER_PASSWORD: 'correct-horse-battery'
@@ -82,7 +92,12 @@ try {
   assert.match(page.text, /login\.js/)
 
   const rootUi = mkdtempSync(path.join(tmpdir(), 'keepmind-corp-ui-'))
-  const corpUi = createCorp({ dataDir: path.join(rootUi, 'data'), vault: path.join(rootUi, 'vault'), env: {} })
+  const corpUi = createCorp({
+    dataDir: path.join(rootUi, 'data'),
+    vault: path.join(rootUi, 'vault'),
+    disableGithubScheduler: true,
+    env: {}
+  })
   const uiSrv = await listen(corpUi)
   const metaUi = await call(uiSrv.port, '/api/meta')
   assert.equal(metaUi.json.setupRequired, true)
@@ -158,6 +173,54 @@ try {
   assert.equal((await call(port, '/api/audit', { cookie: auditLogin.cookie })).status, 200)
   const demote = await call(port, '/api/members/owner', { method: 'PATCH', cookie: owner.cookie, body: { role: 'admin' } })
   assert.equal(demote.status, 409)
+
+  const agentsPut = await call(port, '/api/agents', {
+    method: 'PUT',
+    cookie: owner.cookie,
+    body: {
+      agents: (await call(port, '/api/agents', { cookie: owner.cookie })).json.agents.map((a) => (
+        a.id === 'sync' || a.id === 'composer' ? { ...a, enabled: true } : a
+      ))
+    }
+  })
+  assert.equal(agentsPut.status, 200)
+  const minted = await call(port, '/api/sync-tokens', {
+    method: 'POST',
+    cookie: owner.cookie,
+    body: { label: 'selfcheck', userId: 'owner' }
+  })
+  assert.equal(minted.status, 201)
+  assert.ok(minted.json.token.secret)
+  const pushed = await call(port, '/api/brain/import', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${minted.json.token.secret}` },
+    body: { files: [{ path: 'inbox/selfcheck-push.md', content: '# sync\n\ntoken import ok\n' }] }
+  })
+  assert.equal(pushed.status, 200)
+  assert.equal(pushed.json.imported, 1)
+  const off = await call(port, '/api/brain/import', {
+    method: 'POST',
+    headers: { authorization: 'Bearer invalid-token-value' },
+    body: { files: [] }
+  })
+  assert.equal(off.status, 401)
+
+  const mcpSession = await call(port, '/api/mcp/call', {
+    method: 'POST',
+    cookie: owner.cookie,
+    body: { agentId: 'composer', tool: 'sb_search', arguments: { query: 'welcome' } }
+  })
+  assert.equal(mcpSession.status, 200)
+  const mcpBearer = await call(port, '/api/mcp/call', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${minted.json.token.secret}` },
+    body: { agentId: 'composer', tool: 'sb_list', arguments: { limit: 5 } }
+  })
+  assert.equal(mcpBearer.status, 200)
+
+  const meter = await call(port, '/api/metering', { cookie: owner.cookie })
+  assert.equal(meter.status, 200)
+  assert.ok(Array.isArray(meter.json.teams))
 
   await close()
   await checkOidc(root)

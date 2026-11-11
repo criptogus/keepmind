@@ -51,6 +51,9 @@ export function installCorpShim() {
     brainEval: async () => j('/api/brain/eval'),
     brainListSleep: async () => j('/api/brain/list-sleep'),
     brainCapture: async (text: string) => j('/api/brain/capture', { method: 'POST', body: JSON.stringify({ text }) }),
+    brainExport: async () => j('/api/brain/export'),
+    brainImport: async (files: { path: string; content: string }[]) =>
+      j('/api/brain/import', { method: 'POST', body: JSON.stringify({ files }) }),
     brainChat: async (_agentId: string, message: string) => {
       const row = await j<{ reply: string }>('/api/brain/chat', { method: 'POST', body: JSON.stringify({ message }) })
       const text = row.reply

@@ -87,11 +87,22 @@ export interface ProConfig {
   paymentUrl?: string   // Stripe Payment Link for the $19/mo plan
 }
 
+export interface CorpSyncConfig {
+  baseUrl?: string
+  token?: string
+  enabled?: boolean
+  intervalMinutes?: number
+  lastPullAt?: string | null
+  lastPushAt?: string | null
+  lastStatus?: string
+}
+
 export interface AppConfig {
   onboardingDone: boolean
   ai: AiProviderConfig
   localLlm: LocalLlmConfig
   github: GitHubConfig
+  corpSync?: CorpSyncConfig
   mcpServers: McpServerConfig[]
   agents: AgentPersona[]
   automations: Automation[]
@@ -398,6 +409,10 @@ export class Store {
 
   updateGithub(patch: Partial<GitHubConfig>) {
     return this.set({ github: { ...this.config.github, ...patch } })
+  }
+
+  updateCorpSync(patch: Partial<CorpSyncConfig>) {
+    return this.set({ corpSync: { ...(this.config.corpSync ?? {}), ...patch } })
   }
 
   updateMcpServer(id: string, patch: Partial<McpServerConfig>) {

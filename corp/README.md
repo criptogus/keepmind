@@ -4,7 +4,7 @@
 
 O app de desktop **gratuito** (KeepMind pessoal) continua o produto individual. A edição **Corp** entrega o mesmo cérebro e as regras da empresa num **aplicativo de desktop instalável** (Windows, macOS, Linux): o servidor local sobe automaticamente — usuários finais e TI **não** precisam instalar Node, npm nem Docker.
 
-Desenho completo: [`docs/ENTERPRISE.md`](../docs/ENTERPRISE.md).
+Desenho completo: [`docs/ENTERPRISE.md`](../docs/ENTERPRISE.md). Roadmap: [`docs/CORP-ROADMAP.md`](../docs/CORP-ROADMAP.md).
 
 ## Por que instalar?
 
@@ -66,6 +66,57 @@ npm run corp
 ```
 
 Portal: `http://127.0.0.1:8787` → onboarding ou login → **KeepMind** em `/brain/`.
+
+## Sync desktop → Corp (v0.4)
+
+1. Admin → **Agentes** — ligue **Sync**.  
+2. Admin → **Sync (tokens)** — gere um token (segredo exibido uma vez).  
+3. No desktop ou CI:
+
+```bash
+KEEPMIND_CORP_TOKEN='…' node tools/corp-push.mjs \
+  --url http://127.0.0.1:8787 \
+  --dir ./memory
+```
+
+Alternativa: export JSON do Brain + `--bundle ./export.json`. Requer escopos `memory:import` no token.
+
+**Bidirecional (merge por `updatedAt`):**
+
+```bash
+KEEPMIND_CORP_TOKEN='…' node tools/corp-sync.mjs --url http://127.0.0.1:8787 --dir ./memory
+```
+
+### MCP remoto (Composer / agentes externos)
+
+Runtime HTTP: `POST /api/mcp/call` (auditoria em `vault/ops/mcp-invocations.jsonl`).  
+Bridge stdio para Cursor:
+
+```bash
+KEEPMIND_CORP_URL='http://127.0.0.1:8787' KEEPMIND_CORP_TOKEN='…' \
+  node tools/corp-mcp-bridge.mjs
+```
+
+Registre no `.cursor/mcp.json` apontando para o bridge. Ative **Composer** e respeite **cotas diárias** no admin.
+
+**Stdio in-process (sem HTTP)** — na mesma máquina do servidor Corp:
+
+```bash
+KEEPMIND_CORP_DATA=./corp/data KEEPMIND_CORP_TOKEN='…' npm run corp:mcp
+```
+
+### ABAC em `people/` (v0.7)
+
+Em **Política**, JSON `peopleAccess` — ex.: diretores leem `people/lead/memory/inbox`.
+
+### GitHub corporativo (v0.7)
+
+**Chaves org → github** (PAT `repo`). **Admin → GitHub sync** — push/pull de `shared/`.
+
+### Metering (v0.6)
+
+**Admin → Times** — orçamento diário em unidades (MCP=1, chat nuvem=10).  
+**Admin → Metering** — visão de uso por time e agente.
 
 ## Verificação
 

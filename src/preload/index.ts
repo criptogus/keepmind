@@ -16,6 +16,9 @@ const api = {
   updateAi: (patch: any) => ipcRenderer.invoke('config:updateAi', patch),
   updateLocalLlm: (patch: any) => ipcRenderer.invoke('config:updateLocalLlm', patch),
   updateGithub: (patch: any) => ipcRenderer.invoke('config:updateGithub', patch),
+  updateCorpSync: (patch: any) => ipcRenderer.invoke('config:updateCorpSync', patch),
+  corpSyncNow: () => ipcRenderer.invoke('corpSync:now'),
+  corpSyncStatus: () => ipcRenderer.invoke('corpSync:status'),
   updateMcp: (id: string, patch: any) => ipcRenderer.invoke('config:updateMcp', id, patch),
 
   // ai

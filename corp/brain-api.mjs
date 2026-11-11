@@ -1,12 +1,19 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import {
-  resolveInside, canReadFile, canWriteFile, walkMarkdown, scanText, readAudit, autonomyRank, PROVIDERS
+  resolveInside, canReadFile, canWriteFile, walkMarkdown, scanText, readAudit, autonomyRank, PROVIDERS,
+  accessCtxForUser
 } from './lib.mjs'
+import { rankMemoryFiles } from './search-hybrid.mjs'
+import { rerankWithEmbeddings } from './embed-rerank.mjs'
 import { userMemoryRoot, memoryRel, ensureUserBrain } from './memory-layout.mjs'
+import { getOrgSecret } from './org-secrets.mjs'
+import { fileMtime } from './mcp-runtime.mjs'
+import { assertTeamBudget, recordTeamUsage, UNIT_CHAT_CLOUD } from './team-usage.mjs'
+import { recordByokUsage } from './byok-meter.mjs'
 
 export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
-  return async function brainApi(req, res, url, user) {
+  return async function brainApi(req, res, url, user, syncCtx = null) {
     if (!url.pathname.startsWith('/api/brain/')) return false
     const org = getOrg()
     ensureUserBrain(vault, user.id, user.name)
@@ -26,7 +33,14 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
       ai: { provider: providers[0] ?? 'local', model: 'org-default' },
       localLlm: { modelId: 'qwen2.5-3b' },
       github: { repoUrl: null, login: org.name },
-      mcpServers: org.agents.filter(a => a.enabled).map(a => ({ id: a.id, name: a.name, kind: a.id, enabled: true })),
+      mcpServers: org.agents
+        .filter((a) => a.enabled)
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          kind: a.kind === 'app' || a.id === 'composer' ? 'app' : 'builtin',
+          enabled: true
+        })),
       agents: [{ id: 'brain', name: 'KeepMind', emoji: '🧠', persona: 'Corporate second brain.', builtin: true }],
       automations: [],
       corp: {
@@ -70,12 +84,12 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   }
 
   if (sub === 'memory' && req.method === 'GET') {
-    return json(res, 200, listMemory(vault, user))
+    return json(res, 200, listMemory(vault, user, org))
   }
 
   if (sub === 'memory/file' && req.method === 'GET') {
     const rel = url.searchParams.get('path') || ''
-    const abs = memoryPath(vault, user, rel)
+    const abs = memoryPath(vault, user, org, rel)
     if (!abs) return json(res, 400, { error: 'bad_path' })
     if (!existsSync(abs)) return json(res, 404, { error: 'not_found' })
     const raw = readFileSync(abs, 'utf8')
@@ -83,20 +97,86 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   }
 
   if (sub === 'search' && req.method === 'GET') {
-    const q = String(url.searchParams.get('q') || '').trim().toLowerCase()
-    const hits = []
-    for (const file of memoryFiles(vault, user)) {
-      if (!q) break
-      try {
-        const content = readFileSync(file.abs, 'utf8')
-        if (content.toLowerCase().includes(q)) {
-          const i = content.toLowerCase().indexOf(q)
-          hits.push({ path: file.rel.replace(/^people\/[^/]+\/memory\//, ''), title: file.rel, snippet: content.slice(Math.max(0, i - 40), i + 80) })
-        }
-      } catch { /* skip */ }
-      if (hits.length >= 20) break
+    const q = String(url.searchParams.get('q') || '').trim()
+    let ranked = rankMemoryFiles(memoryFiles(vault, user, org), q, (f) => readFileSync(f.abs, 'utf8'))
+    let semantic = false
+    const openai = getOrgSecret(vault, 'openai')
+    if (openai && org.policy.providers.includes('openai') && ranked.length > 1) {
+      const reranked = await rerankWithEmbeddings(
+        ranked,
+        q,
+        (f) => readFileSync(f.abs, 'utf8'),
+        openai
+      )
+      ranked = reranked.hits
+      semantic = reranked.semantic
     }
-    return json(res, 200, { hits, semantic: false, notice: 'Corporate web edition: text search over your vault partition.', asOf: null })
+    const hits = ranked.map((row) => ({
+      path: row.file.rel.replace(/^people\/[^/]+\/memory\//, ''),
+      title: row.file.rel,
+      snippet: row.snippet
+    }))
+    return json(res, 200, {
+      hits,
+      semantic,
+      hybrid: true,
+      notice: hits.length
+        ? (semantic ? 'Busca híbrida + rerank semântico (OpenAI embeddings).' : 'Busca híbrida por relevância (termos).')
+        : 'Nada encontrado na sua partição.',
+      asOf: null
+    })
+  }
+
+  if (sub === 'export' && req.method === 'GET') {
+    if (syncCtx && !syncCtx.scopes.includes('memory:export')) {
+      return json(res, 403, { error: 'forbidden', message: 'Token sem escopo memory:export.' })
+    }
+    const ctx = accessCtxForUser(user, org)
+    const bundle = []
+    for (const file of memoryFiles(vault, user, org)) {
+      try {
+        const raw = readFileSync(file.abs, 'utf8')
+        if (raw.startsWith('KMS1\n')) continue
+        bundle.push({
+          path: file.rel.replace(/^people\/[^/]+\/memory\//, ''),
+          content: raw,
+          updatedAt: fileMtime(file.abs)
+        })
+      } catch { /* skip */ }
+    }
+    audit(user, 'memory_export', { count: bundle.length, tokenId: syncCtx?.tokenId })
+    return json(res, 200, { version: 2, edition: 'keepmind-corp', files: bundle })
+  }
+
+  if (sub === 'import' && req.method === 'POST') {
+    if (syncCtx && !syncCtx.scopes.includes('memory:import')) {
+      return json(res, 403, { error: 'forbidden', message: 'Token sem escopo memory:import.' })
+    }
+    const body = await readJsonBody(req)
+    const files = Array.isArray(body.files) ? body.files : []
+    const mode = body.merge === 'newer' ? 'newer' : 'force'
+    let wrote = 0
+    let skipped = 0
+    for (const row of files.slice(0, 200)) {
+      const rel = String(row.path || '').trim()
+      const content = String(row.content ?? '')
+      if (!rel.endsWith('.md') || !rel) continue
+      const full = memoryRel(user.id, rel)
+      const located = resolveInside(vault, full)
+      if (!located || !canWriteFile(user.role, user.id, located.rel)) continue
+      const remoteAt = Number(row.updatedAt || 0)
+      if (mode === 'newer' && existsSync(located.abs)) {
+        const localAt = statSync(located.abs).mtimeMs
+        if (localAt >= remoteAt && remoteAt > 0) {
+          skipped += 1
+          continue
+        }
+      }
+      writeFileSync(located.abs, content)
+      wrote += 1
+    }
+    audit(user, 'memory_import', { count: wrote, skipped, merge: mode, tokenId: syncCtx?.tokenId })
+    return json(res, 200, { ok: true, imported: wrote, skipped, merge: mode })
   }
 
   if (sub === 'facts' && req.method === 'GET') {
@@ -104,7 +184,14 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
   }
 
   if (sub === 'briefing' && req.method === 'GET') {
-    return json(res, 200, { text: `Good ${timeOfDay()}. Your corporate second brain is live. Policy ceiling: ${org.policy.autonomyCeiling}.` })
+    const inbox = memoryFiles(vault, user, org).filter(f => f.rel.includes('/inbox/'))
+    const text = [
+      `Bom ${timeOfDay() === 'morning' ? 'dia' : timeOfDay() === 'afternoon' ? 'tarde' : 'noite'}, ${user.name}.`,
+      `Organização: ${org.name}. Teto de autonomia: ${org.policy.autonomyCeiling}.`,
+      `Sua memória: ${memoryFiles(vault, user, org).length} arquivos (${inbox.length} em inbox).`,
+      'Governança e auditoria ativas — use Captura ou Chat com o agente Brain ligado.'
+    ].join(' ')
+    return json(res, 200, { text })
   }
 
   if (sub === 'policy' && req.method === 'GET') {
@@ -136,15 +223,11 @@ export function mountBrainApi({ vault, getOrg, audit, persistOrg }) {
 
   if (sub === 'chat' && req.method === 'POST') {
     const body = await readJsonBody(req)
-    const message = String(body.message || '')
-    const reply = [
-      '**KeepMind Corp (web)**',
-      '',
-      `You asked: ${message.slice(0, 200)}`,
-      '',
-      'Full agentic chat on the org LLM ships next. Your memory, skills, and governance already live in this vault.'
-    ].join('\n')
-    return json(res, 200, { reply })
+    const message = String(body.message || '').trim()
+    if (!message) return json(res, 400, { error: 'empty' })
+  const reply = await corpChatReply(org, vault, user, message, persistOrg)
+    audit(user, 'chat', { provider: reply.provider })
+    return json(res, 200, { reply: reply.text })
   }
 
   if (sub === 'config' && req.method === 'PATCH') {
@@ -175,24 +258,27 @@ function canAdmin(user) {
   return user.role === 'owner' || user.role === 'admin'
 }
 
-function memoryPath(vault, user, rel) {
+function memoryPath(vault, user, org, rel) {
+    const ctx = accessCtxForUser(user, org)
     const full = memoryRel(user.id, rel)
     const located = resolveInside(vault, full)
-    if (!located || !canReadFile(user.role, user.id, located.rel)) return null
+    if (!located || !canReadFile(user.role, user.id, located.rel, ctx)) return null
     return located.abs
   }
 
-function listMemory(vault, user) {
-    return memoryFiles(vault, user).map(f => ({
+function listMemory(vault, user, org) {
+    return memoryFiles(vault, user, org).map(f => ({
       path: f.rel.replace(/^people\/[^/]+\/memory\//, ''),
       content: ''
     }))
   }
 
-function memoryFiles(vault, user) {
+function memoryFiles(vault, user, org) {
+  const ctx = accessCtxForUser(user, org)
   const root = userMemoryRoot(vault, user.id)
   const files = walkMarkdown(root)
-  const shared = walkMarkdown(path.join(vault, 'shared', 'memory')).filter(f => canReadFile(user.role, user.id, `shared/memory/${f.rel}`))
+  const shared = walkMarkdown(path.join(vault, 'shared', 'memory')).filter(f =>
+    canReadFile(user.role, user.id, `shared/memory/${f.rel}`, ctx))
   return [
     ...files.map(f => ({ rel: memoryRel(user.id, f.rel), abs: f.abs })),
     ...shared.map(f => ({ rel: `shared/memory/${f.rel}`, abs: f.abs }))
@@ -232,6 +318,84 @@ function graphForUser(vault, user) {
   return { nodes, links }
 }
 
+async function corpChatReply(org, vault, user, message, persistOrg) {
+  const team = org.teams.find(t => t.id === user.teamId) ?? org.teams[0]
+  try {
+    assertTeamBudget(org, user.teamId)
+  } catch (e) {
+    return { provider: 'policy', text: e.message }
+  }
+  const brainOn = org.agents.find(a => a.id === 'brain')?.enabled
+  if (!brainOn) {
+    return {
+      provider: 'policy',
+      text: 'O agente **Brain** está desligado na governança. Peça a um admin para ativá-lo em **Agentes**.'
+    }
+  }
+  let ranked = rankMemoryFiles(memoryFiles(vault, user, org), message, (f) => readFileSync(f.abs, 'utf8'))
+  const openaiKey = getOrgSecret(vault, 'openai')
+  if (openaiKey && org.policy.providers.includes('openai') && ranked.length > 1) {
+    const reranked = await rerankWithEmbeddings(
+      ranked,
+      message,
+      (f) => readFileSync(f.abs, 'utf8'),
+      openaiKey
+    )
+    ranked = reranked.hits
+  }
+  ranked = ranked.slice(0, 4)
+  const memoryCtx = ranked.length
+    ? ranked.map(r => `- ${r.file.rel}: ${r.snippet.replace(/\s+/g, ' ').slice(0, 220)}`).join('\n')
+  : '(sem trechos de memória para esta pergunta)'
+
+  if (org.policy.providers.includes('openai')) {
+    const key = getOrgSecret(vault, 'openai')
+    if (key) {
+      try {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: `Você é o assistente KeepMind Corp. Usuário: ${user.name} (${user.title || 'sem cargo'}). Teto: ${org.policy.autonomyCeiling}. Time: ${team.autonomy}. Use os trechos de memória quando relevantes. Memória:\n${memoryCtx}\nResponda em português.`
+              },
+              { role: 'user', content: message.slice(0, 4000) }
+            ],
+            max_tokens: 900
+          })
+        })
+        const data = await res.json()
+        const text = data.choices?.[0]?.message?.content
+        if (text) {
+          recordTeamUsage(team, UNIT_CHAT_CLOUD)
+          recordByokUsage(vault, {
+            provider: 'openai',
+            promptChars: message.length + memoryCtx.length,
+            completionChars: text.length
+          })
+          persistOrg?.()
+          return { text, provider: 'openai' }
+        }
+      } catch { /* fallback abaixo */ }
+    }
+  }
+  return {
+    provider: 'stub',
+    text: [
+      '**KeepMind Corp**',
+      '',
+      'Para chat com modelo de nuvem: em **Governança → Chaves da organização**, cadastre a chave (ex.: OpenAI) e marque o provedor em **Política**.',
+      '',
+      `Provedores permitidos: ${org.policy.providers.join(', ') || 'nenhum'}.`,
+      '',
+      `Sua mensagem: ${message.slice(0, 400)}`
+    ].join('\n')
+  }
+}
+
 function ledgerVerb(op) {
   if (op === 'write' || op === 'capture') return 'processed'
   if (op === 'policy_update' || op === 'agents_update') return 'improved'
@@ -259,6 +423,10 @@ function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   res.end(JSON.stringify(body))
   return true
+}
+
+export function listCorpMemoryFiles(vault, user, org) {
+  return memoryFiles(vault, user, org)
 }
 
 function readJsonBody(req) {

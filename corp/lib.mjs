@@ -6,8 +6,9 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync, renameSync, existsSync } from 'node:fs'
 import path from 'node:path'
+import { sharedRuleFor, peopleRuleFor, ruleAllows, normalizeSharedAccess, normalizePeopleAccess } from './abac.mjs'
 
-export const CORP_VERSION = '0.1.0'
+export const CORP_VERSION = '0.8.0'
 export const ROLES = ['owner', 'admin', 'member', 'auditor']
 export const AUTONOMY = ['supervised', 'autopilot', 'autonomous']
 export const PROVIDERS = ['local', 'ollama', 'openai', 'anthropic', 'gemini', 'grok']
@@ -45,7 +46,9 @@ const ACTIONS = {
   'agents.write': ['owner', 'admin'],
   'audit.read': ['owner', 'admin', 'auditor'],
   'scan.read': ['owner', 'admin', 'auditor'],
-  'scan.paths': ['owner', 'admin']
+  'scan.paths': ['owner', 'admin'],
+  'sync_tokens.read': ['owner', 'admin'],
+  'sync_tokens.write': ['owner', 'admin']
 }
 
 const SHADOW_KEY = /^(api[_-]?key|apikey|secret|token|password|passwd|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key)$/i
@@ -124,12 +127,21 @@ export function partitionOf(rel) {
   return { kind: 'denied' }
 }
 
-export function canReadFile(role, userId, rel) {
+export function canReadFile(role, userId, rel, accessCtx = {}) {
   const part = partitionOf(rel)
   if (part.kind === 'denied') return false
   if (role === 'owner' || role === 'admin') return true
-  if (part.kind === 'shared') return role === 'member' || role === 'auditor'
-  if (part.kind === 'person') return role === 'member' && part.id === userId
+  if (part.kind === 'shared') {
+    const rule = sharedRuleFor(rel, accessCtx.sharedAccess)
+    if (rule) return ruleAllows(rule, { role, title: accessCtx.title, teamId: accessCtx.teamId })
+    return role === 'member' || role === 'auditor'
+  }
+  if (part.kind === 'person') {
+    if (role === 'member' && part.id === userId) return true
+    const rule = peopleRuleFor(rel, accessCtx.peopleAccess)
+    if (rule && role === 'member') return ruleAllows(rule, { role, title: accessCtx.title, teamId: accessCtx.teamId })
+    return false
+  }
   if (part.kind === 'ops') return role === 'auditor'
   return false
 }
@@ -167,6 +179,8 @@ export function defaultPolicy() {
     autonomyCeiling: 'supervised',
     retentionDays: 365,
     residency: 'customer-vpc',
+    sharedAccess: [],
+    peopleAccess: [],
     cloudAllowed: false
   }
 }
@@ -201,7 +215,22 @@ export function normalizePolicy(input, prev = defaultPolicy()) {
     autonomyCeiling,
     retentionDays,
     residency,
+    sharedAccess: normalizeSharedAccess(
+      Array.isArray(input.sharedAccess) ? input.sharedAccess : prev.sharedAccess
+    ),
+    peopleAccess: normalizePeopleAccess(
+      Array.isArray(input.peopleAccess) ? input.peopleAccess : prev.peopleAccess
+    ),
     cloudAllowed: providers.some(item => item !== 'local' && item !== 'ollama')
+  }
+}
+
+export function accessCtxForUser(user, org) {
+  return {
+    title: user.title,
+    teamId: user.teamId,
+    sharedAccess: normalizeSharedAccess(org.policy?.sharedAccess),
+    peopleAccess: normalizePeopleAccess(org.policy?.peopleAccess)
   }
 }
 
@@ -332,16 +361,57 @@ export function publicScan(scan, withPaths) {
   return { ...base, secrets: scan.secrets, pii: scan.pii }
 }
 
+/** Add new catalog agents (e.g. composer) to existing org.json without dropping custom rows. */
+export function mergeTeamCatalog(loaded, baseTeams) {
+  const byId = new Map((Array.isArray(loaded) ? loaded : []).map((t) => [t.id, t]))
+  return baseTeams.map((def) => {
+    const cur = byId.get(def.id)
+    if (!cur) return { ...def }
+    return {
+      ...def,
+      ...cur,
+      budgetDaily: cur.budgetDaily !== undefined ? cur.budgetDaily : def.budgetDaily,
+      usageToday: cur.usageToday ?? def.usageToday ?? 0,
+      usageDay: cur.usageDay ?? def.usageDay ?? null
+    }
+  })
+}
+
+export function mergeAgentCatalog(loaded, baseAgents) {
+  const byId = new Map((Array.isArray(loaded) ? loaded : []).map((a) => [a.id, a]))
+  return baseAgents.map((def) => {
+    const cur = byId.get(def.id)
+    if (!cur) return { ...def }
+    return {
+      ...def,
+      ...cur,
+      kind: cur.kind ?? def.kind,
+      description: cur.description ?? def.description,
+      quotaDaily: cur.quotaDaily !== undefined ? cur.quotaDaily : def.quotaDaily,
+      usageToday: cur.usageToday ?? def.usageToday ?? 0,
+      usageDay: cur.usageDay ?? def.usageDay ?? null
+    }
+  })
+}
+
 export function defaultOrg(name = 'KeepMind Corp') {
   return {
     version: 1,
     name,
     users: [],
-    teams: [{ id: 'everyone', name: 'Everyone', autonomy: 'supervised' }],
+    teams: [{
+      id: 'everyone',
+      name: 'Everyone',
+      autonomy: 'supervised',
+      budgetDaily: 10000,
+      usageToday: 0,
+      usageDay: null
+    }],
     agents: [
-      { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone' },
-      { id: 'ingest', name: 'Ingest', enabled: false, teamId: 'everyone' },
-      { id: 'sync', name: 'Sync', enabled: false, teamId: 'everyone' }
+      { id: 'brain', name: 'Brain', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Chat e RAG do second brain corporativo', quotaDaily: 2000, usageToday: 0, usageDay: null },
+      { id: 'composer', name: 'Cursor Composer', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'app', description: 'Agente Cursor com MCP KeepMind (sb_search, sb_remember)', quotaDaily: 500, usageToday: 0, usageDay: null },
+      { id: 'ingest', name: 'Ingest', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Captura e ingestão de notas', quotaDaily: 300, usageToday: 0, usageDay: null },
+      { id: 'sync', name: 'Sync', enabled: false, teamId: 'everyone', autonomyMax: 'supervised', kind: 'builtin', description: 'Sincronização com repositório externo', quotaDaily: null, usageToday: 0, usageDay: null }
     ],
     policy: defaultPolicy()
   }

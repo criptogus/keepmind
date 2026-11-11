@@ -96,7 +96,45 @@ export function buildAgentCatalog(info: ConnectInfo): AgentCard[] {
   const repoName = (repoUrl ?? '').replace(/\.git$/, '').split('/').pop() || 'your-brain-repo'
   const memArg = memoryRoot === '' || memoryRoot == null ? '.' : `./${memoryRoot.replace(/\/$/, '')}`
   const cloneSnippet = `git clone ${repoUrl ?? '<your-repo-url>'}\ncd ${repoName}\nnode tools/keepmind-mcp.mjs --dir ${memArg}`
+  const composerRule = `---
+description: KeepMind memory — search before answering, append after work (Composer)
+globs:
+alwaysApply: true
+---
+
+You have the **keepmind** MCP server (sb_search, sb_read, sb_append, sb_remember, …).
+
+1. Before answering about the user, their work, or prior decisions: run **sb_search**.
+2. After meaningful work: **sb_append** or **sb_remember** — never rewrite history.
+3. Follow repo **AGENTS.md** if present; it overrides generic layout guesses.
+4. Never store secrets or credentials in memory.`
+
   const cards: AgentCard[] = [
+    {
+      id: 'composer', name: 'Cursor Composer', tag: 'app · Agent',
+      where: 'Cursor → Composer (Agent) · MCP em .cursor/mcp.json',
+      blurb:
+        'Composer é o modo agente do Cursor. Com o servidor KeepMind MCP ativo, o Composer usa sb_search, sb_remember e o restante das tools de memória em cada sessão — o mesmo fluxo do desktop KeepMind.',
+      snippets: [
+        { label: '.cursor/mcp.json', language: 'json', content: jsonMcp(s, d) },
+        { label: '.cursor/rules/keepmind-memory.mdc', language: 'markdown', content: composerRule },
+        {
+          label: 'Checklist',
+          language: 'markdown',
+          content: [
+            '1. Cole o mcp.json no projeto (ou use o que o repo já tem em `.cursor/mcp.json`).',
+            '2. Cursor → Settings → MCP → confirme **keepmind** habilitado.',
+            '3. Abra **Composer** (Agent), não só o chat inline.',
+            '4. Na primeira mensagem: “Leia AGENTS.md e busque na memória antes de responder.”',
+            '',
+            '**KeepMind Corp (remoto):** `tools/corp-mcp-bridge.mjs` + URL + token.',
+            '**KeepMind Corp (local):** `npm run corp:mcp` com `KEEPMIND_CORP_DATA` + token (sem HTTP).'
+          ].join('\n')
+        }
+      ],
+      prompt: true,
+      note: 'Composer e o editor Cursor compartilham o mesmo MCP — esta ficha é o fluxo recomendado para o Agent.'
+    },
     {
       id: 'grok', name: 'Grok Bot', tag: 'bot · your VM',
       where: 'runs inside your VM — repo clone + MCP',
@@ -125,9 +163,9 @@ export function buildAgentCatalog(info: ConnectInfo): AgentCard[] {
       prompt: true
     },
     {
-      id: 'cursor', name: 'Cursor', tag: 'IDE · local',
+      id: 'cursor', name: 'Cursor (editor)', tag: 'IDE · local',
       where: '.cursor/mcp.json',
-      blurb: 'Paste into the project (or ~/.cursor/mcp.json for global) — Cursor spawns the memory server per workspace.',
+      blurb: 'MCP no workspace para Chat e Composer. Para o fluxo agente completo, use o cartão **Cursor Composer** acima.',
       snippets: [{ label: 'mcp.json', language: 'json', content: jsonMcp(s, d) }],
       prompt: true
     },

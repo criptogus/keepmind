@@ -1,0 +1,87 @@
+import { readFileSync } from 'node:fs'
+import { invokeCorpMcpTool, MCP_TOOLS } from './mcp-runtime.mjs'
+import { assertAgentQuota, recordAgentUsage } from './agent-usage.mjs'
+import { assertTeamBudget, recordTeamUsage, UNIT_MCP } from './team-usage.mjs'
+
+export function mountMcpApi({ vault, getOrg, audit, persistOrg, memoryFilesForUser }) {
+  return async function mcpApi(req, res, url, user, syncCtx) {
+    if (!url.pathname.startsWith('/api/mcp/')) return false
+    const sub = url.pathname.slice('/api/mcp/'.length)
+    const org = getOrg()
+
+    if (sub === 'tools' && req.method === 'GET') {
+      return json(res, 200, { tools: MCP_TOOLS })
+    }
+
+    if (sub === 'call' && req.method === 'POST') {
+      if (syncCtx && !syncCtx.scopes.includes('mcp:invoke')) {
+        return json(res, 403, { error: 'forbidden', message: 'Token sem escopo mcp:invoke.' })
+      }
+      const body = await readJsonBody(req)
+      const agentId = String(body.agentId || 'composer').trim()
+      const tool = String(body.tool || body.name || '').trim()
+      const args = body.arguments ?? body.args ?? {}
+      const composerOn = org.agents.find((a) => a.id === 'composer' && a.enabled)
+      const brainOn = org.agents.find((a) => a.id === 'brain' && a.enabled)
+      if (agentId === 'composer' && !composerOn) {
+        return json(res, 403, { error: 'agent_off', message: 'Ative o agente Composer.' })
+      }
+      if (agentId === 'brain' && !brainOn) {
+        return json(res, 403, { error: 'agent_off', message: 'Ative o agente Brain.' })
+      }
+      try {
+        assertTeamBudget(org, user.teamId)
+        const agent = assertAgentQuota(org, agentId)
+        const files = memoryFilesForUser(vault, user, org)
+        const text = invokeCorpMcpTool({
+          vault,
+          org,
+          user,
+          agentId,
+          tool,
+          args,
+          memoryFiles: files,
+          readAbs: (abs) => readFileSync(abs, 'utf8')
+        })
+        recordAgentUsage(agent)
+        const team = org.teams.find((t) => t.id === user.teamId) ?? org.teams[0]
+        recordTeamUsage(team, UNIT_MCP)
+        persistOrg()
+        audit(user, 'mcp_tool', { agentId, tool, tokenId: syncCtx?.tokenId })
+        return json(res, 200, { ok: true, tool, text })
+      } catch (e) {
+        const code = e.code || 'mcp_error'
+        const status = code === 'secret_blocked' ? 400 : code === 'quota_exceeded' || code === 'team_budget_exceeded' ? 429 : 400
+        return json(res, status, { ok: false, error: code, message: e.message })
+      }
+    }
+
+    return json(res, 404, { error: 'not_found' })
+  }
+}
+
+function json(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+  res.end(JSON.stringify(body))
+  return true
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    req.on('data', (c) => {
+      size += c.length
+      if (size > 65536) reject(new Error('too large'))
+      else chunks.push(c)
+    })
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'))
+      } catch {
+        reject(new Error('bad json'))
+      }
+    })
+    req.on('error', reject)
+  })
+}

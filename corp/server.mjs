@@ -7,16 +7,29 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'no
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  CORP_VERSION, ROLES, PROVIDERS, AUTONOMY,
+  CORP_VERSION,   ROLES, PROVIDERS, AUTONOMY,
   can, hashPassword, verifyPassword, userIdFromEmail,
-  resolveInside,   canReadFile, canWriteFile, normalizePolicy,
+  resolveInside, canReadFile, canWriteFile, normalizePolicy, accessCtxForUser,
   clampTeamAutonomy, scanText, scanVault, publicScan, redactSecrets, walkMarkdown,
   defaultOrg, readJson, writeJsonAtomic, ensureVaultShape, appendAudit, readAudit,
   verifyRs256
 } from './lib.mjs'
 import { createOidc, oidcFromEnv } from './oidc.mjs'
-import { mountBrainApi } from './brain-api.mjs'
+import { mountBrainApi, listCorpMemoryFiles } from './brain-api.mjs'
+import { mountMcpApi } from './mcp-api.mjs'
 import { ensureUserBrain } from './memory-layout.mjs'
+import { orgSecretStatus, setOrgSecrets, getOrgSecret } from './org-secrets.mjs'
+import { streamVaultBackup } from './vault-backup.mjs'
+import { readOidcVaultConfig, oidcVaultStatus, writeOidcVaultConfig, clearOidcVaultConfig } from './oidc-store.mjs'
+import { listSyncTokens, createSyncToken, revokeSyncToken, resolveSyncBearer } from './sync-tokens-store.mjs'
+import { loadOrg } from './org-persist.mjs'
+import { meteringSnapshot } from './team-usage.mjs'
+import { readGithubSync, writeGithubSync } from './github-sync-store.mjs'
+import { runGithubSync } from './github-sync.mjs'
+import { byokReport } from './byok-meter.mjs'
+import { auditExportNdjson, auditExportCsv } from './audit-export.mjs'
+import { startGithubSyncScheduler } from './github-sync-scheduler.mjs'
+import { verifyGithubHookSecret } from './github-sync-store.mjs'
 
 const CORP_ROOT = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(CORP_ROOT, 'public')
@@ -47,8 +60,18 @@ export function createCorp(opts = {}) {
   const org = loadOrg(orgFile, env.KEEPMIND_CORP_ORG_NAME || 'KeepMind Corp')
   const sessions = new Map(Object.entries(readJson(sessionFile, {})))
   const failures = new Map()
-  const oidcConfig = opts.oidc === undefined ? oidcFromEnv(env) : opts.oidc
-  const oidc = oidcConfig ? createOidc(oidcConfig, opts.fetchImpl ?? globalThis.fetch) : null
+  const fetchImpl = opts.fetchImpl ?? globalThis.fetch
+  let oidc = null
+  function refreshOidc() {
+    if (opts.oidc === false) {
+      oidc = null
+      return null
+    }
+    const cfg = opts.oidc !== undefined ? opts.oidc : (readOidcVaultConfig(vault) || oidcFromEnv(env))
+    oidc = cfg ? createOidc(cfg, fetchImpl) : null
+    return oidc
+  }
+  refreshOidc()
   const secureCookie = env.KEEPMIND_CORP_SECURE === '1'
 
   const brainApi = mountBrainApi({
@@ -57,9 +80,21 @@ export function createCorp(opts = {}) {
     audit: (user, op, extra) => audit(user, op, extra),
     persistOrg
   })
+  const mcpApi = mountMcpApi({
+    vault,
+    getOrg: () => org,
+    audit: (user, op, extra) => audit(user, op, extra),
+    persistOrg,
+    memoryFilesForUser: listCorpMemoryFiles
+  })
 
   ensureOwner(env)
   persistOrg()
+  if (!opts.disableGithubScheduler) {
+    startGithubSyncScheduler(vault, {
+      audit: (actor, op, extra) => appendAudit(vault, { actor, role: 'system', op, ...extra })
+    })
+  }
 
   function persistOrg() {
     writeJsonAtomic(orgFile, org)
@@ -103,6 +138,7 @@ export function createCorp(opts = {}) {
       id,
       email,
       name: String(name || email).slice(0, 80),
+      title: '',
       role,
       teamId: org.teams.some(team => team.id === teamId) ? teamId : 'everyone',
       disabled: false,
@@ -117,7 +153,15 @@ export function createCorp(opts = {}) {
   }
 
   function publicUser(user) {
-    return { id: user.id, email: user.email, name: user.name, role: user.role, teamId: user.teamId, disabled: !!user.disabled }
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      title: user.title || '',
+      role: user.role,
+      teamId: user.teamId,
+      disabled: !!user.disabled
+    }
   }
 
   function userFromToken(token) {
@@ -176,6 +220,9 @@ export function createCorp(opts = {}) {
       if (url.pathname === '/api/health' && req.method === 'GET') {
         return send(res, 200, { ok: true, edition: 'keepmind-corp', version: CORP_VERSION })
       }
+      if (url.pathname === '/api/hooks/github-sync' && req.method === 'POST') {
+        return await githubSyncHook(req, res)
+      }
       if (url.pathname === '/api/meta' && req.method === 'GET') {
         return send(res, 200, {
           ok: true,
@@ -192,7 +239,17 @@ export function createCorp(opts = {}) {
       if (url.pathname === '/api/oidc/start' && req.method === 'GET') return await oidcStart(res)
       if (url.pathname === '/api/oidc/callback' && req.method === 'GET') return await oidcCallback(url, res)
       const token = readCookie(req, 'kmcorp')
-      const user = userFromToken(token)
+      let user = userFromToken(token)
+      const bearer = parseBearerToken(req)
+      const syncCtx = bearer ? resolveSyncBearer(vault, bearer) : null
+      let syncAuth = false
+      if (!user && syncCtx) {
+        const bind = org.users.find((item) => item.id === syncCtx.userId && !item.disabled)
+        if (bind) {
+          user = bind
+          syncAuth = true
+        }
+      }
       if (url.pathname === '/api/session' && req.method === 'GET') {
         return send(res, 200, { ok: true, user: user ? publicUser(user) : null })
       }
@@ -200,8 +257,14 @@ export function createCorp(opts = {}) {
       if (url.pathname === '/api/login' && req.method === 'POST') return await login(req, res)
       if (url.pathname === '/api/logout' && req.method === 'POST') return logout(req, token, res)
       if (!user) return send(res, 401, { ok: false, error: 'unauthorized' })
-      if (!sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
-      if (await brainApi(req, res, url, user)) return
+      const syncRoute = syncAuth && syncTokenAllows(url, req.method, syncCtx)
+      if (syncRoute && !org.agents.find((a) => a.id === 'sync' && a.enabled)) {
+        return send(res, 403, { ok: false, error: 'sync_off', message: 'Ative o agente Sync em Agentes.' })
+      }
+      if (!syncRoute && !sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
+      if (await brainApi(req, res, url, user, syncAuth ? syncCtx : null)) return
+      if (await mcpApi(req, res, url, user, syncAuth ? syncCtx : null)) return
+      if (syncAuth) return send(res, 403, { ok: false, error: 'forbidden', message: 'Token válido só para export/import/MCP.' })
       return await authed(req, res, url, user)
     } catch (err) {
       const code = err.code || 'server_error'
@@ -330,6 +393,18 @@ export function createCorp(opts = {}) {
       return send(res, 200, { ok: true, policy: org.policy })
     }
     if (url.pathname === '/api/policy' && req.method === 'PUT') return writePolicy(req, res, user)
+    if (url.pathname === '/api/org-secrets' && req.method === 'GET') {
+      if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+      return send(res, 200, { ok: true, ...orgSecretStatus(vault) })
+    }
+    if (url.pathname === '/api/org-secrets' && req.method === 'PUT') return writeOrgSecrets(req, res, user)
+    if (url.pathname === '/api/oidc-config' && req.method === 'GET') {
+      if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+      return send(res, 200, { ok: true, ...oidcVaultStatus(vault), active: !!oidc })
+    }
+    if (url.pathname === '/api/oidc-config' && req.method === 'PUT') return writeOidcConfig(req, res, user)
+    if (url.pathname === '/api/oidc-config' && req.method === 'DELETE') return deleteOidcConfig(req, res, user)
+    if (url.pathname === '/api/backup' && req.method === 'GET') return vaultBackup(req, res, user)
     if (url.pathname === '/api/teams' && req.method === 'GET') {
       return send(res, 200, { ok: true, teams: org.teams, ceiling: org.policy.autonomyCeiling })
     }
@@ -351,6 +426,7 @@ export function createCorp(opts = {}) {
       const limit = Number(url.searchParams.get('limit') || 50)
       return send(res, 200, { ok: true, entries: readAudit(vault, limit) })
     }
+    if (url.pathname === '/api/audit/export' && req.method === 'GET') return auditExportRoute(req, res, user, url)
     if (url.pathname === '/api/scan' && req.method === 'GET') {
       if (!can(user.role, 'scan.read')) return send(res, 403, { ok: false, error: 'forbidden' })
       return send(res, 200, { ok: true, scan: publicScan(scanVault(vault), can(user.role, 'scan.paths')) })
@@ -360,7 +436,132 @@ export function createCorp(opts = {}) {
       return previewFile(res, user, url.searchParams.get('path') || '')
     }
     if (url.pathname === '/api/files' && req.method === 'POST') return writeFile(req, res, user)
+    if (url.pathname === '/api/sync-tokens' && req.method === 'GET') return listSyncTokensRoute(res, user)
+    if (url.pathname === '/api/sync-tokens' && req.method === 'POST') return mintSyncTokenRoute(req, res, user)
+    if (url.pathname.startsWith('/api/sync-tokens/') && req.method === 'DELETE') {
+      const id = decodeURIComponent(url.pathname.slice('/api/sync-tokens/'.length))
+      return revokeSyncTokenRoute(res, user, id)
+    }
+    if (url.pathname === '/api/metering' && req.method === 'GET') return meteringRoute(res, user)
+    if (url.pathname === '/api/github-sync' && req.method === 'GET') return githubSyncGet(res, user)
+    if (url.pathname === '/api/github-sync' && req.method === 'PUT') return githubSyncPut(req, res, user)
+    if (url.pathname === '/api/github-sync/run' && req.method === 'POST') return githubSyncRun(req, res, user)
+    if (url.pathname === '/api/byok-report' && req.method === 'GET') return byokReportRoute(res, user, url)
     return send(res, 404, { ok: false, error: 'not_found' })
+  }
+
+  function meteringRoute(res, user) {
+    if (!can(user.role, 'policy.read')) return send(res, 403, { ok: false, error: 'forbidden' })
+    return send(res, 200, { ok: true, ...meteringSnapshot(org) })
+  }
+
+  function githubSyncGet(res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    return send(res, 200, { ok: true, config: readGithubSync(vault), hasToken: Boolean(getOrgSecret(vault, 'github')) })
+  }
+
+  async function githubSyncPut(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    const config = writeGithubSync(vault, {
+      enabled: !!body.enabled,
+      owner: body.owner,
+      repo: body.repo,
+      branch: body.branch || 'main',
+      repoPrefix: body.repoPrefix || 'corp-vault',
+      scheduleEnabled: !!body.scheduleEnabled,
+      intervalMinutes: Number(body.intervalMinutes) || 60,
+      hookSecret: body.hookSecret
+    })
+    audit(user, 'github_sync_config', { enabled: config.enabled, repo: `${config.owner}/${config.repo}` })
+    return send(res, 200, { ok: true, config })
+  }
+
+  async function githubSyncRun(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    const direction = body.direction === 'push' || body.direction === 'pull' ? body.direction : 'both'
+    try {
+      const result = await runGithubSync(vault, direction)
+      audit(user, 'github_sync_run', { pushed: result.pushed, pulled: result.pulled })
+      return send(res, 200, { ok: true, ...result })
+    } catch (err) {
+      return send(res, 400, { ok: false, error: err.code || 'github_error', message: err.message })
+    }
+  }
+
+  function byokReportRoute(res, user, url) {
+    if (!can(user.role, 'policy.read')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const days = Number(url.searchParams.get('days') || 30)
+    return send(res, 200, { ok: true, report: byokReport(vault, days) })
+  }
+
+  function auditExportRoute(req, res, user, url) {
+    if (!can(user.role, 'audit.read')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const format = String(url.searchParams.get('format') || 'ndjson').toLowerCase()
+    const limit = Number(url.searchParams.get('limit') || 500)
+    const since = url.searchParams.get('since') || undefined
+    const body = format === 'csv' ? auditExportCsv(vault, { limit, since }) : auditExportNdjson(vault, { limit, since })
+    res.writeHead(200, {
+      'content-type': format === 'csv' ? 'text/csv; charset=utf-8' : 'application/x-ndjson',
+      'content-disposition': `attachment; filename="keepmind-audit.${format === 'csv' ? 'csv' : 'ndjson'}"`,
+      'cache-control': 'no-store'
+    })
+    res.end(body)
+    audit(user, 'audit_export', { format, limit })
+    return true
+  }
+
+  async function githubSyncHook(req, res) {
+    const secret = req.headers['x-keepmind-hook'] || req.headers['x-github-sync-secret']
+    if (!verifyGithubHookSecret(vault, secret)) {
+      return send(res, 403, { ok: false, error: 'forbidden' })
+    }
+    try {
+      const result = await runGithubSync(vault, 'both')
+      appendAudit(vault, { actor: 'ci', role: 'system', op: 'github_sync_hook', ...result })
+      return send(res, 200, { ok: true, ...result })
+    } catch (err) {
+      return send(res, 400, { ok: false, error: err.code || 'github_error', message: err.message })
+    }
+  }
+
+  function listSyncTokensRoute(res, user) {
+    if (!can(user.role, 'sync_tokens.read')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const rows = listSyncTokens(vault).map((row) => ({
+      ...row,
+      userEmail: org.users.find((u) => u.id === row.userId)?.email ?? row.userId
+    }))
+    return send(res, 200, { ok: true, tokens: rows })
+  }
+
+  async function mintSyncTokenRoute(req, res, user) {
+    if (!can(user.role, 'sync_tokens.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    const label = String(body.label || 'desktop-sync').slice(0, 40)
+    const userId = String(body.userId || user.id).trim()
+    const bind = org.users.find((u) => u.id === userId && !u.disabled)
+    if (!bind) return send(res, 400, { ok: false, error: 'bad_user', message: 'Pessoa inválida.' })
+    const minted = createSyncToken(vault, { label, userId, createdBy: user.id })
+    audit(user, 'sync_token_mint', { tokenId: minted.id, userId })
+    return send(res, 201, {
+      ok: true,
+      token: {
+        id: minted.id,
+        label: minted.label,
+        secret: minted.secret,
+        scopes: minted.scopes,
+        userId: minted.userId
+      }
+    })
+  }
+
+  function revokeSyncTokenRoute(res, user, id) {
+    if (!can(user.role, 'sync_tokens.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    if (!id) return send(res, 400, { ok: false, error: 'bad_token' })
+    if (!revokeSyncToken(vault, id)) return send(res, 404, { ok: false, error: 'not_found' })
+    audit(user, 'sync_token_revoke', { tokenId: id })
+    return send(res, 200, { ok: true })
   }
 
   function overview(res, user) {
@@ -395,6 +596,50 @@ export function createCorp(opts = {}) {
     return send(res, 200, { ok: true, policy: org.policy, teams: org.teams })
   }
 
+  function vaultBackup(req, res, user) {
+    if (user.role !== 'owner') return send(res, 403, { ok: false, error: 'forbidden' })
+    audit(user, 'vault_backup', {})
+    streamVaultBackup(vault, res)
+    return true
+  }
+
+  async function writeOidcConfig(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    try {
+      const status = writeOidcVaultConfig(vault, body)
+      refreshOidc()
+      audit(user, 'oidc_config_update', { issuer: status.issuer })
+      return send(res, 200, { ok: true, ...status, active: !!oidc })
+    } catch (err) {
+      const code = err.code || 'bad_policy'
+      return send(res, 400, { ok: false, error: code, message: err.message })
+    }
+  }
+
+  async function deleteOidcConfig(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    if (!sameOriginMutation(req)) return send(res, 403, { ok: false, error: 'forbidden' })
+    const status = clearOidcVaultConfig(vault)
+    refreshOidc()
+    audit(user, 'oidc_config_clear', {})
+    return send(res, 200, { ok: true, ...status, active: !!oidc })
+  }
+
+  async function writeOrgSecrets(req, res, user) {
+    if (!can(user.role, 'policy.write')) return send(res, 403, { ok: false, error: 'forbidden' })
+    const body = await readBody(req)
+    const patch = body.providers && typeof body.providers === 'object' ? body.providers : body
+    const clean = {}
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === '' || value === null) clean[key] = ''
+      else if (typeof value === 'string') clean[key] = value
+    }
+    const status = setOrgSecrets(vault, clean)
+    audit(user, 'org_secrets_update', { providers: Object.keys(clean) })
+    return send(res, 200, { ok: true, ...status })
+  }
+
   async function writeTeams(req, res, user) {
     if (!can(user.role, 'teams.write')) return send(res, 403, { ok: false, error: 'forbidden' })
     const body = await readBody(req)
@@ -414,14 +659,29 @@ export function createCorp(opts = {}) {
         throw err
       }
       seen.add(id)
+      const prev = org.teams.find((t) => t.id === id)
+      const budgetRaw = team.budgetDaily
+      const budgetDaily = budgetRaw === '' || budgetRaw === undefined
+        ? (prev?.budgetDaily ?? null)
+        : (budgetRaw === null ? null : Number(budgetRaw))
       next.push({
         id,
         name: String(team.name || id).slice(0, 80),
-        autonomy: clampTeamAutonomy(team.autonomy, org.policy.autonomyCeiling)
+        autonomy: clampTeamAutonomy(team.autonomy, org.policy.autonomyCeiling),
+        budgetDaily: Number.isFinite(budgetDaily) ? budgetDaily : (budgetDaily === null ? null : prev?.budgetDaily ?? null),
+        usageToday: Number(prev?.usageToday ?? 0),
+        usageDay: prev?.usageDay ?? null
       })
     }
     if (!next.some(team => team.id === 'everyone')) {
-      next.unshift({ id: 'everyone', name: 'Everyone', autonomy: 'supervised' })
+      next.unshift({
+        id: 'everyone',
+        name: 'Everyone',
+        autonomy: 'supervised',
+        budgetDaily: 10000,
+        usageToday: 0,
+        usageDay: null
+      })
     }
     org.teams = next
     for (const member of org.users) {
@@ -456,7 +716,14 @@ export function createCorp(opts = {}) {
       err.code = 'bad_user'
       throw err
     }
-    const created = addUser({ email, name: body.name, role, teamId: body.teamId || 'everyone', password })
+    const created = addUser({
+      email,
+      name: body.name,
+      role,
+      teamId: body.teamId || 'everyone',
+      password
+    })
+    if (body.title) created.title = String(body.title).slice(0, 80)
     persistOrg()
     audit(user, 'member_create', { email, role })
     return send(res, 201, { ok: true, member: publicUser(created) })
@@ -499,6 +766,7 @@ export function createCorp(opts = {}) {
     }
     if (body.teamId && org.teams.some(team => team.id === body.teamId)) target.teamId = body.teamId
     if (body.name) target.name = String(body.name).slice(0, 80)
+    if (body.title !== undefined) target.title = String(body.title || '').slice(0, 80)
     persistOrg()
     audit(user, 'member_update', { id: target.id, role: target.role, disabled: !!target.disabled })
     return send(res, 200, { ok: true, member: publicUser(target) })
@@ -524,7 +792,22 @@ export function createCorp(opts = {}) {
       }
       seen.add(id)
       const teamId = org.teams.some(team => team.id === agent.teamId) ? agent.teamId : 'everyone'
-      next.push({ id, name: String(agent.name || id).slice(0, 80), enabled: !!agent.enabled, teamId })
+      const autonomyMax = clampTeamAutonomy(agent.autonomyMax || 'supervised', org.policy.autonomyCeiling)
+      const prev = org.agents.find((a) => a.id === id)
+      next.push({
+        id,
+        name: String(agent.name || id).slice(0, 80),
+        enabled: !!agent.enabled,
+        teamId,
+        autonomyMax,
+        kind: String(agent.kind || prev?.kind || 'builtin').slice(0, 40),
+        description: String(agent.description || prev?.description || '').slice(0, 200),
+        quotaDaily: agent.quotaDaily === null || agent.quotaDaily === ''
+          ? null
+          : (Number(agent.quotaDaily ?? prev?.quotaDaily) || null),
+        usageToday: Number(agent.usageToday ?? prev?.usageToday ?? 0),
+        usageDay: agent.usageDay ?? prev?.usageDay ?? null
+      })
     }
     org.agents = next
     persistOrg()
@@ -533,14 +816,16 @@ export function createCorp(opts = {}) {
   }
 
   function listFiles(res, user) {
-    const files = scanVaultList().filter(file => canReadFile(user.role, user.id, file.path))
+    const ctx = accessCtxForUser(user, org)
+    const files = scanVaultList().filter(file => canReadFile(user.role, user.id, file.path, ctx))
     return send(res, 200, { ok: true, files })
   }
 
   function previewFile(res, user, rel) {
     const located = resolveInside(vault, rel)
     if (!located) return send(res, 400, { ok: false, error: 'bad_path' })
-    if (!canReadFile(user.role, user.id, located.rel)) return send(res, 403, { ok: false, error: 'forbidden' })
+    const ctx = accessCtxForUser(user, org)
+    if (!canReadFile(user.role, user.id, located.rel, ctx)) return send(res, 403, { ok: false, error: 'forbidden' })
     if (!existsSync(located.abs)) return send(res, 404, { ok: false, error: 'not_found' })
     const raw = readFileSync(located.abs, 'utf8')
     if (raw.startsWith('KMS1\n')) return send(res, 200, { ok: true, path: located.rel, encrypted: true, text: '' })
@@ -581,6 +866,11 @@ export function createCorp(opts = {}) {
 
 const STATUS = {
   shadow_key: 400,
+  quota_exceeded: 429,
+  team_budget_exceeded: 429,
+  agent_off: 403,
+  bad_agent: 400,
+  bad_tool: 400,
   above_ceiling: 400,
   bad_policy: 400,
   bad_autonomy: 400,
@@ -589,22 +879,9 @@ const STATUS = {
   bad_user: 400,
   bad_token: 400,
   last_owner: 409,
-  oidc_down: 502
-}
-
-function loadOrg(file, name) {
-  const loaded = readJson(file, null)
-  const base = defaultOrg(name)
-  if (!loaded || !Array.isArray(loaded.users)) return base
-  return {
-    ...base,
-    ...loaded,
-    name: typeof loaded.name === 'string' ? loaded.name : base.name,
-    users: loaded.users,
-    teams: Array.isArray(loaded.teams) && loaded.teams.length ? loaded.teams : base.teams,
-    agents: Array.isArray(loaded.agents) ? loaded.agents : base.agents,
-    policy: { ...base.policy, ...(loaded.policy || {}), byokRequired: true, memberKeys: false }
-  }
+  oidc_down: 502,
+  github_off: 400,
+  github_error: 502
 }
 
 function validEmail(email) {
@@ -635,6 +912,22 @@ function sameOriginMutation(req) {
   } catch {
     return false
   }
+}
+
+function parseBearerToken(req) {
+  const header = String(req.headers.authorization || '')
+  const match = /^Bearer\s+(.+)$/i.exec(header)
+  return match ? match[1].trim() : ''
+}
+
+function syncTokenAllows(url, method, ctx) {
+  if (!ctx) return false
+  const scopes = ctx.scopes || []
+  if (method === 'GET' && url.pathname === '/api/brain/export') return scopes.includes('memory:export')
+  if (method === 'POST' && url.pathname === '/api/brain/import') return scopes.includes('memory:import')
+  if (method === 'POST' && url.pathname === '/api/mcp/call') return scopes.includes('mcp:invoke')
+  if (method === 'GET' && url.pathname === '/api/mcp/tools') return scopes.includes('mcp:invoke')
+  return false
 }
 
 function send(res, status, body) {

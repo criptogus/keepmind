@@ -12,8 +12,9 @@ There are **two ways** to connect, pick whichever the agent supports:
 | **Repo + prompt** | Grok, bots on VMs (Grokbot…), custom agents (Hermes, Dots, Muse…) | clone the repo, paste the agent prompt below |
 
 The app pushes `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json`,
-`.cursor/mcp.json`, `.gemini/settings.json` and the MCP server into your
-repo automatically on connect — most agents need **zero manual config**.
+`.cursor/mcp.json`, `.cursor/rules/keepmind-memory.mdc`, `.gemini/settings.json`
+and the MCP server into your repo automatically on connect — most agents need
+**zero manual config**.
 
 ---
 
@@ -108,12 +109,38 @@ Codex reads `AGENTS.md` natively — the repo already has one. Two options:
   also reuse your ChatGPT login — the KeepMind app itself supports
   **Codex/ChatGPT sign-in** as an AI provider (no API key).
 
-## Cursor
+## Cursor (editor + Chat)
 
 Clone/open the repo — `.cursor/mcp.json` is already in it. Cursor picks it
 up under **Settings → MCP**. If the repo isn't local, add the server
 manually in `.cursor/mcp.json` or Cursor settings with the same
 `command`/`args` as above.
+
+## Cursor Composer (Agent) — recommended
+
+**Composer** is Cursor's agent mode. It uses the same MCP server as the
+inline chat, plus a workspace rule so every agent turn searches memory first.
+
+On connect, KeepMind also pushes:
+
+- `.cursor/mcp.json` — `keepmind` MCP server
+- `.cursor/rules/keepmind-memory.mdc` — always-on rule (`sb_search` before
+  answers, `sb_append` / `sb_remember` after work)
+
+Setup:
+
+1. Open the repo in Cursor.
+2. **Settings → MCP** — confirm **keepmind** is enabled.
+3. Open **Composer** (Agent), not only the side chat.
+4. First message: *"Leia AGENTS.md e busque na memória antes de responder."*
+
+The desktop app's **Connectors** screen has a **Cursor Composer** card with
+copy-paste snippets. In **KeepMind Corp**, enable the **Cursor Composer**
+agent in **Admin → Agentes** so policy allows that connector class (app).
+
+**Corp remote vault:** run `tools/corp-mcp-bridge.mjs` with org URL + sync token
+(`mcp:invoke` scope) and register that command in `.cursor/mcp.json` instead of
+local `keepmind-mcp.mjs`.
 
 ## Gemini CLI
 

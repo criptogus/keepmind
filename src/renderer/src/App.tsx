@@ -44,7 +44,15 @@ const NAV: { section: string; items: NavItem[] }[] = [
     { id: 'settings', label: 'Settings', Icon: IconSettings }
   ]}
 ]
-const NAV_FLAT = NAV.flatMap(g => g.items)
+const CORP_HIDDEN: View[] = ['connectors', 'automations']
+
+function navForConfig(config: { corp?: unknown } | null) {
+  if (!config?.corp) return NAV
+  return NAV.map(g => ({
+    ...g,
+    items: g.items.filter(item => !CORP_HIDDEN.includes(item.id))
+  })).filter(g => g.items.length > 0)
+}
 
 export default function App() {
   const [config, setConfig] = useState<any>(null)
@@ -195,6 +203,8 @@ export default function App() {
       : 'Brain awake · idle'
 
   const corp = config?.corp as { org?: string; role?: string; adminUrl?: string | null } | undefined
+  const nav = navForConfig(config)
+  const navFlat = nav.flatMap(g => g.items)
 
   return (
     <div className="app">
@@ -212,7 +222,7 @@ export default function App() {
           </div>
         </div>
         <nav className="nav">
-          {NAV.map(g => (
+          {nav.map(g => (
             <div key={g.section} className="nav__group">
               <div className="nav__section">{g.section}</div>
               {g.items.map(n => (
@@ -261,7 +271,7 @@ export default function App() {
       </aside>
 
       <nav className="mobile-nav">
-        {NAV_FLAT.map(n => (
+        {navFlat.map(n => (
           <button
             key={n.id}
             className={`mobile-nav__item ${view === n.id ? 'is-active' : ''}`}

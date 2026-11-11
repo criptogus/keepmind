@@ -4,7 +4,12 @@ const state = { me: null, meta: null, section: 'overview', data: null, toast: ''
 const SECTIONS = [
   ['overview', 'Visão', () => true],
   ['policy', 'Política', () => true],
+  ['secrets', 'Chaves org', role => role === 'owner' || role === 'admin'],
+  ['sync', 'Sync (tokens)', role => role === 'owner' || role === 'admin'],
+  ['sso', 'SSO (OIDC)', role => role === 'owner' || role === 'admin'],
   ['teams', 'Times', () => true],
+  ['metering', 'Metering', role => role === 'owner' || role === 'admin'],
+  ['github', 'GitHub sync', role => role === 'owner' || role === 'admin'],
   ['members', 'Pessoas', role => role === 'owner' || role === 'admin'],
   ['agents', 'Agentes', () => true],
   ['vault', 'Cofre', () => true],
@@ -72,11 +77,32 @@ async function boot() {
 async function load() {
   if (state.section === 'overview') state.data = (await api('/api/overview')).body
   if (state.section === 'policy') state.data = (await api('/api/policy')).body
+  if (state.section === 'secrets') state.data = (await api('/api/org-secrets')).body
+  if (state.section === 'sync') {
+    const [tokens, agents, members] = await Promise.all([
+      api('/api/sync-tokens'),
+      api('/api/agents'),
+      api('/api/members')
+    ])
+    state.data = { ok: true, tokens: tokens.body.tokens, agents: agents.body.agents, members: members.body.members }
+  }
+  if (state.section === 'sso') state.data = (await api('/api/oidc-config')).body
   if (state.section === 'teams') state.data = (await api('/api/teams')).body
+  if (state.section === 'metering') {
+    const [meter, byok] = await Promise.all([api('/api/metering'), api('/api/byok-report?days=30')])
+    state.data = { ok: true, ...meter.body, byok: byok.body.report }
+  }
+  if (state.section === 'github') state.data = (await api('/api/github-sync')).body
   if (state.section === 'members') state.data = (await api('/api/members')).body
-  if (state.section === 'agents') state.data = (await api('/api/agents')).body
+  if (state.section === 'agents') {
+    const agents = await api('/api/agents')
+    state.data = agents.body
+  }
   if (state.section === 'vault') state.data = (await api('/api/files')).body
-  if (state.section === 'audit') state.data = (await api('/api/audit')).body
+  if (state.section === 'audit') {
+    const audit = await api('/api/audit')
+    state.data = audit.body
+  }
   if (state.section === 'scan') state.data = (await api('/api/scan')).body
 }
 
@@ -127,7 +153,12 @@ function section() {
   if (!data.ok && data.error) return `<p>${esc(COPY[data.error] || 'Sem acesso a esta área.')}</p>`
   if (state.section === 'overview') return overview(data)
   if (state.section === 'policy') return policy(data.policy)
+  if (state.section === 'secrets') return orgSecrets(data)
+  if (state.section === 'sync') return syncTokens(data)
+  if (state.section === 'sso') return ssoConfig(data)
   if (state.section === 'teams') return teams(data)
+  if (state.section === 'metering') return metering(data)
+  if (state.section === 'github') return githubSync(data)
   if (state.section === 'members') return members(data)
   if (state.section === 'agents') return agents(data)
   if (state.section === 'vault') return vault(data)
@@ -146,7 +177,58 @@ function overview(data) {
       <div class="panel"><div class="k">Agentes ligados</div><div class="v">${enabled}</div></div>
       <div class="panel"><div class="k">Segredos / PII</div><div class="v">${scan.secretTotal ?? '—'} / ${scan.piiTotal ?? '—'}</div></div>
     </div>
-    <div class="panel"><div class="k">BYOK da empresa</div><p>Chaves pessoais não entram. A política exige a chave da organização, no ambiente do servidor.</p></div>`
+    <div class="panel"><div class="k">BYOK da empresa</div><p>Chaves pessoais não entram. A política exige a chave da organização, no ambiente do servidor.</p></div>
+    ${state.me.role === 'owner' ? '<p class="row"><a class="btn ghost" href="/api/backup" download>Baixar backup do cofre (.tgz)</a></p>' : ''}`
+}
+
+function ssoConfig(data) {
+  return `<p class="sub">SSO via OpenID Connect. Depois de salvar, o login mostra <strong>Entrar com SSO</strong>. O client secret fica no cofre (como BYOK).</p>
+    <form id="sso" class="panel">
+      <label>Issuer (URL)<input name="issuer" value="${esc(data.issuer || '')}" placeholder="https://idp.suaempresa.com" /></label>
+      <label>Client ID<input name="clientId" value="${esc(data.clientId || '')}" /></label>
+      <label>Redirect URI<input name="redirectUri" value="${esc(data.redirectUri || '')}" placeholder="https://corp.exemplo.com/api/oidc/callback" /></label>
+      <label>Grupo admin (claim)<input name="adminGroup" value="${esc(data.adminGroup || 'keepmind-admins')}" /></label>
+      <label>Client secret<input name="clientSecret" type="password" autocomplete="new-password" placeholder="${data.secretSet ? 'Substituir…' : 'Obrigatório na 1ª vez'}" /></label>
+      <p class="sub">Status: ${data.active ? 'SSO ativo' : 'SSO inativo'} · secret ${data.secretSet ? 'ok' : 'faltando'}</p>
+      <div class="row"><button class="btn" type="submit">Salvar SSO</button>
+      <button type="button" class="btn ghost" id="clear-sso">Remover</button></div>
+    </form>`
+}
+
+function syncTokens(data) {
+  const syncOn = (data.agents || []).some((a) => a.id === 'sync' && a.enabled)
+  const rows = (data.tokens || []).map((row) => `<tr>
+    <td>${esc(row.label)}<div class="sub">${esc(row.id)}</div></td>
+    <td>${esc(row.userEmail || row.userId)}</td>
+    <td>${row.revokedAt ? 'revogado' : 'ativo'}</td>
+    <td><button type="button" class="btn ghost" data-revoke-token="${esc(row.id)}" ${row.revokedAt ? 'disabled' : ''}>Revogar</button></td>
+  </tr>`).join('') || '<tr><td colspan="4">Nenhum token ainda.</td></tr>'
+  const members = (data.members || []).map((m) => `<option value="${esc(m.id)}">${esc(m.email)}</option>`).join('')
+  return `<p class="sub">Tokens <code>Bearer</code> para <code>tools/corp-push.mjs</code> e automação desktop → Corp. Requer agente <strong>Sync</strong> ligado. O segredo aparece só na criação.</p>
+    ${syncOn ? '' : '<p class="err">Ative o agente <strong>Sync</strong> em Agentes antes de usar tokens.</p>'}
+  <form id="sync-token" class="panel">
+    <label>Rótulo<input name="label" value="desktop-sync" /></label>
+    <label>Pessoa (partição de memória)<select name="userId">${members}</select></label>
+    <button class="btn" type="submit">Gerar token</button>
+  </form>
+  <div id="sync-secret" class="panel" hidden></div>
+  <table><thead><tr><th>Token</th><th>Usuário</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+}
+
+function orgSecrets(data) {
+  const providers = data.providers || {}
+  const rows = ['openai', 'anthropic', 'gemini', 'grok', 'github'].map(id => {
+    const set = providers[id]
+    return `<tr>
+      <td>${esc(id)}</td>
+      <td>${set ? 'configurada' : 'vazia'}</td>
+      <td><input name="${esc(id)}" type="password" autocomplete="new-password" placeholder="${set ? 'Substituir…' : 'Colar chave…'}" /></td>
+    </tr>`
+  }).join('')
+  return `<p class="sub">Chaves da organização (BYOK). Nunca são exibidas de volta — só o status. Membros não podem cadastrar chave pessoal no Brain.</p>
+    <form id="secrets" class="panel"><table><thead><tr><th>Provedor</th><th>Status</th><th>Nova chave</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="row"><button class="btn" type="submit">Salvar chaves</button>
+    <button type="button" class="btn ghost" id="clear-secrets">Limpar todas</button></p></form>`
 }
 
 function policy(policy) {
@@ -164,6 +246,12 @@ function policy(policy) {
     <label>Teto de autonomia<select name="autonomyCeiling" ${writer ? '' : 'disabled'}>${options}</select></label>
     <label>Retenção em dias<input name="retentionDays" type="number" min="7" max="3650" value="${esc(policy.retentionDays)}" ${writer ? '' : 'disabled'}/></label>
     <label>Residência<input name="residency" value="${esc(policy.residency)}" ${writer ? '' : 'disabled'}/></label>
+    <label>ABAC — pastas <code>shared/</code> (JSON)
+      <textarea name="sharedAccess" rows="6" ${writer ? '' : 'disabled'} placeholder='[{"prefix":"shared/finance","roles":["owner","admin"],"titles":["CFO"]}]'>${esc(JSON.stringify(policy.sharedAccess || [], null, 2))}</textarea>
+    </label>
+    <label>ABAC — pastas <code>people/</code> por cargo/time (JSON)
+      <textarea name="peopleAccess" rows="5" ${writer ? '' : 'disabled'} placeholder='[{"prefix":"people/lead/memory/inbox","roles":[],"titles":["diretor"],"teams":["leadership"]}]'>${esc(JSON.stringify(policy.peopleAccess || [], null, 2))}</textarea>
+    </label>
     ${writer ? '<button class="btn" type="submit">Salvar política</button>' : ''}
   </form>`
 }
@@ -175,16 +263,61 @@ function teams(data) {
     <td><input data-team="${esc(team.id)}" data-field="name" value="${esc(team.name)}" ${lock}/></td>
     <td>${esc(team.id)}</td>
     <td><select data-team="${esc(team.id)}" data-field="autonomy" ${lock}>${(state.meta?.autonomy || []).map(mode => `<option ${team.autonomy === mode ? 'selected' : ''}>${esc(mode)}</option>`).join('')}</select></td>
+    <td><input type="number" min="0" placeholder="∞" data-team="${esc(team.id)}" data-field="budget" value="${team.budgetDaily ?? ''}" ${lock} style="width:6rem"/></td>
+    <td class="sub">${esc(team.usageToday ?? 0)}</td>
   </tr>`).join('')
-  return `<p class="sub">Teto atual: ${esc(data.ceiling || '')}.</p>
-    <form id="teams"><table><thead><tr><th>Nome</th><th>Id</th><th>Autonomia</th></tr></thead><tbody>${rows}</tbody></table>
+  return `<p class="sub">Teto atual: ${esc(data.ceiling || '')}. <strong>Orçamento/dia</strong> = unidades abstratas (MCP=1, chat nuvem=10).</p>
+    <form id="teams"><table><thead><tr><th>Nome</th><th>Id</th><th>Autonomia</th><th>Budget/dia</th><th>Uso hoje</th></tr></thead><tbody>${rows}</tbody></table>
     ${writer ? '<p class="row"><button class="btn" type="submit">Salvar times</button></p>' : ''}</form>`
+}
+
+function metering(data) {
+  const teams = (data.teams || []).map((t) => `<tr>
+    <td>${esc(t.name)} <span class="sub">${esc(t.id)}</span></td>
+    <td>${t.budgetDaily ?? '—'}</td>
+    <td>${esc(t.usageToday ?? 0)}</td>
+    <td>${t.remaining ?? '—'}</td>
+  </tr>`).join('')
+  const agents = (data.agents || []).map((a) => `<tr>
+    <td>${esc(a.name)}</td>
+    <td>${a.quotaDaily ?? '—'}</td>
+    <td>${esc(a.usageToday ?? 0)}</td>
+  </tr>`).join('')
+  const costs = data.unitCosts || {}
+  return `<p class="sub">Paperclip-light: cotas por agente + orçamento por time (unidades, não USD).</p>
+    <h3>Times</h3><table><thead><tr><th>Time</th><th>Budget/dia</th><th>Uso</th><th>Restante</th></tr></thead><tbody>${teams}</tbody></table>
+    <h3>Agentes</h3><table><thead><tr><th>Agente</th><th>Cota/dia</th><th>Uso</th></tr></thead><tbody>${agents}</tbody></table>
+    <p class="sub">Custos: MCP=${costs.mcp ?? 1} · chat nuvem=${costs.chatCloud ?? 10}</p>
+    <h3>BYOK (estimativa 30d)</h3>
+    <p class="sub">${esc(data.byok?.disclaimer || '')}</p>
+    <p><strong>Total ~$${esc(data.byok?.totalEstUsd ?? 0)}</strong> · ${esc(data.byok?.rows ?? 0)} chamadas</p>
+    <pre class="panel">${esc(JSON.stringify(data.byok?.providers || {}, null, 2))}</pre>`
+}
+
+function githubSync(data) {
+  const cfg = data.config || {}
+  return `<p class="sub">Espelha <code>shared/</code> + snapshot de política no GitHub corporativo. Token PAT em <strong>Chaves org → github</strong>. Não sincroniza <code>people/</code>.</p>
+    <form id="github-sync" class="panel">
+      <label><input type="checkbox" name="enabled" ${cfg.enabled ? 'checked' : ''}/> Ativo</label>
+      <label>Owner<input name="owner" value="${esc(cfg.owner || '')}" placeholder="org-name"/></label>
+      <label>Repo<input name="repo" value="${esc(cfg.repo || '')}" placeholder="corp-memory"/></label>
+      <label>Branch<input name="branch" value="${esc(cfg.branch || 'main')}"/></label>
+      <label>Prefixo no repo<input name="repoPrefix" value="${esc(cfg.repoPrefix || 'corp-vault')}"/></label>
+      <label><input type="checkbox" name="scheduleEnabled" ${cfg.scheduleEnabled ? 'checked' : ''}/> Agendamento (verifica a cada 5 min)</label>
+      <label>Intervalo alvo (min)<input type="number" name="intervalMinutes" min="15" max="1440" value="${esc(cfg.intervalMinutes || 60)}"/></label>
+      <label>Secret CI (header X-KeepMind-Hook)<input type="password" name="hookSecret" placeholder="${cfg.hookSecretSet ? 'Substituir…' : 'opcional'}" autocomplete="new-password"/></label>
+      <p class="sub">Token: ${data.hasToken ? 'ok' : 'faltando'} · Último: ${esc(cfg.lastMessage || '—')} · POST /api/hooks/github-sync</p>
+      <div class="row">
+        <button class="btn" type="submit">Salvar</button>
+        <button type="button" class="btn ghost" id="github-run">Sync agora</button>
+      </div>
+    </form>`
 }
 
 function members(data) {
   if (!data.members) return '<p>A lista de pessoas fica com dono e admin.</p>'
   const rows = data.members.map(member => `<tr>
-    <td>${esc(member.name)}<div class="sub">${esc(member.email)}</div></td>
+    <td>${esc(member.name)}<div class="sub">${esc(member.email)}${member.title ? ` · ${esc(member.title)}` : ''}</div></td>
     <td><span class="pill">${esc(member.role)}</span></td>
     <td>${esc(member.teamId)}</td>
     <td>${member.disabled ? 'inativa' : 'ativa'}</td>
@@ -192,6 +325,7 @@ function members(data) {
   return `<form id="member" class="panel">
       <div class="row">
         <input name="name" placeholder="Nome" autocomplete="name" required />
+        <input name="title" placeholder="Cargo (opcional)" autocomplete="off" />
         <input name="email" type="email" placeholder="Email" autocomplete="off" required />
         <input name="password" type="password" placeholder="Senha (12+)" autocomplete="new-password" required />
         <select name="role"><option>member</option><option>auditor</option><option>admin</option>${state.me.role === 'owner' ? '<option>owner</option>' : ''}</select>
@@ -202,13 +336,18 @@ function members(data) {
 }
 
 function agents(data) {
+  const modes = state.meta?.autonomy || []
   const rows = (data.agents || []).map(agent => `<tr>
-    <td>${esc(agent.name)}</td>
+    <td>${esc(agent.name)}<div class="sub">${esc(agent.id)}${agent.kind === 'app' ? ' · app' : ''}${agent.description ? ` — ${esc(agent.description)}` : ''}</div></td>
     <td>${esc(agent.teamId)}</td>
+    <td><select data-agent-autonomy="${esc(agent.id)}" ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''}>${modes.map(m => `<option ${(agent.autonomyMax || 'supervised') === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></td>
+    <td><input type="number" min="0" placeholder="∞" data-agent-quota="${esc(agent.id)}" value="${agent.quotaDaily ?? ''}" ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''} style="width:5rem"/></td>
+    <td class="sub">${esc(agent.usageToday ?? 0)}${agent.usageDay ? ` · ${esc(agent.usageDay)}` : ''}</td>
     <td><input type="checkbox" data-agent="${esc(agent.id)}" ${agent.enabled ? 'checked' : ''} ${state.me.role === 'member' || state.me.role === 'auditor' ? 'disabled' : ''}/></td>
   </tr>`).join('')
   const writer = state.me.role === 'owner' || state.me.role === 'admin'
-  return `<form id="agents"><table><thead><tr><th>Agente</th><th>Time</th><th>Ligado</th></tr></thead><tbody>${rows}</tbody></table>
+  return `<p class="sub">Autorize agentes do tenant (brain, ingest, sync, <strong>Cursor Composer</strong> como conector de app). Runtime MCP completo vem no roadmap v0.4.</p>
+    <form id="agents"><table><thead><tr><th>Agente</th><th>Time</th><th>Autonomia máx.</th><th>Cota/dia</th><th>Uso hoje</th><th>Ligado</th></tr></thead><tbody>${rows}</tbody></table>
     ${writer ? '<p><button class="btn" type="submit">Salvar agentes</button></p>' : ''}</form>`
 }
 
@@ -233,7 +372,9 @@ function vault(data) {
 function audit(data) {
   if (!data.entries) return '<p>A auditoria fica com dono, admin e auditor.</p>'
   const rows = data.entries.map(entry => `<tr><td>${esc(entry.ts)}</td><td>${esc(entry.actor)}</td><td>${esc(entry.op)}</td><td>${esc(entry.path || entry.email || '')}</td></tr>`).join('')
-  return `<table><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Onde</th></tr></thead><tbody>${rows}</tbody></table>`
+  return `<p class="row"><a class="btn ghost" href="/api/audit/export?format=ndjson" download>Export NDJSON (SIEM)</a>
+    <a class="btn ghost" href="/api/audit/export?format=csv" download>Export CSV</a></p>
+    <table><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Onde</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
 function scan(data) {
@@ -276,6 +417,109 @@ function bind() {
     state.section = 'overview'
     render()
   })
+  document.querySelector('#sso')?.addEventListener('submit', async event => {
+    event.preventDefault()
+    const form = new FormData(event.target)
+    const res = await api('/api/oidc-config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        issuer: form.get('issuer'),
+        clientId: form.get('clientId'),
+        redirectUri: form.get('redirectUri'),
+        adminGroup: form.get('adminGroup'),
+        clientSecret: form.get('clientSecret')
+      })
+    })
+    state.toast = res.body.ok ? 'SSO salvo.' : (res.body.message || COPY[res.body.error] || 'Não salvou.')
+    if (res.body.ok) state.data = res.body
+    render()
+  })
+  document.querySelector('#clear-sso')?.addEventListener('click', async () => {
+    const res = await api('/api/oidc-config', { method: 'DELETE' })
+    state.toast = res.body.ok ? 'SSO removido.' : 'Não removeu.'
+    if (res.body.ok) state.data = res.body
+    render()
+  })
+  document.querySelector('#secrets')?.addEventListener('submit', async event => {
+    event.preventDefault()
+    const form = new FormData(event.target)
+    const providers = {}
+    for (const id of ['openai', 'anthropic', 'gemini', 'grok', 'github']) {
+      const v = String(form.get(id) || '').trim()
+      if (v) providers[id] = v
+    }
+    const res = await api('/api/org-secrets', { method: 'PUT', body: JSON.stringify({ providers }) })
+    state.toast = res.body.ok ? 'Chaves salvas.' : (COPY[res.body.error] || 'Não salvou.')
+    if (res.body.ok) state.data = res.body
+    render()
+  })
+  document.querySelector('#clear-secrets')?.addEventListener('click', async () => {
+    const res = await api('/api/org-secrets', {
+      method: 'PUT',
+      body: JSON.stringify({ providers: { openai: '', anthropic: '', gemini: '', grok: '' } })
+    })
+    state.toast = res.body.ok ? 'Chaves removidas.' : 'Não limpou.'
+    if (res.body.ok) state.data = res.body
+    render()
+  })
+  document.querySelector('#github-sync')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const form = new FormData(event.target)
+    const res = await api('/api/github-sync', {
+      method: 'PUT',
+      body: JSON.stringify({
+        enabled: !!form.get('enabled'),
+        owner: form.get('owner'),
+        repo: form.get('repo'),
+        branch: form.get('branch'),
+        repoPrefix: form.get('repoPrefix'),
+        scheduleEnabled: !!form.get('scheduleEnabled'),
+        intervalMinutes: Number(form.get('intervalMinutes')) || 60,
+        hookSecret: form.get('hookSecret')
+      })
+    })
+    state.toast = res.body.ok ? 'GitHub sync salvo.' : (res.body.message || 'Não salvou.')
+    if (res.body.ok) await load()
+    render()
+  })
+  document.querySelector('#github-run')?.addEventListener('click', async () => {
+    const res = await api('/api/github-sync/run', { method: 'POST', body: JSON.stringify({ direction: 'both' }) })
+    state.toast = res.body.ok ? res.body.message : (res.body.message || 'Falhou.')
+    if (res.body.ok) await load()
+    render()
+  })
+  document.querySelector('#sync-token')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const form = new FormData(event.target)
+    const res = await api('/api/sync-tokens', {
+      method: 'POST',
+      body: JSON.stringify({ label: form.get('label'), userId: form.get('userId') })
+    })
+    if (res.body.ok && res.body.token?.secret) {
+      const box = document.querySelector('#sync-secret')
+      if (box) {
+        box.hidden = false
+        box.innerHTML = `<p class="sub"><strong>Copie agora</strong> — não mostramos de novo:</p>
+          <pre>${esc(res.body.token.secret)}</pre>
+          <p class="sub">Use: <code>KEEPMIND_CORP_TOKEN=… node tools/corp-push.mjs --url … --dir ./memory</code></p>`
+      }
+      toast('Token criado.')
+      await load()
+      render()
+      return
+    }
+    state.toast = res.body.message || COPY[res.body.error] || 'Não criou token.'
+    render()
+  })
+  document.querySelectorAll('[data-revoke-token]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const id = button.dataset.revokeToken
+      const res = await api(`/api/sync-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      state.toast = res.body.ok ? 'Token revogado.' : (COPY[res.body.error] || 'Não revogou.')
+      if (res.body.ok) await load()
+      render()
+    })
+  })
   document.querySelector('#policy')?.addEventListener('submit', async event => {
     event.preventDefault()
     const form = new FormData(event.target)
@@ -285,7 +529,25 @@ function bind() {
         providers: form.getAll('provider'),
         autonomyCeiling: form.get('autonomyCeiling'),
         retentionDays: Number(form.get('retentionDays')),
-        residency: form.get('residency')
+        residency: form.get('residency'),
+        sharedAccess: (() => {
+          try {
+            const raw = String(form.get('sharedAccess') || '[]')
+            const parsed = JSON.parse(raw)
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        })(),
+        peopleAccess: (() => {
+          try {
+            const raw = String(form.get('peopleAccess') || '[]')
+            const parsed = JSON.parse(raw)
+            return Array.isArray(parsed) ? parsed : []
+          } catch {
+            return []
+          }
+        })()
       })
     })
     state.toast = res.body.ok ? 'Política salva.' : (COPY[res.body.error] || 'Não salvou.')
@@ -294,11 +556,16 @@ function bind() {
   })
   document.querySelector('#teams')?.addEventListener('submit', async event => {
     event.preventDefault()
-    const teams = (state.data.teams || []).map(team => ({
-      id: team.id,
-      name: document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="name"]`)?.value || team.name,
-      autonomy: document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="autonomy"]`)?.value || team.autonomy
-    }))
+    const teams = (state.data.teams || []).map(team => {
+      const bRaw = document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="budget"]`)?.value
+      const budgetDaily = bRaw === '' || bRaw == null ? null : Number(bRaw)
+      return {
+        id: team.id,
+        name: document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="name"]`)?.value || team.name,
+        autonomy: document.querySelector(`[data-team="${CSS.escape(team.id)}"][data-field="autonomy"]`)?.value || team.autonomy,
+        budgetDaily: Number.isFinite(budgetDaily) ? budgetDaily : null
+      }
+    })
     const res = await api('/api/teams', { method: 'PUT', body: JSON.stringify({ teams }) })
     state.error = res.body.ok ? '' : (COPY[res.body.error] || res.body.message || 'Não salvou.')
     state.toast = res.body.ok ? 'Times salvos.' : ''
@@ -310,7 +577,13 @@ function bind() {
     const form = new FormData(event.target)
     const res = await api('/api/members', {
       method: 'POST',
-      body: JSON.stringify({ name: form.get('name'), email: form.get('email'), password: form.get('password'), role: form.get('role') })
+      body: JSON.stringify({
+        name: form.get('name'),
+        title: form.get('title'),
+        email: form.get('email'),
+        password: form.get('password'),
+        role: form.get('role')
+      })
     })
     state.error = res.body.ok ? '' : (COPY[res.body.error] || res.body.message || 'Não adicionou.')
     state.toast = res.body.ok ? 'Pessoa adicionada.' : ''
@@ -319,10 +592,16 @@ function bind() {
   })
   document.querySelector('#agents')?.addEventListener('submit', async event => {
     event.preventDefault()
-    const agents = (state.data.agents || []).map(agent => ({
-      ...agent,
-      enabled: !!document.querySelector(`[data-agent="${CSS.escape(agent.id)}"]`)?.checked
-    }))
+    const agents = (state.data.agents || []).map(agent => {
+      const qRaw = document.querySelector(`[data-agent-quota="${CSS.escape(agent.id)}"]`)?.value
+      const quotaDaily = qRaw === '' || qRaw == null ? null : Number(qRaw)
+      return {
+        ...agent,
+        enabled: !!document.querySelector(`[data-agent="${CSS.escape(agent.id)}"]`)?.checked,
+        autonomyMax: document.querySelector(`[data-agent-autonomy="${CSS.escape(agent.id)}"]`)?.value || agent.autonomyMax,
+        quotaDaily: Number.isFinite(quotaDaily) ? quotaDaily : null
+      }
+    })
     const res = await api('/api/agents', { method: 'PUT', body: JSON.stringify({ agents }) })
     state.toast = res.body.ok ? 'Agentes salvos.' : (COPY[res.body.error] || 'Não salvou.')
     if (res.body.ok) state.data = res.body

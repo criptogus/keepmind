@@ -16,6 +16,8 @@ import * as github from './services/github'
 import { checkForUpdates, installUpdate, updaterStatus } from './services/updater'
 import { listModels, deleteModel } from './services/models'
 import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
+import { corpSyncNow } from './services/corp-sync'
+import { reconcileCorpSyncSchedule } from './services/corp-sync-scheduler'
 import { analyzeHealth, applyHealth } from './services/health'
 import { evolutionHints, installSkill, keepSkillCopy, listVaultSkills, loadSakNotes, loadSkillThreats, reviewVaultSkill, scanSkillThreats, searchRegistry, skillTrust, skillsSnapshot } from './services/skillsHub'
 import { attachVaultCrypto, securityStatus, securityScan, securityConfigure, encryptAll, decryptAll, securityAiAlerts, type SecurityPatch } from './services/security'
@@ -84,6 +86,20 @@ function validateAiPatch(p: any): void {
   optStr(p.apiKey, 'ai.apiKey', 512)
   optStr(p.model, 'ai.model', 256)
   optStr(p.baseUrl, 'ai.baseUrl', 512)
+}
+
+function validateCorpSyncPatch(p: any): void {
+  if (!isPlainObject(p)) bad('corpSync patch')
+  for (const k of Object.keys(p)) {
+    if (!['baseUrl', 'token', 'enabled', 'intervalMinutes', 'lastPullAt', 'lastPushAt', 'lastStatus'].includes(k)) bad(`corpSync.${k}`)
+  }
+  if (p.baseUrl !== undefined) optStr(p.baseUrl, 'corpSync.baseUrl', 2048)
+  if (p.token !== undefined) optStr(p.token, 'corpSync.token', 2048)
+  if (p.enabled !== undefined && typeof p.enabled !== 'boolean') bad('corpSync.enabled')
+  if (p.intervalMinutes !== undefined && (typeof p.intervalMinutes !== 'number' || p.intervalMinutes < 0 || p.intervalMinutes > 10080)) bad('corpSync.intervalMinutes')
+  for (const k of ['lastPullAt', 'lastPushAt', 'lastStatus'] as const) {
+    if (p[k] !== undefined && p[k] !== null) optStr(p[k], `corpSync.${k}`, 512)
+  }
 }
 
 function validateGithubPatch(p: any): void {
@@ -180,6 +196,18 @@ export function registerIpc(
     if (patch.obfuscatePaths === false) sync?.resyncAll()
     return res
   })
+  ipcMain.handle('config:updateCorpSync', (_e, patch: any) => {
+    validateCorpSyncPatch(patch)
+    const cfg = store.updateCorpSync(stripForbiddenKeys(patch))
+    reconcileCorpSyncSchedule(store)
+    return cfg
+  })
+  ipcMain.handle('corpSync:now', async () => {
+    const result = await corpSyncNow(store)
+    reconcileCorpSyncSchedule(store)
+    return result
+  })
+  ipcMain.handle('corpSync:status', () => store.get().corpSync ?? {})
   ipcMain.handle('config:updateMcp', (_e, id: string, patch: any) => {
     reqStr(id, 'mcp id', 128)
     validateMcpServerShape(patch, true)
@@ -726,6 +754,8 @@ export function registerIpc(
     } catch { /* ignore */ }
     return false
   })
+
+  reconcileCorpSyncSchedule(store)
 }
 
 const mcpLogs: string[] = []
