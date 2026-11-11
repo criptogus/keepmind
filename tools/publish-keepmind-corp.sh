@@ -5,7 +5,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 REF="${1:-cursor/corp-roadmap-v02-e37c}"
 REMOTE="${KEEPMIND_CORP_REMOTE:-keepmind-corp}"
+SSH_KEY="${KEEPMIND_CORP_SSH_KEY:-$ROOT/.ssh-corp-push/keepmind-corp}"
 URL="${KEEPMIND_CORP_URL:-https://github.com/criptogus/keepmind-corp.git}"
+if [ -f "$SSH_KEY" ]; then
+  URL="${KEEPMIND_CORP_SSH_URL:-git@github.com:criptogus/keepmind-corp.git}"
+  export GIT_SSH_COMMAND="ssh -i \"$SSH_KEY\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+fi
 
 if ! git remote get-url "$REMOTE" &>/dev/null; then
   git remote add "$REMOTE" "$URL"
@@ -20,7 +25,7 @@ if ! gh repo view criptogus/keepmind-corp &>/dev/null; then
   exit 1
 fi
 
-if ! git push -u "$REMOTE" "${REF}:main" 2>&1; then
+if ! git push -u "$REMOTE" "${REF}:main"; then
   echo ""
   echo "Push failed (often: cursor[bot] has no write access to keepmind-corp)."
   echo "Fix one of:"
