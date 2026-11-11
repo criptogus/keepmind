@@ -18,11 +18,12 @@ else
   git remote set-url "$REMOTE" "$URL"
 fi
 
-if ! gh repo view criptogus/keepmind-corp &>/dev/null; then
-  echo "Repository criptogus/keepmind-corp does not exist yet."
-  echo "Create it on GitHub (empty repo, no README), then re-run:"
-  echo "  $0 $REF"
-  exit 1
+if [ ! -f "$SSH_KEY" ]; then
+  # gh breaks when Cloud GH_TOKEN is invalid — unset for this check only.
+  ( unset GH_TOKEN GITHUB_TOKEN; gh repo view criptogus/keepmind-corp &>/dev/null ) || {
+    echo "Repository criptogus/keepmind-corp not visible."
+    exit 1
+  }
 fi
 
 push_target() {

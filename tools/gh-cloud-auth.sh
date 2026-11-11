@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Use GH_TOKEN / GITHUB_TOKEN from Cloud Agent secrets for gh + git push as criptogus.
 set -euo pipefail
-TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+TOKEN="$(printf '%s' "${GH_TOKEN:-${GITHUB_TOKEN:-}}" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 if [ -z "$TOKEN" ]; then
   echo "[gh-cloud-auth] No GH_TOKEN/GITHUB_TOKEN — using Cursor GitHub App token (limited repo scope)."
   gh auth status -h github.com 2>/dev/null || true

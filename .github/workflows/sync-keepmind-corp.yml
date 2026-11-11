@@ -1,0 +1,27 @@
+name: Sync keepmind-corp
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push to criptogus/keepmind-corp
+        env:
+          TOKEN: ${{ secrets.KEEPMIND_CORP_PUSH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "Missing repo secret KEEPMIND_CORP_PUSH_TOKEN (fine-grained PAT with contents write on keepmind-corp)."
+            exit 1
+          fi
+          git remote add keepmind-corp "https://x-access-token:${TOKEN}@github.com/criptogus/keepmind-corp.git"
+          git push -u keepmind-corp "HEAD:main"
