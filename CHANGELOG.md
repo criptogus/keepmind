@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- KeepMind is now completely free: removed the Stripe Pro plan, payment link and license-key activation from Settings.
+
+### Fixed
+- corp selfcheck no longer hangs CI: the GitHub sync scheduler timer is unref'd.
+- Continuous and release builds use Python 3.11 and Windows Server 2022 runners for compatibility with node-gyp 9.4.1 during native dependency installation.
+
 ### Added
 - **Continuous self-update** — every push to `main` rebuilds a rolling `continuous` prerelease (macOS/Windows/Linux); installed apps poll it on launch + every 6h, download the matching artifact and self-install (macOS bundle swap, Windows NSIS `/S`, Linux AppImage swap). Works unsigned; dedupes by release marker so it won't re-download while awaiting restart.
 - **Webhook triggers** — any automation exposes `POST /hook/<id>` (token auth, localhost or LAN) so external apps (Zapier, n8n, GitHub Actions) can fire brain jobs; approval-mode jobs still queue for review.
