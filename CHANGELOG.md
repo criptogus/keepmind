@@ -5,7 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-11-12
+
 ### Changed
+- Sync keepmind-corp now merges main into criptogus/keepmind-corp over an SSH deploy key (secret `KEEPMIND_CORP_DEPLOY_KEY`) instead of a PAT mirror push.
 - KeepMind is now completely free: removed the Stripe Pro plan, payment link and license-key activation from Settings.
 
 ### Fixed
