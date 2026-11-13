@@ -51,6 +51,7 @@ function markSeen(marker: string) {
 }
 
 function send(channel: string, payload?: any) {
+  if (channel === 'error') console.error('[updater]', payload?.message ?? 'Update failed')
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('updater:event', { channel, ...payload })
   }
@@ -160,9 +161,13 @@ async function installWin(updateFile: string): Promise<void> {
   const r = receipt()
   writeFileSync(script, [
     "$ErrorActionPreference = 'Stop'",
+    `Start-Transcript -Path ${q(join(app.getPath('userData'), 'update', 'install.log'))} -Append`,
+    `Write-Output 'Waiting for application exit'`,
     `Wait-Process -Id ${process.pid} -ErrorAction SilentlyContinue`,
+    `Write-Output 'Starting installer'`,
     `$env:KEEPMIND_USER_DATA_DIR = ${q(app.getPath('userData'))}`,
     `$installer = Start-Process -FilePath ${q(updateFile)} -ArgumentList @('/S', ${q('/D=' + dirname(process.execPath))}) -Wait -PassThru`,
+    'Write-Output ("Installer exit: " + $installer.ExitCode)',
     "if ($installer.ExitCode -ne 0) { exit $installer.ExitCode }",
     `[System.IO.File]::WriteAllText(${q(r.stateFile)}, ${q(JSON.stringify({seen:r.marker}))})`,
     `Remove-Item -LiteralPath ${q(r.pendingFile)} -Force`,
