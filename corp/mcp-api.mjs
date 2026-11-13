@@ -32,8 +32,9 @@ export function mountMcpApi({ vault, getOrg, audit, persistOrg, memoryFilesForUs
       try {
         assertTeamBudget(org, user.teamId)
         const agent = assertAgentQuota(org, agentId)
+        if (agent.teamId && agent.teamId !== 'everyone' && agent.teamId !== user.teamId) { const e = new Error('Agent is not available to this team'); e.code = 'forbidden'; throw e }
         const files = memoryFilesForUser(vault, user, org)
-        const text = invokeCorpMcpTool({
+        const text = await invokeCorpMcpTool({
           vault,
           org,
           user,
