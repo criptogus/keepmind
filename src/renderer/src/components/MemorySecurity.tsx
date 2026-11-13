@@ -59,7 +59,8 @@ export default function MemorySecurity({ onStatusChange, setupOnly = false, onBl
     finally { inFlight.current = false; setBusy(false) }
   }
   return <div className="card card-pad">
-    <h2>{setupOnly ? 'Proteja sua memória antes de guardar' : 'Proteção da memória'}</h2>
+    <h2>{setupOnly ? 'Configure a proteção da memória' : 'Proteção da memória'}</h2>
+    <p className="dim">A criptografia protege o contexto registrado pelos agentes. Esta senha desbloqueia a memória; ela não é uma chave de API da sua aplicação de IA.</p>
     <p>{status ? status.unlocked ? 'Memória desbloqueada.' : 'Memória bloqueada.' : 'Verificando a proteção da memória…'}</p>
     {recovery ? <div role="region" aria-label="Chave de recuperação">
       <p>Guarde esta chave de recuperação em um local seguro, fora do aplicativo. Ela é exibida apenas agora. Sem a senha e a chave, você poderá perder o acesso aos dados.</p>

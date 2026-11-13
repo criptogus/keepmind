@@ -7,7 +7,7 @@ export interface AppearancePreferences {
 }
 const KEY = 'keepmind:appearance'
 const EVENT = 'keepmind:appearance-change'
-const defaults: AppearancePreferences = { avatarEnabled: true, motionEnabled: true, backgroundEnabled: false }
+const defaults: AppearancePreferences = { avatarEnabled: true, motionEnabled: true, backgroundEnabled: true }
 
 export function readAppearance(): AppearancePreferences {
   try {

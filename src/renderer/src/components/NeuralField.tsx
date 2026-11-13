@@ -55,12 +55,12 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
       canvas.width = Math.max(1, Math.floor(w * scale))
       canvas.height = Math.max(1, Math.floor(h * scale))
       ctx.setTransform(scale, 0, 0, scale, 0, 0)
-      const count = Math.min(130, Math.max(60, Math.floor((w * h) / 16000)))
+      const count = Math.min(96, Math.max(36, Math.floor((w * h) / 16000)))
       neurons = Array.from({ length: count }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.28,
-        vy: (Math.random() - 0.5) * 0.28,
+        vx: (Math.random() - 0.5) * 0.18,
+        vy: (Math.random() - 0.5) * 0.18,
         r: 1.3 + Math.random() * 1.8,
         phase: Math.random() * Math.PI * 2,
         charge: Math.random()
@@ -87,14 +87,14 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
 
     const fire = (from: number, chained: boolean) => {
       const outs = neighbors[from]
-      if (!outs?.length) return
+      if (!outs?.length || sparks.length >= 20) return
       const b = outs[Math.floor(Math.random() * outs.length)]
       if (sparks.some(s => s.a === from && s.b === b)) return
       sparks.push({
         a: from,
         b,
         t: 0,
-        speed: (chained ? 0.0034 : 0.0022) + Math.random() * 0.0016,
+        speed: (chained ? 0.0010 : 0.0007) + Math.random() * 0.0004,
         chained
       })
     }
@@ -102,13 +102,16 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
     const frame = (now: number) => {
       if (document.hidden) { raf = 0; return }
       raf = requestAnimationFrame(frame)
-      const dt = Math.min(now - last, 32)
+      // Cap decorative rendering at 30 fps, including high-refresh displays.
+      if (now - last < 1000 / 30) return
+      const dt = Math.min(now - last, 50)
       last = now
-      if (now - neighborAt > 280) {
+      if (now - neighborAt > 600) {
         rebuildNeighbors()
         neighborAt = now
       }
-      const boost = 1 + actRef.current * 1.4
+      const activity = Math.max(0, Math.min(1, actRef.current))
+      const boost = 1 + activity * 0.35
       ctx.clearRect(0, 0, w, h)
 
       for (const n of neurons) {
@@ -118,7 +121,7 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
         if (n.x > w + 30) n.x = -30
         if (n.y < -30) n.y = h + 30
         if (n.y > h + 30) n.y = -30
-        n.charge *= 0.985
+        n.charge *= Math.pow(0.985, dt / (1000 / 60))
       }
 
       ctx.lineWidth = 1
@@ -186,7 +189,7 @@ export default function NeuralField({ activity = 0 }: { activity?: number }) {
         ctx.fill()
       }
 
-      const minSparks = 7 + Math.round(actRef.current * 6)
+      const minSparks = 4 + Math.round(activity * 3)
       let guard = 0
       while (sparks.length < minSparks && neurons.length > 4 && guard < 24) {
         fire(Math.floor(Math.random() * neurons.length), false)
