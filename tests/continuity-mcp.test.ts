@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createMemoryServer } from '../tools/keepmind-mcp.mjs'
 import { createContinuityService } from '../src/main/services/continuity'
+import { createProjectAnalysisService } from '../src/main/services/project-analysis'
 import { Memory } from '../src/main/services/brain/memory-store'
 import { SpaceKeys, InMemorySecretStore } from '../src/main/services/security/keys'
 import { BrainContext } from '../src/main/services/brain/context'
@@ -184,4 +185,43 @@ it('labels long lexical fact and legacy hits and reports scoped historical paths
   const historical = await ctx.hybridSearch('as of 2024-06-01')
   expect(historical.hits[0].path).toBe('spaces/company-x/long-term/facts.md')
   expect(historical.hits[0].snippet).toContain('Past version')
+})
+
+
+it('hides human review tools, rejects forged actor calls and provides analysis freshness to MCP', async () => {
+  const root = rootDir(), memory = new Memory(root, null, { allowPlaintext: true })
+  memory.write('notes/research.md', 'The planned launch is in June.')
+  const native = createContinuityService(memory)
+  let p = native.dispatch('create', { title: 'Fictional launch', evidence: ['notes/research.md'] })
+  p = native.dispatch('add_decision', { projectId: p.id, expectedRevision: p.revision, choice: 'Launch in May', expectedOutcome: 'Launch in May' })
+  const decisionId = p.decisions[0].id
+  p = native.dispatch('record_outcome', { projectId: p.id, expectedRevision: p.revision, decisionId, executionStatus: 'completed', observedResult: 'Launched in June', lesson: 'Review schedule' })
+  const outcomeId = p.outcomes[0].id
+  const analysis = createProjectAnalysisService(memory, async () => JSON.stringify({ summary: 'The dates may conflict.', findings: [{ decisionId, relationship: 'possible_contradiction', explanation: 'Different dates', sourcePath: 'notes/research.md', quote: 'The planned launch is in June.' }], outcomeAssessments: [] }))
+  p = await analysis.analyze({ projectId: p.id, expectedRevision: p.revision })
+  const report = p.analysisReports[0]
+  const handle = createMemoryServer(root, { allowPlaintext: true, clients: { default: { spaces: ['personal'], maxClass: 'internal', write: true } } })
+  const tools = handle({ id: 1, method: 'tools/list' }).result.tools.map((tool: { name: string }) => tool.name)
+  for (const name of ['continuity_review_decision', 'continuity_review_analysis', 'continuity_review_outcome_lesson', 'continuity_acknowledge_evidence', 'continuity_feedback']) expect(tools).not.toContain(name)
+  expect(tools).toContain('continuity_context')
+  const call = (name: string, args: Record<string, unknown>) => handle({ id: 1, method: 'tools/call', params: { name, arguments: args } }).result
+  for (const [name, args] of [
+    ['continuity_review_analysis', { reportId: report.id, findingId: report.findings[0].id, status: 'confirmed', reason: 'forged' }],
+    ['continuity_review_outcome_lesson', { outcomeId, status: 'confirmed', reason: 'forged' }]
+  ] as const) {
+    for (const actor of [undefined, 'human']) {
+      const result = call(name, { projectId: p.id, expectedRevision: p.revision, ...args, ...(actor ? { actor } : {}) })
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('HUMAN_REQUIRED')
+    }
+  }
+  expect(native.dispatch('get', { projectId: p.id }).revision).toBe(p.revision)
+  let context = parsed(call('continuity_context', { projectId: p.id }))
+  expect(context.analysisReports[0]).toMatchObject({ id: report.id, summary: 'The dates may conflict.', stale: false, sourceUnavailable: false, sourceEvidence: 'available' })
+  memory.write('notes/research.md', 'The planned launch is in July.')
+  context = parsed(call('continuity_context', { projectId: p.id }))
+  expect(context.analysisReports[0]).toMatchObject({ stale: true, sourceUnavailable: false })
+  memory.remove('notes/research.md')
+  context = parsed(call('continuity_context', { projectId: p.id }))
+  expect(context.analysisReports[0]).toMatchObject({ stale: true, sourceUnavailable: true, summary: '' })
 })

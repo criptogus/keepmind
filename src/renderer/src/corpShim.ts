@@ -28,6 +28,10 @@ export function installCorpShim() {
     continuity: async () => {
       throw new Error('Projetos e retomada entre IAs estão disponíveis no aplicativo KeepMind. Esta edição Corp ainda não oferece esse serviço.')
     },
+    projectAnalyze: async () => { throw new Error('A análise de projetos está disponível no aplicativo KeepMind SB.') },
+    answerBenchmarkRun: async () => { throw new Error('A avaliação de respostas está disponível no aplicativo KeepMind SB.') },
+    answerBenchmarkList: async () => { throw new Error('A avaliação de respostas está disponível no aplicativo KeepMind SB.') },
+    answerBenchmarkCancel: async () => false,
     getConfig: async () => j('/api/brain/config'),
     setConfig: async (patch: Record<string, unknown>) => {
       await j('/api/brain/config', { method: 'PATCH', body: JSON.stringify(patch) })

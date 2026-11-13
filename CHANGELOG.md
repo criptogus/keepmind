@@ -8,7 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Project continuity in the desktop app, native chat and bundled MCP: versioned objectives, decisions, alternatives, attempts, artifacts, expected/observed outcomes and questions.
 - Evidence digests, changed/unavailable source checks, dependent artifact impacts, human review history and usefulness feedback.
-- Shared native/MCP persistence and permission tests, encrypted classification inheritance, context budgets and path-alias regression coverage.
+- Native model analysis proposes source-backed relationships and outcome comparisons, with literal quote validation, stale detection and human review; lesson reviews retain their history.
+- A six-case synthetic answer benchmark with model judgment, evidence validation, progress, cancellation and compatible-run history.
+- Shared native/MCP persistence and permission tests, encrypted classification inheritance, context budgets, path-alias regressions and renderer DOM interaction coverage. Installed desktop visual inspection remains outstanding.
 
 ### Changed
 - Chat, lexical retrieval, RAG and standalone MCP share current/history/as-of fact selection. Every retrieved fact fragment retains its status label; corrections refresh the index before the next query.

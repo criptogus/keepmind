@@ -1,6 +1,10 @@
+import { Memory } from '../src/main/services/brain/memory-store'
+import { SpaceKeys, InMemorySecretStore } from '../src/main/services/security/keys'
+import { createProjectAnalysisService } from '../src/main/services/project-analysis'
+import { createContinuityService } from '../src/main/services/continuity'
 import { describe, it, expect } from 'vitest'
 import { ContinuityService, withProjectLock, assertNoSymlinkPath } from '../tools/lib/continuity.mjs'
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -107,6 +111,76 @@ describe('project continuity',()=>{
       expect(()=>s.dispatch('list')).toThrow('EVIDENCE_PATH_DENIED');
       expect(()=>s.dispatch('update',{projectId:p.id,expectedRevision:p.revision,title:'Forged'})).toThrow('EVIDENCE_PATH_DENIED');
     } finally { rmSync(root,{recursive:true,force:true}) }
+  })
+
+  it('runs model callback on authorized filesystem sources and preserves human reviews',async()=>{
+    const root=mkdtempSync(join(tmpdir(),'continuity-analysis-')); mkdirSync(join(root,'notes')); mkdirSync(join(root,'projects'));
+    try {
+      writeFileSync(join(root,'notes','evidência.md'),'---\nspace: personal\nclass: sensitive\n---\nA fase termina em junho.');
+      const s=new ContinuityService({read:p=>existsSync(join(root,p))?readFileSync(join(root,p),'utf8'):null,write:(p,c)=>writeFileSync(join(root,p),c),list:p=>readdirSync(join(root,p)),scopePath:p=>p,space:()=> 'personal',withLock:(p,fn)=>withProjectLock(join(root,p),fn),assertEvidencePath:p=>assertNoSymlinkPath(root,p)});
+      let p=s.dispatch('create',{title:'Exemplo',evidence:['notes/evidência.md']}); p=s.dispatch('add_decision',{projectId:p.id,expectedRevision:p.revision,choice:'Entrega em maio',expectedOutcome:'Concluir fase'}); const decisionId=p.decisions[0].id;
+      p=s.dispatch('record_outcome',{projectId:p.id,expectedRevision:p.revision,decisionId,executionStatus:'completed',observedResult:'Concluiu em junho',lesson:'Planejar prazo',evidence:['notes/evidência.md']}); const outcomeId=p.outcomes[0].id;
+      p=await s.analyze({projectId:p.id,expectedRevision:p.revision},async ({user})=>{ const input=JSON.parse(user); expect(input.sources[0].content).toContain('junho'); return JSON.stringify({summary:'Diferença de prazo',findings:[{decisionId,relationship:'possible_contradiction',explanation:'Datas diferem',sourcePath:'notes/evidência.md',quote:'A fase termina em junho.'}],outcomeAssessments:[{outcomeId,comparison:'Mais tarde que esperado',evidenceLevel:'limited',sourcePath:'notes/evidência.md',quote:'A fase termina em junho.'}]}) },{provider:'example',model:'fictional'});
+      const report=p.analysisReports[0]; expect(report.provider).toBe('example'); expect(report.findings[0].status).toBe('proposed'); expect(report.outcomeAssessments[0].causality).toBe('not_established'); expect(s.dispatch('context',{projectId:p.id}).analysisReports[0].stale).toBe(false);
+      expect(()=>s.dispatch('review_analysis',{projectId:p.id,expectedRevision:p.revision,reportId:report.id,findingId:report.findings[0].id,status:'confirmed',reason:'checked',actor:'human'})).toThrow('HUMAN_REQUIRED');
+      p=s.dispatch('review_analysis',{projectId:p.id,expectedRevision:p.revision,reportId:report.id,findingId:report.findings[0].id,status:'confirmed',reason:'checked'},'human');
+      p=s.dispatch('review_outcome_lesson',{projectId:p.id,expectedRevision:p.revision,outcomeId,status:'confirmed',reason:'reviewed'},'human'); expect(p.outcomes).toHaveLength(1); expect(p.outcomes[0].lessonReviews?.[0].status).toBe('confirmed');
+      writeFileSync(join(root,'notes','evidência.md'),'updated'); expect(s.dispatch('context',{projectId:p.id}).analysisReports[0].stale).toBe(true);
+      rmSync(join(root,'notes','evidência.md')); const hidden=s.dispatch('get',{projectId:p.id}).analysisReports[0]; expect(hidden.sourceUnavailable).toBe(true); expect(hidden.findings[0].quote).toBe(''); expect(hidden.summary).toBe(''); expect(s.dispatch('context',{projectId:p.id}).analysisReports[0].summary).toBe('');
+    } finally {rmSync(root,{recursive:true,force:true})}
+  })
+  it('rejects fabricated quotes, IDs and source changes during model execution',async()=>{
+    const f=fixture(), s=f.service(); f.files.set('notes/a.md','source alpha'); let p=s.dispatch('create',{title:'x',evidence:['notes/a.md']}); p=s.dispatch('add_decision',{projectId:p.id,expectedRevision:p.revision,choice:'x'}); const decisionId=p.decisions[0].id;
+    const args={projectId:p.id,expectedRevision:p.revision}; const response=(quote:string,id=decisionId)=>JSON.stringify({summary:'x',findings:[{decisionId:id,relationship:'possible_contradiction',explanation:'x',sourcePath:'notes/a.md',quote}],outcomeAssessments:[]});
+    await expect(s.analyze(args,async()=>response('invented'))).rejects.toThrow('INVALID_ANALYSIS_RESPONSE');
+    await expect(s.analyze(args,async()=>response('alpha','00000000-0000-0000-0000-000000000000'))).rejects.toThrow('INVALID_ANALYSIS_RESPONSE');
+    await expect(s.analyze(args,async()=>{f.files.set('notes/a.md','new');return response('alpha')})).rejects.toThrow('STALE_ANALYSIS');
+    expect(s.dispatch('get',{projectId:p.id}).analysisReports).toHaveLength(0);
+  })
+  it('rejects cross-space sources and concurrent project revisions during analysis',async()=>{
+    const f=fixture(), s=f.service(); f.files.set('notes/a.md','ok'); let p=s.dispatch('create',{title:'x',evidence:['notes/a.md']}); const args={projectId:p.id,expectedRevision:p.revision};
+    await expect(s.analyze(args,async()=>{s.dispatch('update',{projectId:p.id,expectedRevision:p.revision,title:'changed'});return JSON.stringify({summary:'x',findings:[],outcomeAssessments:[]})})).rejects.toThrow('STALE_ANALYSIS');
+    p=s.dispatch('get',{projectId:p.id}); f.files.set('notes/a.md','---\nspace: other\n---\nprivate'); await expect(s.analyze({projectId:p.id,expectedRevision:p.revision},async()=>{throw Error('MUST_NOT_CALL')})).rejects.toThrow('EVIDENCE_UNAVAILABLE');
+  })
+
+  it('rejects oversized total model context without calling the callback',async()=>{
+    const f=fixture(), s=f.service(); let p=s.dispatch('create',{title:'x'});
+    for(let n=0;n<36;n++) p=s.dispatch('add_decision',{projectId:p.id,expectedRevision:p.revision,choice:'x',rationale:'z'.repeat(4000)});
+    let called=false; await expect(s.analyze({projectId:p.id,expectedRevision:p.revision},async()=>{called=true;return '{}'})).rejects.toThrow('ANALYSIS_CONTEXT_BUDGET_EXCEEDED'); expect(called).toBe(false);
+  })
+
+  it('marks an analysis without sources as unverified and preserves initial lesson confirmation',async()=>{
+    const f=fixture(), s=f.service(); let p=s.dispatch('create',{title:'x'}); p=s.dispatch('add_decision',{projectId:p.id,expectedRevision:p.revision,choice:'a'}); const decisionId=p.decisions[0].id;
+    p=s.dispatch('record_outcome',{projectId:p.id,expectedRevision:p.revision,decisionId,executionStatus:'completed',observedResult:'x',lesson:'lesson',lessonConfirmed:true},'human');
+    const outcomeId=p.outcomes[0].id; p=s.dispatch('review_outcome_lesson',{projectId:p.id,expectedRevision:p.revision,outcomeId,status:'rejected',reason:'reconsidered'},'human'); expect(p.outcomes[0].lessonReviews?.map(r=>r.status)).toEqual(['confirmed','rejected']);
+    await expect(s.analyze({projectId:p.id,expectedRevision:p.revision},async()=>JSON.stringify({summary:'x',findings:[],outcomeAssessments:[{outcomeId,comparison:'Unsupported',evidenceLevel:'supported',sourcePath:'notes/fake.md',quote:'fake'}]}))).rejects.toThrow('INVALID_ANALYSIS_RESPONSE');
+    p=await s.analyze({projectId:p.id,expectedRevision:p.revision},async()=>JSON.stringify({summary:'No sources',findings:[],outcomeAssessments:[{outcomeId,comparison:'Unverified',evidenceLevel:'none',sourcePath:null,quote:null}]}));
+    expect(p.analysisReports[0].sourceEvidence).toBe('none'); expect(s.dispatch('context',{projectId:p.id}).analysisReports[0].outcomeAssessments[0].evidenceLevel).toBe('none');
+  })
+
+  it('rejects inconsistent stored review status and lesson confirmation',async()=>{
+    const f=fixture(), s=f.service(); f.files.set('notes/a.md','source'); let p=s.dispatch('create',{title:'x',evidence:['notes/a.md']}); p=s.dispatch('add_decision',{projectId:p.id,expectedRevision:p.revision,choice:'x'}); const decisionId=p.decisions[0].id;
+    p=s.dispatch('record_outcome',{projectId:p.id,expectedRevision:p.revision,decisionId,executionStatus:'completed',observedResult:'done',lesson:'x'});
+    p=await s.analyze({projectId:p.id,expectedRevision:p.revision},async()=>JSON.stringify({summary:'x',findings:[{decisionId,relationship:'uncertain',explanation:'x',sourcePath:'notes/a.md',quote:'source'}],outcomeAssessments:[]}));
+    const file=`projects/${p.id}.md`, original=f.files.get(file)!; const corrupt=(mutate:(v:any)=>void)=>{const match=original.match(/```json\n([\s\S]*?)\n```/)!;const data=JSON.parse(match[1]);mutate(data);f.files.set(file,original.replace(match[1],JSON.stringify(data)));expect(()=>s.dispatch('get',{projectId:p.id})).toThrow('CORRUPT_PROJECT')};
+    corrupt(x=>{x.analysisReports[0].findings[0].status='confirmed'});
+    corrupt(x=>{x.outcomes[0].lessonConfirmed=true;x.outcomes[0].lessonConfirmedAt=new Date().toISOString()});
+  })
+  it('allows 100 sources in a report and rejects 101',async()=>{
+    const f=fixture(), s=f.service(); const paths=Array.from({length:101},(_,i)=>`notes/source-${i}.md`); paths.forEach(path=>f.files.set(path,'fictional source'));
+    let p=s.dispatch('create',{title:'x'}); for(let i=0;i<4;i++) p=s.dispatch('add_decision',{projectId:p.id,expectedRevision:p.revision,choice:`choice ${i}`,evidence:paths.slice(i*25,i*25+25)});
+    p=await s.analyze({projectId:p.id,expectedRevision:p.revision},async()=>JSON.stringify({summary:'x',findings:[],outcomeAssessments:[]})); expect(p.analysisReports[0].sources).toHaveLength(100); expect(s.dispatch('get',{projectId:p.id}).analysisReports[0].sources).toHaveLength(100);
+    p=s.dispatch('add_decision',{projectId:p.id,expectedRevision:p.revision,choice:'extra',evidence:[paths[100]]}); await expect(s.analyze({projectId:p.id,expectedRevision:p.revision},async()=>{throw Error('called')})).rejects.toThrow('ANALYSIS_SOURCE_LIMIT');
+  })
+  it('persists analysis encrypted with classification inherited from a higher classified source',async()=>{
+    const root=mkdtempSync(join(tmpdir(),'continuity-encrypted-')); try {
+      const memory=new Memory(root,null); memory.keys=(await SpaceKeys.setup('fictional test password',new InMemorySecretStore())).keys;
+      memory.write('notes/source.md','---\nclass: internal\nspace: personal\n---\nFictional original'); const continuity=createContinuityService(memory);
+      let p=continuity.dispatch('create',{title:'Example',evidence:['notes/source.md']});
+      memory.write('notes/source.md','---\nclass: sensitive\nspace: personal\n---\nFictional protected observation'); memory.classificationFloor='public';
+      const analysis=createProjectAnalysisService(memory,async()=>JSON.stringify({summary:'Reviewed example',findings:[],outcomeAssessments:[]})); p=await analysis.analyze({projectId:p.id,expectedRevision:p.revision});
+      const file=join(root,'projects',`${p.id}.md`); const ciphertext=readFileSync(file,'utf8'); expect(ciphertext.startsWith('KEEPMIND-ITEM:1\n')).toBe(true); expect(ciphertext).not.toContain('Reviewed example'); expect(memory.read(`projects/${p.id}.md`)).toContain('class: sensitive');
+    } finally {rmSync(root,{recursive:true,force:true})}
   })
 
 })

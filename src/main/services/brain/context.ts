@@ -87,7 +87,7 @@ export class BrainContext extends BrainRuntime {
   protected toolDefinitions(): ToolDefinition[] {
     const tools: ToolDefinition[] = [
       ...continuityTools
-        .filter(tool => !['review_decision', 'acknowledge_evidence', 'feedback'].includes(continuityToolActions[tool.name]))
+        .filter(tool => !['review_decision', 'acknowledge_evidence', 'feedback', 'review_analysis', 'review_outcome_lesson'].includes(continuityToolActions[tool.name]))
         .map(tool => ({ name: tool.name, description: tool.description, parameters: tool.inputSchema })),
       {
         name: 'save_memory',

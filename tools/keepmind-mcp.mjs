@@ -462,7 +462,7 @@ function queryMem(a = {}) {
 // ── tools ──
 
 const TOOLS = [
-  ...continuityTools.filter(t => !['review_decision', 'acknowledge_evidence', 'feedback'].includes(continuityToolActions[t.name])),
+  ...continuityTools.filter(t => !['review_decision', 'acknowledge_evidence', 'feedback', 'review_analysis', 'review_outcome_lesson'].includes(continuityToolActions[t.name])),
   ...['learning_list', 'learning_search', 'learning_check_public'].map(name => ({ name, description: 'Private owner learning access; never approves or publishes.', inputSchema: { type: 'object', properties: { query: { type: 'string' }, id: { type: 'string' }, text: { type: 'string' } } } })),
   { name: 'search', description: 'Keyword search over local Markdown memory.', inputSchema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, required: ['query'] } },
   { name: 'read_note', description: 'Read a note relative to the local memory directory.', inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },

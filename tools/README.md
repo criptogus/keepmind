@@ -21,6 +21,10 @@ projects require `expectedRevision`; a conflict requires reading and reconciling
 the current state. Decisions remain proposals until reviewed in the desktop app.
 Models cannot approve decisions, confirm lessons or submit human feedback by
 passing an actor field. Generic note writes cannot overwrite project records.
+`continuity_get` and `continuity_context` can read permitted native analysis
+reports and their stale state; MCP cannot run the model analysis or perform
+human reviews. Literal source quotes are validated, while proposed relationships
+remain subject to human review and do not establish causality.
 
 Fact reads/search default to `mode: "current"`. Use `mode: "history"` for labelled
 archive/proposals, or `mode: "asOf", asOf: "YYYY-MM-DD"` for dated facts. Undated

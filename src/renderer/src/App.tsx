@@ -11,13 +11,14 @@ import GraphView from './components/GraphView'
 import Activity from './components/Activity'
 import Today from './components/Today'
 import Projects from './components/Projects'
+import AnswerBenchmark from './components/AnswerBenchmark'
 import Skills from './components/Skills'
 import Security from './components/Security'
 import Login from './components/Login'
 import CorpBar from './components/CorpBar'
 import CorpOnboarding from './components/CorpOnboarding'
 
-type View = 'projects' | 'today' | 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
+type View = 'answer-benchmark' | 'projects' | 'today' | 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 interface Job { phase: 'start' | 'done' | 'error'; name: string; summary?: string }
@@ -35,6 +36,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
   { section: 'Mind', items: [
     { id: 'dashboard', label: 'Health', Icon: IconDashboard },
     { id: 'skills', label: 'Skills', Icon: IconSkill },
+    { id: 'answer-benchmark', label: 'Qualidade', Icon: IconDashboard },
     { id: 'security', label: 'Security', Icon: IconShield }
   ]},
   { section: 'Agents', items: [
@@ -294,6 +296,7 @@ export default function App() {
         {view === 'security' && <Security onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}
         {view === 'skills' && <Skills onActivity={pulse} onToast={toast} />}
+        {view === 'answer-benchmark' && <AnswerBenchmark />}
         {view === 'graph' && <GraphView />}
         {view === 'activity' && <Activity />}
         {view === 'connectors' && <Connectors onActivity={pulse} onToast={toast} />}

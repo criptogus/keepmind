@@ -20,6 +20,7 @@ import { corpSyncNow } from './services/corp-sync'
 import { reconcileCorpSyncSchedule } from './services/corp-sync-scheduler'
 import { analyzeHealth, applyHealth } from './services/health'
 import { createContinuityService } from './services/continuity'
+import { MemoryIntelligence } from './services/memory-intelligence'
 import { evolutionHints, installSkill, keepSkillCopy, listVaultSkills, loadSakNotes, loadSkillThreats, reviewVaultSkill, scanSkillThreats, searchRegistry, skillTrust, skillsSnapshot } from './services/skillsHub'
 import { attachVaultCrypto, securityStatus, securityScan, securityConfigure, encryptAll, decryptAll, securityAiAlerts, type SecurityPatch } from './services/security'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
@@ -156,6 +157,29 @@ export function registerIpc(
   hooks: HookServer | null = null
 ) {
   const continuity = createContinuityService(brain.getMemory())
+  const intelligence = new MemoryIntelligence(brain.getMemory(), {
+    configuration: () => ({ ai: store.get().ai, localModelId: store.get().localLlm.modelId }),
+    localEndpoint: () => localLlm?.endpoint,
+    ensureLocal: async modelId => {
+      if (!localLlm) throw new Error('LOCAL_MODEL_UNAVAILABLE')
+      await localLlm.ensureRunning(modelId)
+    },
+    onBenchmarkProgress: progress => {
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send('brain:benchmarkProgress', progress)
+    }
+  })
+  ipcMain.handle('brain:projectAnalyze', (_e, args: unknown) => {
+    if (!isPlainObject(args)) bad('projectAnalyze.args')
+    const input = args as Record<string, unknown>
+    if (Object.keys(input).some(key => !['projectId', 'expectedRevision', 'maxSourceBytes'].includes(key))) bad('projectAnalyze.args')
+    reqStr(input.projectId, 'projectAnalyze.projectId', 36)
+    if (!Number.isSafeInteger(input.expectedRevision) || Number(input.expectedRevision) < 1) bad('projectAnalyze.expectedRevision')
+    if (input.maxSourceBytes !== undefined && (!Number.isSafeInteger(input.maxSourceBytes) || Number(input.maxSourceBytes) < 1024 || Number(input.maxSourceBytes) > 1048576)) bad('projectAnalyze.maxSourceBytes')
+    return intelligence.projectAnalyze({ projectId: input.projectId as string, expectedRevision: input.expectedRevision as number, maxSourceBytes: input.maxSourceBytes as number | undefined })
+  })
+  ipcMain.handle('brain:answerBenchmarkRun', () => intelligence.runBenchmark())
+  ipcMain.handle('brain:answerBenchmarkList', () => intelligence.listBenchmarks())
+  ipcMain.handle('brain:answerBenchmarkCancel', () => intelligence.cancelBenchmark())
   ipcMain.handle('brain:continuity', (_e, action: unknown, args: unknown = {}) => {
     reqStr(action, 'continuity.action', 64)
     if (!isPlainObject(args)) bad('continuity.args')

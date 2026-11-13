@@ -20,7 +20,8 @@ or review a project.
    connect that assistant to the same memory through MCP.
 5. Record observed results separately from execution status and expected results.
    A successful command does not automatically confirm a lesson or a business
-   outcome. Lesson confirmation requires the human interface.
+   outcome. Confirm or reject an existing proposed lesson in the human interface;
+   its review history is retained.
 
 The standalone Corp backend does not yet implement this API. Its shared interface
 shows an explicit availability message rather than pretending to save projects.
@@ -95,8 +96,11 @@ blindly retry the previous write or replace the raw project file. The generic
 `sb_write` and `sb_append` tools refuse protected project records, including path
 aliases. A model-supplied `actor: "human"` cannot authorize a human action.
 
-The review, evidence acknowledgement and feedback actions are exposed only to the
-trusted desktop interface. Direct MCP attempts are rejected by the engine too.
+MCP clients can read analysis reports through `continuity_get` and their stale
+state through `continuity_context`. They cannot run the native analysis or perform
+human reviews. Decision and analysis reviews, lesson confirmation or rejection,
+evidence acknowledgement and feedback are reserved for the trusted desktop
+interface; the engine rejects direct agent attempts as well.
 
 ## What a handoff means
 
@@ -125,11 +129,40 @@ Outcomes without attached evidence are `unverified`, even when execution status
 is `completed`. Changed or missing evidence produces `review_required` for linked
 outcomes. A human acknowledgement keeps the original digest and records a reason.
 
-Source change detection is based on content hashes. It does not yet determine
-semantic contradictions, infer causality, or calculate which business decision
-will produce the greatest financial return. Question suggestions use explicit
-rules, not a trained value-of-information model. Feedback counts are human
-ratings, not an automatically generated quality score.
+Source change detection is based on content hashes. Question suggestions use
+explicit rules, not a trained value-of-information model. Feedback counts are
+human ratings, not an automatically generated quality score.
+
+## Native analysis and answer quality
+
+In **Projetos**, **Analisar fontes** uses the configured model to propose possible
+contradictions, temporal changes, complementary statements or uncertain
+relationships between project decisions and authorized source material. The
+service validates that cited quotations occur literally in their cited sources;
+that check does not establish that the model's interpretation is correct. Findings
+remain proposals until a person confirms or dismisses them with a reason. A report
+becomes stale when the relevant project or its sources change; review requires a
+fresh analysis. An unavailable source is shown explicitly and its derived details
+are withheld. Analysis of outcomes compares expected and observed results, but
+does not establish causality.
+
+Analysis reads at most 100 sources and defaults to 65,536 source bytes, with a
+separate total prompt budget. Oversized inputs fail instead of being silently
+truncated. A native analysis has a three-minute timeout. A benchmark has a
+ten-minute overall timeout and a two-minute timeout per model request; cancellation
+also works while a local model is starting.
+
+The **Qualidade** view runs six synthetic scenarios with the configured model,
+using up to 12 model calls. It shows progress and supports cancellation. The same
+configured model generates and judges the answers in separate calls; citation IDs and quoted evidence are also validated
+against the synthetic sources and answers. A model judgment can be wrong or
+inconclusive, so these results are not a universal quality score. The UI shows
+up to 20 recent reports and compares runs only when suite version, fingerprint and
+case IDs match. The reports are scoped to the active space and stored as JSON
+under `ops/answer-benchmarks`, outside Markdown recall and Git memory ingestion.
+They use the memory service's encryption policy: the normal encrypted vault
+requires unlocked keys; explicitly enabled legacy plaintext mode follows its
+existing policy. No private user memory is used as a benchmark scenario.
 
 ## Current facts and historical memory
 
@@ -195,8 +228,13 @@ human authority, changed and missing evidence, transitive artifact impacts,
 encrypted classification inheritance, space isolation, corruption, context
 budgets and path aliases.
 
-These are deterministic regression tests of the memory contract. They do not
-measure the correctness of a model-generated answer. The Hoje indicator is named
-**Retrieval checks** to make that distinction explicit. A cross-model answer
-quality benchmark and end-to-end installed desktop testing remain separate
-validation work.
+Deterministic regression and renderer DOM interaction tests exercise the memory
+contract and user flows with test fixtures. They do not measure a real model’s
+answer quality. The Hoje indicator is named **Retrieval checks** to distinguish
+it from the synthetic answer benchmark. Visual inspection in an installed desktop
+application has not been completed.
+
+An additional live Codex run, using only synthetic data, is recorded in
+[the validation report](validation/continuity-2026-11-13.md). It verifies the
+provider path and retains the observed outputs; one run with a model judge does
+not establish reliability on real projects or a ranking between models.
