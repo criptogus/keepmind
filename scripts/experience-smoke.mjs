@@ -35,6 +35,9 @@ try {
     window.__experienceFixture = { captureFails: true, searchFails: true, cancelled: false }
     const project = { id: 'demo-project', title: 'Projeto sintético', objective: 'Preparar uma demonstração', successCriteria: 'Uma revisão concluída', nextStep: 'Revisar a fonte', status: 'active', revision: 1, updatedAt: '2026-01-01T00:00:00Z', decisions: [], attempts: [], artifacts: [], outcomes: [], questions: [], analysisReports: [], evidence: [] }
     const config = { onboardingDone: !new URLSearchParams(location.search).has('onboarding'), ai: { provider: 'local', model: 'demo' }, localLlm: {}, github: {}, mcpServers: [], agents: [], automations: [], background: {}, autonomy: {} }
+    const corp = new URLSearchParams(location.search).has('corp')
+    if (corp) config.corp = { org: 'Empresa sintética', role: 'member' }
+    window.__experienceFixture.projectCalls = 0
     const source = '# Fonte sintética\n\n' + 'Parágrafo de demonstração. '.repeat(220) + '\n\nMARCADOR FINAL DA FONTE COMPLETA'
     let rejectChat
     const unsubscribe = () => () => {}
@@ -46,7 +49,7 @@ try {
       automationPending: async () => [], brainFacts: async () => [], brainPolicy: async () => ({ active: 'Política sintética', proposals: [] }),
       brainHealth: async () => ({ stats: { writes7d: 1, mdFiles: 1, automationsEnabled: 0, automationsTotal: 0 } }), brainListSleep: async () => [], brainEval: async () => null,
       brainLedger: async () => [{ ts: '2026-01-01T12:00:00Z', verb: 'discovered', sentence: 'Fonte sintética registrada', path: 'notes/demo.md' }],
-      continuity: async (action) => action === 'list' ? [project] : action === 'get' ? project : action === 'context' ? { text: 'Contexto sintético', analysisReports: [] } : {},
+      continuity: async (action) => { window.__experienceFixture.projectCalls++; if (corp) throw Error('Projetos indisponíveis no Corp'); return action === 'list' ? [project] : action === 'get' ? project : action === 'context' ? { text: 'Contexto sintético', analysisReports: [] } : {} },
       brainCapture: async () => { if (window.__experienceFixture.captureFails) throw Error('Falha sintética'); return 'Frase guardada.' },
       brainListMemory: async () => [{ path: 'notes/demo.md', content: source }],
       brainSearch: async () => { if (window.__experienceFixture.searchFails) throw Error('Falha sintética'); return { hits: [{ path: 'notes/demo.md', title: 'Fonte sintética', snippet: 'Conteúdo de demonstração' }] } },
@@ -227,6 +230,18 @@ try {
     assert.equal(await page.locator('.wizard').evaluate(el=>getComputedStyle(el).animationName),'none')
     await page.getByRole('button',{name:'Configurar depois',exact:true}).click()
     assert.equal(await page.evaluate(()=>document.activeElement?.id),'wizard-title')
+  })
+  await check('Corp Hoje avoids unsupported projects and keeps source navigation', async () => {
+    await page.setViewportSize({ width: 1024, height: 640 })
+    await page.goto('http://127.0.0.1:4173/?corp=1', { waitUntil: 'domcontentloaded' })
+    await page.getByText('No Corp, retome o contexto', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Ver todos os projetos', exact: true }).count(), 0)
+    assert.equal(await nav.getByRole('button', { name: 'Projetos', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('alert').count(), 0)
+    assert.equal(await page.evaluate(() => window.__experienceFixture.projectCalls), 0)
+    await page.screenshot({ path: `${artifacts}/corp-hoje.png`, fullPage: true })
+    await page.getByRole('button', { name: 'Consultar fonte', exact: true }).click()
+    await page.getByRole('region', { name: 'Fonte completa' }).getByText('MARCADOR FINAL DA FONTE COMPLETA', { exact: false }).waitFor()
   })
   assert.deepEqual(errors, [], `Browser errors: ${errors.join('; ')}`)
 } catch (error) {

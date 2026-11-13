@@ -56,3 +56,18 @@ it('announces each step and keeps separate provider drafts without configuring o
   await click('Configurar depois')
   expect(document.activeElement?.id).toBe('wizard-title')
 })
+
+it('does not request unsupported Corp projects or offer dead-end project actions', async () => {
+  const continuity = vi.fn().mockRejectedValue(Error('Projects unsupported in Corp'))
+  const navigate = vi.fn(), capture = vi.fn()
+  ;(window as any).sb = { continuity, automationPending: async () => [], brainFacts: async () => [], brainPolicy: async () => null, brainLedger: async () => [{ ts: '2026-11-13', sentence: 'Contexto salvo', path: 'inbox/aurora.md' }], brainHealth: async () => null, brainListSleep: async () => [], brainEval: async () => null, onJob: () => () => {} }
+  await mount(<Today projectsSupported={false} onNavigate={navigate} onCapture={capture} />)
+  expect(continuity).not.toHaveBeenCalled()
+  expect(document.querySelector('[role="alert"]')).toBeNull()
+  expect(button('Ver todos os projetos')).toBeUndefined()
+  expect(button('Criar projeto')).toBeUndefined()
+  expect(document.body.textContent).toContain('Projetos estão disponíveis no KeepMind SB.')
+  await click('Consultar fonte'); expect(navigate).toHaveBeenCalledWith('graph', { path: 'inbox/aurora.md' })
+  await click('Encontrar contextoPrepare uma pergunta e confira as fontes.')
+  expect(navigate).toHaveBeenCalledWith('chat', expect.objectContaining({ query: expect.stringContaining('Cite as fontes') }))
+})
