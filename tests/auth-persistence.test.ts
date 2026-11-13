@@ -7,6 +7,14 @@ vi.mock('sql.js', async () => {
   const actual = await vi.importActual<any>('sql.js')
   return { default: () => actual.default({ locateFile: () => createRequire(import.meta.url).resolve('sql.js/dist/sql-wasm.wasm') }) }
 })
+const disk = vi.hoisted(() => ({ fail: false }))
+vi.mock('node:fs', async () => {
+  const fs = await vi.importActual<any>('node:fs')
+  return { ...fs, writeFileSync: (...args: any[]) => {
+    if (disk.fail) throw new Error('Synthetic disk write failure')
+    return fs.writeFileSync(...args)
+  } }
+})
 import { AuthService } from '../src/main/services/auth'
 it('preserves the same account and valid session after application replacement, and asks login after expiration', async () => {
   const root=mkdtempSync(join(tmpdir(),'km-auth-reinstall-')),profile=join(root,'profile'),installation=join(root,'app');mkdirSync(profile);mkdirSync(installation)
@@ -24,4 +32,15 @@ it('preserves the same account and valid session after application replacement, 
     expect(await reinstalled.userByToken(token)).toBeNull()
     expect(await reinstalled.userCount()).toBe(1)
   } finally {vi.useRealTimers();vi.restoreAllMocks();rmSync(root,{recursive:true,force:true})}
+})
+
+it('reports a persistence failure instead of claiming that an ephemeral account was saved', async () => {
+  const profile=mkdtempSync(join(tmpdir(),'km-auth-disk-'))
+  try {
+    disk.fail=true
+    const auth=new AuthService(profile)
+    await expect(auth.register('fixture@example.invalid','synthetic-password','Test')).rejects.toThrow('Synthetic disk write failure')
+    disk.fail=false
+    expect(await new AuthService(profile).userCount()).toBe(0)
+  } finally {disk.fail=false;rmSync(profile,{recursive:true,force:true})}
 })

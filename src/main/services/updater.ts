@@ -1,6 +1,6 @@
 import { app, BrowserWindow, net } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { createWriteStream, existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync, rmSync, renameSync, mkdtempSync } from 'node:fs'
+import { createWriteStream, openSync, closeSync, existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync, rmSync, renameSync, mkdtempSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -116,7 +116,16 @@ async function downloadToFile(update: ContinuousUpdate, dest: string): Promise<v
   mkdirSync(dirname(dest), { recursive: true })
   const partial = dest + '.partial'
   try {
-    await pipeline(Readable.fromWeb(res.body as any), createWriteStream(partial))
+    let transferred = 0, lastPercent = -1
+    await pipeline(Readable.fromWeb(res.body as any), async function* (source) {
+      for await (const chunk of source) {
+        transferred += chunk.length
+        if (transferred > update.size) throw new Error('Update integrity check failed: unexpected size')
+        const percent = Math.round(transferred / update.size * 100)
+        if (percent !== lastPercent) { lastPercent = percent; send('progress', { percent, transferred, total: update.size }) }
+        yield chunk
+      }
+    }, createWriteStream(partial))
     await verifyFile(partial, update)
     renameSync(partial, dest)
   } catch (error) { rmSync(partial, { force: true }); throw error }
@@ -173,7 +182,11 @@ async function installWin(updateFile: string): Promise<void> {
     `Remove-Item -LiteralPath ${q(r.pendingFile)} -Force`,
     `Start-Process -FilePath ${q(process.execPath)} -ArgumentList ${q(['"--user-data-dir=' + app.getPath('userData') + '"', ...relaunchArgs()].join(' '))}`
   ].join('\r\n'))
-  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { detached: true, stdio: 'ignore' })
+  const helperLog = openSync(join(app.getPath('userData'), 'update', 'helper.log'), 'a', 0o600)
+  let child: ReturnType<typeof spawn>
+  try {
+    child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { detached: true, stdio: ['ignore', helperLog, helperLog] })
+  } finally { closeSync(helperLog) }
   await new Promise<void>((resolve,reject) => {child.once('spawn',resolve);child.once('error',reject)})
   child.unref(); app.quit()
 }

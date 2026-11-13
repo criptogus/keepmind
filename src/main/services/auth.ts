@@ -1,6 +1,6 @@
 import initSqlJs, { type Database } from 'sql.js'
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 // ── Local auth: SQLite (sql.js/WASM) + scrypt password hashing ──
@@ -57,7 +57,11 @@ export class AuthService {
   }
 
   private persist() {
-    try { writeFileSync(this.dbFile, Buffer.from(this.db!.export())) } catch { /* noop */ }
+    const temporary = this.dbFile + '.tmp'
+    try {
+      writeFileSync(temporary, Buffer.from(this.db!.export()), { mode: 0o600 })
+      renameSync(temporary, this.dbFile)
+    } finally { rmSync(temporary, { force: true }) }
   }
 
   private async q<T = any>(fn: (db: Database) => T): Promise<T> {
