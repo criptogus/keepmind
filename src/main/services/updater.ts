@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { waitForHelperStart } from './update-helper'
 import { updateIdentity, selectUpdate, validateUpdateAsset, macSwapScript, shellQuote, shellReceipt, type Edition } from './update-policy'
 
 const execFileP = promisify(execFile)
@@ -163,14 +164,17 @@ async function installMac(updateFile: string, version: string): Promise<void> {
   app.quit()
 }
 
-// Windows: NSIS installer supports silent /S; it relaunches the app itself.
+// Windows: the helper waits for app exit, runs NSIS, then relaunches the same profile.
 async function installWin(updateFile: string): Promise<void> {
   const q = (v: string) => "'" + v.replace(/'/g, "''") + "'"
   const script = join(app.getPath('userData'), 'update', 'install.ps1')
   const r = receipt()
+  const ready = join(app.getPath('userData'), 'update', 'helper.ready')
+  rmSync(ready, { force: true })
   writeFileSync(script, [
     "$ErrorActionPreference = 'Stop'",
     `Start-Transcript -Path ${q(join(app.getPath('userData'), 'update', 'install.log'))} -Append`,
+    `[System.IO.File]::WriteAllText(${q(ready)}, 'ready')`,
     `Write-Output 'Waiting for application exit'`,
     `Wait-Process -Id ${process.pid} -ErrorAction SilentlyContinue`,
     `Write-Output 'Starting installer'`,
@@ -187,7 +191,7 @@ async function installWin(updateFile: string): Promise<void> {
   try {
     child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { detached: true, stdio: ['ignore', helperLog, helperLog] })
   } finally { closeSync(helperLog) }
-  await new Promise<void>((resolve,reject) => {child.once('spawn',resolve);child.once('error',reject)})
+  await waitForHelperStart(child, ready)
   child.unref(); app.quit()
 }
 
@@ -209,7 +213,7 @@ async function installLinux(updateFile: string): Promise<void> {
   ].join('\n'))
   chmodSync(script, 0o700)
   const child = spawn('nohup', ['bash', script], { detached: true, stdio: 'ignore' })
-  await new Promise<void>((resolve,reject) => {child.once('spawn',resolve);child.once('error',reject)})
+  await waitForHelperStart(child, ready)
   child.unref(); app.quit()
 }
 

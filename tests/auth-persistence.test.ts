@@ -7,11 +7,11 @@ vi.mock('sql.js', async () => {
   const actual = await vi.importActual<any>('sql.js')
   return { default: () => actual.default({ locateFile: () => createRequire(import.meta.url).resolve('sql.js/dist/sql-wasm.wasm') }) }
 })
-const disk = vi.hoisted(() => ({ fail: false }))
+const disk = vi.hoisted(() => ({ fail: false, failOn: 0 }))
 vi.mock('node:fs', async () => {
   const fs = await vi.importActual<any>('node:fs')
   return { ...fs, writeFileSync: (...args: any[]) => {
-    if (disk.fail) throw new Error('Synthetic disk write failure')
+    if (disk.fail || (disk.failOn > 0 && --disk.failOn === 0)) throw new Error('Synthetic disk write failure')
     return fs.writeFileSync(...args)
   } }
 })
@@ -37,10 +37,13 @@ it('preserves the same account and valid session after application replacement, 
 it('reports a persistence failure instead of claiming that an ephemeral account was saved', async () => {
   const profile=mkdtempSync(join(tmpdir(),'km-auth-disk-'))
   try {
-    disk.fail=true
     const auth=new AuthService(profile)
+    await auth.userCount()
+    disk.failOn=2
     await expect(auth.register('fixture@example.invalid','synthetic-password','Test')).rejects.toThrow('Synthetic disk write failure')
     disk.fail=false
     expect(await new AuthService(profile).userCount()).toBe(0)
-  } finally {disk.fail=false;rmSync(profile,{recursive:true,force:true})}
+    expect(await auth.userCount()).toBe(0)
+    await expect(auth.register('fixture@example.invalid','synthetic-password','Test')).resolves.toMatchObject({email:'fixture@example.invalid'})
+  } finally {disk.fail=false;disk.failOn=0;rmSync(profile,{recursive:true,force:true})}
 })
