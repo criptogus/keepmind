@@ -109,8 +109,36 @@ try {
     await page.getByLabel('Mensagem para o KeepMind').fill('Pergunta sintética')
     await page.getByRole('button', { name: 'Enviar mensagem' }).click()
     await page.getByRole('button', { name: 'Interromper', exact: true }).waitFor()
-    await page.locator('.keepmind-avatar__host canvas').first().waitFor({ state: 'attached' })
-    assert.ok(await page.locator('.keepmind-avatar__host canvas').first().evaluate(el => el.width > 0 && el.height > 0), 'avatar canvas has no bitmap')
+    const host = page.locator('.chat-header .keepmind-avatar__host')
+    const still = host.locator('svg')
+    await still.waitFor({ state: 'visible' })
+    assert.ok(await still.locator('path').count() > 0 && await still.locator('use').count() > 0, 'reduced-motion avatar has no rendered geometry')
+    assert.equal(await page.locator('.chat-header .keepmind-avatar__fallback').count(), 0, 'static renderer unexpectedly fell back')
+    assert.equal(await host.locator('canvas').count(), 0, 'reduced-motion avatar should use a static SVG')
+    const stillMarkup = await still.evaluate(el => el.outerHTML)
+    await page.waitForTimeout(250)
+    assert.equal(await still.evaluate(el => el.outerHTML), stillMarkup, 'reduced-motion avatar changed while idle')
+    // The live renderer must also work when the system allows motion.
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    const canvas = host.locator('canvas')
+    await canvas.waitFor({ state: 'visible' })
+    assert.ok(await canvas.evaluate(el => el.width > 0 && el.height > 0), 'avatar canvas has no bitmap')
+    await page.waitForFunction(() => {
+      const el = document.querySelector('.chat-header .keepmind-avatar__host canvas')
+      if (!el) return false
+      const pixels = el.getContext('2d').getImageData(0, 0, el.width, el.height).data
+      for (let i = 3; i < pixels.length; i += 4) if (pixels[i] !== 0) return true
+      return false
+    }, null, { timeout: 5000 })
+    const firstFrame = await canvas.evaluate(el => el.toDataURL())
+    await page.waitForFunction(previous => {
+      const el = document.querySelector('.chat-header .keepmind-avatar__host canvas')
+      return el && el.toDataURL() !== previous
+    }, firstFrame, { timeout: 5000 })
+    assert.equal(await page.locator('.chat-header .keepmind-avatar__fallback').count(), 0, 'live renderer unexpectedly fell back')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await host.locator('svg').waitFor({ state: 'visible' })
+    assert.equal(await host.locator('canvas').count(), 0, 'avatar did not return to the static renderer')
     await page.screenshot({ path: `${artifacts}/desktop-chat.png`, fullPage: true })
     await page.getByRole('button', { name: 'Interromper', exact: true }).click()
     await page.getByText('Geração interrompida.', { exact: false }).waitFor()

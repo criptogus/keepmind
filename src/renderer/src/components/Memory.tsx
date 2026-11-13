@@ -5,9 +5,9 @@ interface Hit { path: string; title: string; snippet: string }
 export interface MemoryRequest { id: number; query?: string; path?: string }
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 
-export default function Memory({ compact = false, initialRequest, refreshToken, onCapture, onAsk, onOpenGraph }: {
+export default function Memory({ compact = false, initialRequest, refreshToken, onCapture, onAsk, onOpenGraph, onOpenSource }: {
   compact?: boolean; initialRequest?: MemoryRequest; refreshToken?: number; onCapture?: () => void;
-  onAsk?: (prompt: string) => void; onOpenGraph?: () => void
+  onAsk?: (prompt: string) => void; onOpenGraph?: () => void; onOpenSource?: (path: string) => void
 }) {
   const fieldId = useId()
   const [query, setQuery] = useState(initialRequest?.query ?? '')
@@ -132,7 +132,7 @@ export default function Memory({ compact = false, initialRequest, refreshToken, 
         {fileState === 'loading' && <p role="status">Abrindo a fonte…</p>}
         {fileState === 'error' && <div className="feedback feedback--error" role="alert"><p>Esta fonte está indisponível ou sem permissão de leitura.</p><button className="btn btn--sm" onClick={() => setFileRetry(n => n + 1)}>Tentar abrir novamente</button></div>}
         {fileState === 'ready' && <>
-          <div className="memory-source__actions"><button className="btn btn--ghost btn--sm" onClick={() => setRaw(v => !v)} aria-pressed={raw}>{raw ? 'Leitura' : 'Texto original'}</button><button className="btn btn--ghost btn--sm" disabled={saving} onClick={() => onAsk?.(`O que a fonte ${selected} diz sobre este assunto? Cite os trechos usados e sinalize informações que não estejam confirmadas.`)}>Perguntar sobre esta fonte</button>{!((window as any).__KEEPMIND_CORP__) && <button className="btn btn--ghost btn--sm" disabled={saving} onClick={() => changeDraft({ open: !correcting, claim: claim || window.getSelection()?.toString().trim() || '' })} aria-expanded={correcting}>Corrigir um fato</button>}</div>
+          <div className="memory-source__actions"><button className="btn btn--ghost btn--sm" onClick={() => setRaw(v => !v)} aria-pressed={raw}>{raw ? 'Leitura' : 'Texto original'}</button>{compact && <button className="btn btn--ghost btn--sm" onClick={() => onOpenSource?.(selected)}>Abrir na Memória</button>}<button className="btn btn--ghost btn--sm" disabled={saving} onClick={() => onAsk?.(`O que a fonte ${selected} diz sobre este assunto? Cite os trechos usados e sinalize informações que não estejam confirmadas.`)}>Perguntar sobre esta fonte</button>{!compact && !((window as any).__KEEPMIND_CORP__) && <button className="btn btn--ghost btn--sm" disabled={saving} onClick={() => changeDraft({ open: !correcting, claim: claim || window.getSelection()?.toString().trim() || '' })} aria-expanded={correcting}>Corrigir um fato</button>}</div>
           <p className="memory-source__hint dim">Fonte original completa. O arquivo pode conter propostas e histórico; confira os estados e as datas antes de usar.</p>
           {feedback && <p className="feedback" role="status">{feedback}</p>}
           {correcting && <form className="memory-correction" onSubmit={e => { e.preventDefault(); void correct() }}><h3>Registrar uma correção</h3><p className="dim">Copie o texto completo de um único fato ativo. Ele será substituído pela informação correta e preservado no histórico. Outros documentos continuam como fontes originais.</p><label className="field"><span>Fato a corrigir</span><textarea value={claim} disabled={saving} onChange={e => changeDraft({ claim: e.target.value })} minLength={3} required placeholder="Cole o texto completo do fato ativo" /></label><label className="field"><span>Informação correta</span><textarea value={correction} disabled={saving} onChange={e => changeDraft({ correction: e.target.value })} minLength={3} required /></label>{correctionError && <p className="feedback feedback--error" role="alert">{correctionError}</p>}<button className="btn btn--primary" disabled={saving || claim.trim().length < 3 || correction.trim().length < 3}>{saving ? 'Registrando…' : 'Salvar correção'}</button></form>}

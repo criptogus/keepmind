@@ -168,7 +168,7 @@ export default function App() {
   const label = ALL_VIEWS.find(n => n.id === view)?.label ?? 'KeepMind'
   const primaryView = view === 'graph' ? 'memory' : view
   const jobLine = job?.phase === 'start' ? `${job.name} em andamento` : job?.phase === 'error' ? 'Uma operação precisa de atenção' : 'Pronto para continuar'
-  const memoryProps = { refreshToken: dataVersion, onCapture: () => setDialog('capture'), onAsk: (text: string) => navigate('chat', { query: text }), onOpenGraph: () => navigate('graph') }
+  const memoryProps = { refreshToken: dataVersion, onCapture: () => setDialog('capture'), onAsk: (text: string) => navigate('chat', { query: text }), onOpenGraph: () => navigate('graph'), onOpenSource: (path: string) => navigate('memory', { path }) }
   const navigateToday = (next: View, detail?: { projectId?: string; query?: string; path?: string }) => navigate(next === 'graph' ? 'memory' : next, detail)
 
   return <div className="app">

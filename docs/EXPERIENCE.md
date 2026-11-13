@@ -14,7 +14,7 @@ O tema usa tipografia legível, hierarquia de texto, superfícies mais tranquila
 
 - **Hoje:** retoma o projeto ativo mais recente, reúne decisões propostas, revisões, lições, fatos e aprovações, e abre a fonte de uma atividade pelo caminho exato. Indicadores ficam recolhidos. Falhas de serviço são diferentes de ausência de pendências.
 - **Captura:** bloqueia envios duplicados e mantém o rascunho se a gravação falhar ou se a janela for fechada. Só mostra sucesso depois da resposta do serviço. Rascunhos ficam na sessão da aplicação, separados por usuário e espaço; não são um backup persistente.
-- **Memória:** busca com estado de carregamento, erro e nova tentativa; respostas atrasadas não substituem a busca atual. A leitura abre a fonte completa, sem o antigo corte de 4.000 caracteres. A lista renderiza resultados em grupos para não criar milhares de elementos de uma vez.
+- **Memória:** busca com estado de carregamento, erro e nova tentativa; respostas atrasadas não substituem a busca atual. A leitura abre a fonte completa, sem o antigo corte de 4.000 caracteres. A lista renderiza resultados em grupos para não criar milhares de elementos de uma vez. A busca rápida oferece **Abrir na Memória** para continuar a leitura e corrigir fatos na área que preserva o rascunho durante a navegação.
 - **Correção:** exige o texto completo de exatamente um fato ativo. Correspondência ausente ou ambígua não grava nada. A substituição mantém o fato anterior no histórico temporal. Corrigir um fato não reescreve arbitrariamente seus documentos de origem.
 - **Conversar:** mantém a conversa ao navegar, oferece fontes, preserva respostas parciais e rascunhos e permite interrupção real no aplicativo nativo. Cada solicitação tem identificador e dono; eventos de outra solicitação são ignorados. Ações de ferramentas já iniciadas podem terminar após a interrupção.
 - **Projetos:** criação com nome e objetivo; fontes e detalhes opcionais antes de salvar; seções e histórico expansíveis; seleção de fontes autorizadas; contexto legível e completo para copiar ou preencher uma conversa. Nenhuma dessas ações envia automaticamente a mensagem.
@@ -52,6 +52,6 @@ npm run corp:check
 npm run test:experience
 ```
 
-O smoke test de navegador usa o renderer compilado com uma bridge de dados fictícios, sem serviço de IA nem chamadas externas. O workflow **Experience smoke** instala Chromium, executa as interações e disponibiliza screenshots e `report.json` como artefatos. Ele verifica o canvas do avatar, a preferência de movimento reduzido, a desativação do avatar e uma viewport estreita.
+O smoke test de navegador usa o renderer compilado com uma bridge de dados fictícios, sem serviço de IA nem chamadas externas. O workflow **Experience smoke** instala Chromium, executa as interações e disponibiliza screenshots e `report.json` como artefatos. Ele verifica a renderização do avatar, a preferência de movimento reduzido, a desativação do avatar e uma viewport estreita.
 
-O ambiente de edição bloqueia sockets do Chromium e o navegador compartilhado não alcança seu servidor local. A execução real do smoke test deve ser conferida no resultado do GitHub Actions. Esse teste de renderer não equivale a medir consumo de CPU/bateria ou certificar todos os pacotes Electron em todos os sistemas.
+A validação visual automatizada é executada pelo GitHub Actions; o resultado de cada execução e suas capturas ficam vinculados ao commit testado. Esse teste de renderer não equivale a medir consumo de CPU/bateria ou certificar todos os pacotes Electron em todos os sistemas.
