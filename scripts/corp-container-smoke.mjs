@@ -14,12 +14,12 @@ async function request(route, body) {
   return {status:r.status,body:await r.json()}
 }
 async function ready() {
-  for(let i=0;i<60;i++){try { if ((await request('/api/health')).status===200) return }catch {} await new Promise(r=>setTimeout(r,500))}
+  for(let i=0;i<60;i++){try { if ((await request('/api/health')).status===200 && docker('inspect','--format','{{.State.Health.Status}}',name)==='healthy') return }catch {} await new Promise(r=>setTimeout(r,500))}
   throw Error('Container failed readiness: '+docker('logs',name))
 }
 try {
   docker('volume','create',volume)
-  docker('run','-d','--name',name,'--mount',`source=${volume},target=/data`,'-p','127.0.0.1:18787:8787',
+  docker('run','-d','--health-interval=1s','--health-start-period=1s','--name',name,'--mount',`source=${volume},target=/data`,'-p','127.0.0.1:18787:8787',
     '-e',`KEEPMIND_CORP_PUBLIC_URL=${url}`,'-e','KEEPMIND_CORP_EMAIL_DOMAINS=company.test','-e',`KEEPMIND_CORP_SETUP_TOKEN=${key}`,image)
   await ready(); assert.equal((await request('/api/meta')).body.setupRequired,true); report.checks.push('image starts as unprivileged server with persistent volume')
   assert.notEqual(docker('exec',name,'id','-u'),'0')

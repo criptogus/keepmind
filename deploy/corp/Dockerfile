@@ -20,5 +20,5 @@ RUN mkdir /data && chown node:node /data
 USER node
 VOLUME /data
 EXPOSE 8787
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "const u=new URL(process.env.KEEPMIND_CORP_PUBLIC_URL);fetch('http://127.0.0.1:8787/api/health',{headers:{Host:u.host}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "const u=new URL(process.env.KEEPMIND_CORP_PUBLIC_URL);require('node:http').get('http://127.0.0.1:8787/api/health',{headers:{Host:u.host}},r=>{r.resume();if(r.statusCode!==200)process.exit(1)}).on('error',()=>process.exit(1))"
 CMD ["node", "corp/server.mjs"]
