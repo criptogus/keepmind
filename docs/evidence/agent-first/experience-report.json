@@ -6,6 +6,10 @@
       "result": "passed"
     },
     {
+      "name": "Default neural background animates without intercepting navigation and honors reduced motion",
+      "result": "passed"
+    },
+    {
       "name": "Capture failure, draft and retry",
       "result": "passed"
     },

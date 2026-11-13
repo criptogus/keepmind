@@ -77,6 +77,21 @@ try {
     await page.getByText('Projeto sintético', { exact: true }).first().waitFor()
     await page.screenshot({ path: `${artifacts}/desktop-hoje.png`, fullPage: true })
   })
+  await check('Default neural background animates without intercepting navigation and honors reduced motion', async () => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    const field = page.locator('canvas.neural-field')
+    await field.waitFor()
+    assert.equal(await field.getAttribute('aria-hidden'), 'true')
+    assert.equal(await field.evaluate(el => getComputedStyle(el).pointerEvents), 'none')
+    const first = await field.evaluate(el => el.toDataURL())
+    // Wait for actual changed canvas content, not simply a mounted blank canvas.
+    await page.waitForFunction(first => document.querySelector('canvas.neural-field')?.toDataURL() !== first, first)
+    await go('Memória'); await go('Hoje')
+    await page.getByRole('heading', { name: 'Continue de onde parou' }).waitFor()
+    await page.screenshot({path:`${artifacts}/neural-background.png`})
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await field.waitFor({state:'detached'})
+  })
   await check('Capture failure, draft and retry', async () => {
     await page.keyboard.press('Control+Shift+m')
     const dialog = page.getByRole('dialog', { name: 'Capturar uma ideia' })

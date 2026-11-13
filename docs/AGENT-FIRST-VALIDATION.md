@@ -54,3 +54,11 @@ Aggregate report: [experience-report.json](evidence/agent-first/experience-repor
 ![Agent-first onboarding](evidence/agent-first/onboarding-desktop.png)
 
 ![Compact onboarding](evidence/agent-first/onboarding-compact.png)
+
+## Default neural background (PR #22 follow-up)
+
+Neurons are enabled by default for profiles without a saved background preference. An explicit saved opt-out is preserved. Rendering is capped at 30 fps (including 120 Hz displays), with at most 96 neurons and 20 simultaneous pulses. Slower drift/pulses, clamped activity boost and 34% canvas opacity keep decoration subordinate to text/cards. Neighbor recomputation runs at most once per 600 ms. Hidden documents pause the loop; reduced motion or disabling the background removes it and releases the frame/resize work.
+
+Validation: build/typecheck passed; 307 unit tests passed, two existing skips. The extended experience batch passed 12 journeys, including actual canvas content changing, non-intercepting pointer events, navigation with animation enabled, and canvas removal under system reduced motion. A deterministic 120 Hz simulation asserts no more than 30 canvas draws per second, pause/resume and cleanup. Visual review of the synthetic Today renderer confirmed visible, subdued neurons and readable cards. This is not a hardware FPS/battery benchmark; no change was installed into the user's personal app/profile.
+
+![Default neural background](evidence/agent-first/neurons-background.png)

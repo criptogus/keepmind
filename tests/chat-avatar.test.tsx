@@ -14,10 +14,16 @@ afterEach(() => { if (root) act(() => root!.unmount()); root = undefined; docume
 describe('appearance and conversation', () => {
   it('stores device preferences and tolerates malformed storage', () => {
     localStorage.setItem('keepmind:appearance', '{broken')
-    expect(readAppearance()).toEqual({ avatarEnabled: true, motionEnabled: true, backgroundEnabled: false })
+    expect(readAppearance()).toEqual({ avatarEnabled: true, motionEnabled: true, backgroundEnabled: true })
     updateAppearance({ avatarEnabled: false, motionEnabled: false })
     expect(readAppearance().avatarEnabled).toBe(false)
     expect(readAppearance().motionEnabled).toBe(false)
+  })
+  it('enables neurons for new profiles but preserves an explicit opt-out', () => {
+    expect(readAppearance().backgroundEnabled).toBe(true)
+    updateAppearance({ backgroundEnabled: false })
+    updateAppearance({ avatarEnabled: false })
+    expect(readAppearance().backgroundEnabled).toBe(false)
   })
   it('offers the failed prompt for retry and does not call it a successful answer', async () => {
     let reject!: (error: Error) => void
