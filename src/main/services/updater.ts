@@ -189,7 +189,15 @@ async function installWin(updateFile: string): Promise<void> {
   const helperLog = openSync(join(app.getPath('userData'), 'update', 'helper.log'), 'a', 0o600)
   let child: ReturnType<typeof spawn>
   try {
-    child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { detached: true, stdio: ['ignore', helperLog, helperLog] })
+    // DETACHED_PROCESS leaves Windows PowerShell without a console: it exits 0
+    // without running the script. A hidden cmd console lets PowerShell start;
+    // its grandchild also escapes libuv's kill-on-parent-exit job object.
+    const command = 'start "" /b /wait powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%KEEPMIND_UPDATE_SCRIPT%"'
+    child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], {
+      windowsHide: true, windowsVerbatimArguments: true,
+      stdio: ['ignore', helperLog, helperLog],
+      env: { ...process.env, KEEPMIND_UPDATE_SCRIPT: script }
+    })
   } finally { closeSync(helperLog) }
   await waitForHelperStart(child, ready)
   child.unref(); app.quit()

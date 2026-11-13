@@ -25,3 +25,9 @@ These changes do not add signing/notarization or remote account recovery. Existi
 - `.github/workflows/installed-apps.yml`: builds and tests both editions on macOS, Windows and Linux. Screenshots, reports and process logs are retained as workflow artifacts.
 
 The fixture feed is injected through the test process's inspector; production builds contain no arbitrary update-server override. Never test update application against a user's installation, account, vault or credentials. Reports distinguish published artifacts from newly packaged source builds.
+
+## Windows helper startup
+
+The native regression exposed `powershell.exe` exiting with code 0 before executing its script when launched with Node's `detached` option. A hidden `cmd /c start /b /wait` bootstrap supplies a console and starts PowerShell outside the parent's libuv job. The app waits for a readiness file before quitting; startup failures keep the app open. See [libuv Windows process handling](https://github.com/libuv/libuv/blob/v1.x/src/win/process.c) and the [matching upstream reproduction](https://github.com/oven-sh/bun/issues/31603). Native lifecycle CI exercises the real helper after the parent exits.
+
+Auth database writes use an atomic replacement and propagate disk errors. Failed mutations restore the in-memory database so a later read cannot silently save a failed registration. The regression verifies both retry and reopen behavior.
