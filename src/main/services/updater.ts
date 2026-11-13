@@ -213,7 +213,7 @@ async function installLinux(updateFile: string): Promise<void> {
   ].join('\n'))
   chmodSync(script, 0o700)
   const child = spawn('nohup', ['bash', script], { detached: true, stdio: 'ignore' })
-  await waitForHelperStart(child, ready)
+  await new Promise<void>((resolve,reject) => {child.once('spawn',resolve);child.once('error',reject)})
   child.unref(); app.quit()
 }
 
