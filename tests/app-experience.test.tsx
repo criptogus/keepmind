@@ -28,7 +28,7 @@ it('navigates primary views and tools, preserves capture and chat drafts, and op
   await click(findButton('Abrir fonte sintética')); expect(document.body.textContent).toContain('Memória aberta: notes/synthetic.md')
   await click(findButton('Hoje')); await click(findButton('KeepMind SB — início'))
   await click(findButton('Ferramentas e configurações')); await click(findButton('ConfiguraçõesAparência, modelo, sincronização e conta.→')); expect(document.body.textContent).toContain('Configurações sintéticas')
-  await click(findButton('Capturar')); const capture = document.querySelector('textarea')!; await type(capture, 'Ideia sintética'); await click(findButton('Continuar depois')); await click(findButton('Capturar')); expect(document.querySelector('textarea')?.value).toBe('Ideia sintética')
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', ctrlKey: true, shiftKey: true })) }); await flush(); const capture = document.querySelector('textarea')!; await type(capture, 'Ideia sintética'); await click(findButton('Continuar depois')); await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', ctrlKey: true, shiftKey: true })) }); await flush(); expect(document.querySelector('textarea')?.value).toBe('Ideia sintética')
 })
 it('keeps the browser CRM preview explicitly read-only', async () => {
   delete (window as any).sb

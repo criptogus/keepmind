@@ -23,36 +23,43 @@ it('keeps failed decisions distinct from empty and retries, then resumes the rec
   expect(document.body.textContent).toContain('Nenhuma decisão pendente agora.')
   await click('Retomar projeto'); expect(navigate).toHaveBeenCalledWith('projects', { projectId: 'p' })
 })
-it('saves a first capture without AI and continues to the source', async () => {
-  const done = vi.fn(); const updateAi = vi.fn(); const capture = vi.fn().mockRejectedValueOnce(Error('disco indisponível')).mockResolvedValue('Frase guardada.')
-  ;(window as any).sb = { localLlmStatus: async () => ({}), aiCodexStatus: async () => ({}), onLocalLlmProgress: () => () => {}, brainCapture: capture, setConfig: async () => {}, aiProviders: async () => [], aiTest: async () => ({ok:false,error:'Provedor indisponível'}), updateAi }
+it('opens agent integrations without capturing memory, requiring a password or configuring an AI provider', async () => {
+  const done = vi.fn(); const setConfig = vi.fn().mockRejectedValueOnce(Error('disk')).mockResolvedValue({})
+  const capture = vi.fn(); const setup = vi.fn(); const updateAi = vi.fn()
+  ;(window as any).sb = { setConfig, brainCapture: capture, securitySetup: setup, updateAi }
   await mount(<Wizard config={{}} onDone={done} onToast={() => {}} />)
-  await click('Começar →'); await click('OpenAI'); await click('Configurar e continuar'); expect(document.body.textContent).toContain('Provedor indisponível'); expect(updateAi).not.toHaveBeenCalled(); await click('Configurar depois')
-  const input = document.querySelector('textarea')!
-  await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'Prefiro manhãs tranquilas'); input.dispatchEvent(new Event('input', { bubbles: true })) })
-  expect(button('Fazer isso depois')).toBeUndefined(); await click('Voltar'); await click('Configurar depois'); expect(document.querySelector('textarea')!.value).toBe('Prefiro manhãs tranquilas')
-  await click('Guardar ideia'); expect(document.body.textContent).toContain('disco indisponível'); expect(document.querySelector('textarea')!.value).toBe('Prefiro manhãs tranquilas'); expect(done).not.toHaveBeenCalled()
-  await click('Guardar ideia'); expect(document.body.textContent).toContain('Sua ideia foi guardada')
-  await click('Ver fonte ou corrigir'); expect(done).toHaveBeenCalledWith({ view:'graph', path:'long-term/facts.md' })
-})
-
-it('announces each step and keeps separate provider drafts without configuring on selection', async () => {
-  const updateAi = vi.fn()
-  ;(window as any).sb = { localLlmStatus: async () => ({}), aiCodexStatus: async () => ({}), onLocalLlmProgress: () => () => {}, updateAi }
-  await mount(<Wizard config={{}} onDone={() => {}} onToast={() => {}} />)
+  expect(document.querySelector('textarea, input[type=password]')).toBeNull()
   await click('Começar →')
   expect(document.activeElement?.id).toBe('wizard-title')
-  expect(document.querySelector('[role=progressbar]')?.getAttribute('aria-valuetext')).toContain('Etapa 2 de 4')
-  await click('OpenAI')
-  const input = document.querySelector('input[type=password]') as HTMLInputElement
-  await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'synthetic-api-key'); input.dispatchEvent(new Event('input', {bubbles:true})) })
-  await click('Ollama')
-  expect((document.querySelector('input[type=password]') as HTMLInputElement).value).toBe('')
-  expect(document.body.textContent).toContain('endereço que você configurar')
-  await click('OpenAI')
-  expect((document.querySelector('input[type=password]') as HTMLInputElement).value).toBe('synthetic-api-key')
-  expect(document.body.textContent).toContain('cobrança segue sua conta')
-  expect(updateAi).not.toHaveBeenCalled()
-  await click('Configurar depois')
-  expect(document.activeElement?.id).toBe('wizard-title')
+  expect(document.querySelector('[role=progressbar]')?.getAttribute('aria-valuetext')).toContain('Etapa 2 de 2')
+  expect(document.body.textContent).toContain('não significa que o agente já está conectado')
+  await click('Conectar meus agentes')
+  expect(document.querySelector('[role=alert]')).toBeTruthy(); expect(done).not.toHaveBeenCalled()
+  await click('Conectar meus agentes')
+  expect(setConfig).toHaveBeenLastCalledWith({ onboardingDone: true })
+  expect(done).toHaveBeenCalledWith({ view: 'connectors' })
+  expect(capture).not.toHaveBeenCalled(); expect(setup).not.toHaveBeenCalled(); expect(updateAi).not.toHaveBeenCalled()
+})
+it('allows exploration without claiming a connected agent and prevents duplicate completion', async () => {
+  let resolve!: () => void
+  const setConfig = vi.fn(() => new Promise<void>(r => { resolve = r })); const done = vi.fn()
+  ;(window as any).sb = { setConfig }
+  await mount(<Wizard config={{}} onDone={done} onToast={() => {}} />)
+  await click('Começar →'); await click('Voltar'); expect(document.activeElement?.id).toBe('wizard-title')
+  await click('Começar →'); await click('Explorar primeiro')
+  expect(button('Explorar primeiro').disabled).toBe(true)
+  await click('Explorar primeiro'); expect(setConfig).toHaveBeenCalledOnce()
+  await act(async () => resolve()); await flush()
+  expect(done).toHaveBeenCalledWith(undefined)
+})
+it('makes agent connection the personal home action without exposing it in Corp', async () => {
+  const navigate = vi.fn(); const capture = vi.fn()
+  ;(window as any).sb = { continuity: async () => [], automationPending: async () => [], brainFacts: async () => [], brainPolicy: async () => null, brainLedger: async () => [], brainHealth: async () => null, brainListSleep: async () => [], brainEval: async () => null }
+  await mount(<Today onNavigate={navigate} onCapture={capture} />)
+  const connect = document.querySelector('.value-action') as HTMLButtonElement
+  await act(async () => connect.click()); expect(navigate).toHaveBeenCalledWith('connectors'); expect(capture).not.toHaveBeenCalled()
+  expect(document.body.textContent).not.toContain('Guardar uma ideia')
+  await act(async () => root.render(<Today personal={false} onNavigate={navigate} />)); await flush()
+  await act(async () => (document.querySelector('.value-action') as HTMLButtonElement).click())
+  expect(navigate).toHaveBeenLastCalledWith('activity'); expect(button('Configurar conexão')).toBeUndefined()
 })

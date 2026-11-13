@@ -1,0 +1,50 @@
+{
+  "fixture": "synthetic in-memory demo; no external services",
+  "checks": [
+    {
+      "name": "Hoje and five primary destinations",
+      "result": "passed"
+    },
+    {
+      "name": "Capture failure, draft and retry",
+      "result": "passed"
+    },
+    {
+      "name": "Memory search failure, retry and full source",
+      "result": "passed"
+    },
+    {
+      "name": "Project continuation and screenshot",
+      "result": "passed"
+    },
+    {
+      "name": "Chat running and cancellation",
+      "result": "passed"
+    },
+    {
+      "name": "Reduced motion and avatar preference",
+      "result": "passed"
+    },
+    {
+      "name": "Relacionamentos navigation",
+      "result": "passed"
+    },
+    {
+      "name": "Rotinas navigation",
+      "result": "passed"
+    },
+    {
+      "name": "Narrow viewport navigation and focus",
+      "result": "passed"
+    },
+    {
+      "name": "Answer evidence opens original memory without losing the conversation",
+      "result": "passed"
+    },
+    {
+      "name": "Onboarding keeps header and actions reachable at desktop and narrow sizes",
+      "result": "passed"
+    }
+  ],
+  "errors": []
+}

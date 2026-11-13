@@ -104,9 +104,9 @@ export default function Connectors({ onActivity, onToast }: Props) {
       <div className="view-head">
         <div>
           <div className="hud-tag" style={{ marginBottom: 6 }}>Connect</div>
-          <h1>Agentes</h1>
+          <h1>Conecte seus agentes</h1>
           <p className="dim" style={{ fontSize: 13, marginTop: 4 }}>
-            Every agent that writes to memory leaves the file in Activity and a line in Today.
+            Conecte sua aplicação de IA para que os agentes consultem e registrem contexto. Confira os registros e as fontes em Hoje e Atividade.
           </p>
         </div>
         <button className="btn" onClick={() => setShowCustom(s => !s)}>
@@ -114,7 +114,8 @@ export default function Connectors({ onActivity, onToast }: Props) {
         </button>
       </div>
 
-      {!info && <p className="faint" style={{ fontSize: 13 }}>Loading connection details…</p>}
+      <p className="dim">As instruções abaixo não confirmam uma conexão ativa. Após configurar sua aplicação, peça ao agente para consultar a memória e confira o resultado. A proteção e as permissões são gerenciadas em Configurações.</p>
+      {!info && <p className="faint" style={{ fontSize: 13 }}>Carregando instruções de conexão…</p>}
 
       <div className="grid" style={{ maxWidth: 980 }}>
         {agents.map(a => (

@@ -40,6 +40,9 @@ try {
     const unsubscribe = () => () => {}
     const bridge = {
       getConfig: async () => config,
+      setConfig: async patch => { Object.assign(config, patch); return config },
+      mcpStatus: async () => ({ running: [], allTools: [] }),
+      connectInfo: async () => ({ mcpScript: '/synthetic/keepmind-mcp.mjs', memoryDir: '/synthetic/memory', repoUrl: null }),
       crm: async action => { if (action !== 'snapshot') throw Error('Prévia somente leitura'); return { revision:0,space:'synthetic',contacts:[],interactions:[],commitments:[],opportunities:[],drafts:[],settings:{commercialEnabled:false,autoPrepare:true,allowAutomaticSend:false},insights:[],duplicates:[],merges:[],capabilities:{canWrite:false,canConfigure:false,canSend:false,boards:[{id:'personal',label:'Prévia'}]} } },
       authState: async () => ({ needsSetup: false, user: { id: 'synthetic', name: 'Demo', email: 'demo@example.invalid' } }),
       memorySecurityStatus: async () => ({ space: 'personal', configured: true, unlocked: true }),
@@ -75,7 +78,7 @@ try {
     await page.screenshot({ path: `${artifacts}/desktop-hoje.png`, fullPage: true })
   })
   await check('Capture failure, draft and retry', async () => {
-    await page.locator('.sidebar-capture').click()
+    await page.keyboard.press('Control+Shift+m')
     const dialog = page.getByRole('dialog', { name: 'Capturar uma ideia' })
     const field = dialog.getByLabel('O que você quer lembrar?')
     assert.equal(await field.evaluate(el => el === document.activeElement), true)
@@ -214,7 +217,7 @@ try {
       assert(bounds.header.top >= 0 && bounds.footer.bottom <= height + 1, `Header/footer clipped at ${width}x${height}: ${JSON.stringify(bounds)}`)
       assert(bounds.heading.top >= bounds.main.top && bounds.heading.bottom <= bounds.main.bottom, 'Heading clipped')
       assert(!bounds.overflow, 'Horizontal overflow')
-      for (const name of ['Voltar','Configurar depois','Configurar e continuar']) {
+      for (const name of ['Voltar','Explorar primeiro','Conectar meus agentes']) {
         const box = await page.getByRole('button',{name,exact:true}).boundingBox()
         assert(box && box.y >= 0 && box.y + box.height <= height + 1 && box.x >= 0 && box.x + box.width <= width + 1, `Action outside viewport: ${name}`)
       }
@@ -222,11 +225,16 @@ try {
     }
     const focused = new Set()
     for(let i=0;i<24;i++){await page.keyboard.press('Tab');focused.add(await page.evaluate(()=>document.activeElement?.textContent?.trim()))}
-    for(const name of ['Voltar','Configurar depois','Configurar e continuar'])assert(focused.has(name),`Keyboard cannot reach ${name}`)
+    for(const name of ['Voltar','Explorar primeiro','Conectar meus agentes'])assert(focused.has(name),`Keyboard cannot reach ${name}`)
     await page.emulateMedia({reducedMotion:'reduce'})
     assert.equal(await page.locator('.wizard').evaluate(el=>getComputedStyle(el).animationName),'none')
-    await page.getByRole('button',{name:'Configurar depois',exact:true}).click()
+    await page.getByRole('button',{name:'Voltar',exact:true}).click()
     assert.equal(await page.evaluate(()=>document.activeElement?.id),'wizard-title')
+    await page.getByRole('button',{name:'Começar →',exact:true}).click()
+    assert.equal(await page.locator('textarea,input[type=password]').count(),0)
+    await page.getByRole('button',{name:'Conectar meus agentes',exact:true}).click()
+    await page.getByRole('heading',{name:'Conecte seus agentes',exact:true}).waitFor()
+    await page.getByRole('heading',{name:'Cursor Composer',exact:true}).waitFor()
   })
   assert.deepEqual(errors, [], `Browser errors: ${errors.join('; ')}`)
 } catch (error) {

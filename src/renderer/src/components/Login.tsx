@@ -23,7 +23,7 @@ export default function Login({ needsSetup, googleConfigured, onDone }: Props) {
       else await window.sb.authLogin(email, password)
       onDone()
     } catch (e: any) {
-      setError(e?.message ?? String(e))
+      setError(/Invalid email or password/i.test(String(e?.message ?? e)) ? 'E-mail ou senha incorretos. Confira os dados e tente novamente.' : mode === 'register' ? 'Não foi possível criar a conta. Confira os dados e tente novamente.' : 'Não foi possível entrar. Tente novamente.')
     } finally { setBusy(false) }
   }
 
@@ -33,7 +33,7 @@ export default function Login({ needsSetup, googleConfigured, onDone }: Props) {
       await window.sb.authGoogleLogin()
       onDone()
     } catch (e: any) {
-      setError(e?.message ?? String(e))
+      setError('Não foi possível entrar com o Google. Tente novamente.')
       setGoogleWaiting(false)
     }
   }
@@ -73,7 +73,7 @@ export default function Login({ needsSetup, googleConfigured, onDone }: Props) {
             onKeyDown={e => e.key === 'Enter' && submit()} />
         </div>
 
-        {error && <p style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>{error}</p>}
+        {error && <p role="alert" style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>{error}</p>}
 
         <button className="btn btn--primary" style={{ width: '100%', padding: '12px' }} onClick={submit} disabled={busy || !email || !password}>
           {busy ? 'WORKING…' : mode === 'register' ? 'CREATE ACCOUNT' : 'SIGN IN'}
