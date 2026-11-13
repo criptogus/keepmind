@@ -25,6 +25,9 @@ export function installCorpShim() {
 
   const corp = {
     ...base,
+    continuity: async () => {
+      throw new Error('Projetos e retomada entre IAs estão disponíveis no aplicativo KeepMind. Esta edição Corp ainda não oferece esse serviço.')
+    },
     getConfig: async () => j('/api/brain/config'),
     setConfig: async (patch: Record<string, unknown>) => {
       await j('/api/brain/config', { method: 'PATCH', body: JSON.stringify(patch) })

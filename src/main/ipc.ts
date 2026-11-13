@@ -19,6 +19,7 @@ import { exportBrainConfig, ensureMcpServerScript } from './services/scaffold'
 import { corpSyncNow } from './services/corp-sync'
 import { reconcileCorpSyncSchedule } from './services/corp-sync-scheduler'
 import { analyzeHealth, applyHealth } from './services/health'
+import { createContinuityService } from './services/continuity'
 import { evolutionHints, installSkill, keepSkillCopy, listVaultSkills, loadSakNotes, loadSkillThreats, reviewVaultSkill, scanSkillThreats, searchRegistry, skillTrust, skillsSnapshot } from './services/skillsHub'
 import { attachVaultCrypto, securityStatus, securityScan, securityConfigure, encryptAll, decryptAll, securityAiAlerts, type SecurityPatch } from './services/security'
 import { isPlainObject, stripForbiddenKeys } from './safe-path'
@@ -154,6 +155,14 @@ export function registerIpc(
   laya: import('./services/laya').LayaService | null = null,
   hooks: HookServer | null = null
 ) {
+  const continuity = createContinuityService(brain.getMemory())
+  ipcMain.handle('brain:continuity', (_e, action: unknown, args: unknown = {}) => {
+    reqStr(action, 'continuity.action', 64)
+    if (!isPlainObject(args)) bad('continuity.args')
+    // The renderer is the human review surface. Agent/MCP callers use a
+    // separate adapter that cannot select this authority through arguments.
+    return brain.getMemory().withScope(() => continuity.dispatch(action as string, args as Record<string, unknown>, 'human'))
+  })
   // ── Config ──
   ipcMain.handle('sync:unlock', async (_e, passphrase: unknown) => {
     reqStr(passphrase, 'passphrase', 4096)

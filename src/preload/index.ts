@@ -121,6 +121,7 @@ const api = {
   brainCapture: (text: string) => ipcRenderer.invoke('brain:capture', text),
   brainCorrect: (claim: string, correction: string) => ipcRenderer.invoke('brain:correct', claim, correction),
   brainEval: () => ipcRenderer.invoke('brain:eval'),
+  continuity: (action: string, args: Record<string, unknown> = {}): Promise<any> => ipcRenderer.invoke('brain:continuity', action, args),
   onCapture: (cb: () => void) => {
     const handler = () => cb()
     ipcRenderer.on('brain:capture', handler)

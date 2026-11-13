@@ -10,13 +10,14 @@ import Settings from './components/Settings'
 import GraphView from './components/GraphView'
 import Activity from './components/Activity'
 import Today from './components/Today'
+import Projects from './components/Projects'
 import Skills from './components/Skills'
 import Security from './components/Security'
 import Login from './components/Login'
 import CorpBar from './components/CorpBar'
 import CorpOnboarding from './components/CorpOnboarding'
 
-type View = 'today' | 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
+type View = 'projects' | 'today' | 'graph' | 'dashboard' | 'skills' | 'security' | 'chat' | 'activity' | 'connectors' | 'automations' | 'settings'
 
 interface Toast { id: number; msg: string; kind: 'info' | 'error' | 'success' }
 interface Job { phase: 'start' | 'done' | 'error'; name: string; summary?: string }
@@ -27,6 +28,7 @@ type NavItem = { id: View; label: string; Icon: (p: { size?: number }) => JSX.El
 const NAV: { section: string; items: NavItem[] }[] = [
   { section: 'Brain', items: [
     { id: 'today', label: 'Today', Icon: IconToday },
+    { id: 'projects', label: 'Projetos', Icon: IconDashboard },
     { id: 'graph', label: 'Brain', Icon: IconSparkle },
     { id: 'activity', label: 'Activity', Icon: IconSync }
   ]},
@@ -287,6 +289,7 @@ export default function App() {
 
       <main className="main" style={{ zIndex: 1 }}>
         {view === 'today' && <Today onToast={toast} />}
+        {view === 'projects' && <Projects unsupported={!!corp} />}
         {view === 'dashboard' && <Dashboard onActivity={pulse} onToast={toast} />}
         {view === 'security' && <Security onActivity={pulse} onToast={toast} />}
         {view === 'chat' && <Chat onActivity={pulse} />}

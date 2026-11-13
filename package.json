@@ -61,6 +61,7 @@
   "files": [
     "out/",
     "tools/keepmind-mcp.mjs",
+    "tools/lib/",
     "README.md",
     "NOTICE",
     "LICENSE",
