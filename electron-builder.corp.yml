@@ -2,6 +2,7 @@ appId: com.keepmind.corp
 productName: KeepMind Corp
 icon: build/icon
 extends: electron-builder.yml
+afterSign: scripts/mac-adhoc-sign.cjs
 directories:
   output: dist-corp
 files:
@@ -29,6 +30,8 @@ publish:
   owner: criptogus
   repo: keepmind-corp
 mac:
+  # The afterSign hook seals the complete bundle with a deterministic ad-hoc signature.
+  identity: null
   extendInfo:
     CFBundleDisplayName: KeepMind Corp
   artifactName: KeepMind-Corp-${version}-${arch}-mac.${ext}

@@ -17,6 +17,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The MCP bundle now includes `lib/memory-contract.mjs` and `lib/continuity.mjs`; packaging and native materialization include both modules.
 - Hoje calls the existing word-presence evaluation “Retrieval checks” to distinguish it from model-answer accuracy.
 
+### Fixed
+- macOS KeepMind Corp builds now ad-hoc sign the complete app bundle and fail packaging if strict signature verification fails, fixing inconsistent resource seals.
+
 ### Security
 - Continuity writes check revisions under a local project lock. Human review, lesson confirmation and feedback cannot be granted through model-supplied arguments.
 - Generic MCP writes refuse protected project/fact aliases, evidence cannot use symlinks or cross-space paths, and rejected writes retain audit coverage.
